@@ -4,6 +4,8 @@ import { stripe } from '@/lib/stripe/server'
 
 interface CheckoutRequest {
   plan: 'basic' | 'pro' | 'team'
+  email?: string
+  userId?: string
 }
 
 const PRICE_IDS = {
@@ -14,18 +16,12 @@ const PRICE_IDS = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { plan } = (await request.json()) as CheckoutRequest
+    const body = (await request.json()) as CheckoutRequest
+    const { plan } = body
 
-    if (!plan) {
+    if (!plan || !['basic', 'pro', 'team'].includes(plan)) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
-    }
-
-    if (plan !== 'basic' && plan !== 'pro' && plan !== 'team') {
-      return NextResponse.json(
-        { error: 'Invalid plan' },
+        { error: 'Invalid or missing plan' },
         { status: 400 }
       )
     }
@@ -38,38 +34,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get current user
+    // Try server-side auth first
+    let userEmail: string | undefined
+    let userId: string | undefined
+    let teamId: string | undefined
+    let customerId: string | undefined
+
     const supabase = await createClient()
     const { data: userData } = await supabase.auth.getUser()
-    if (!userData?.user) {
-      return NextResponse.json(
-        { error: 'Not authenticated. Please sign up first.' },
-        { status: 401 }
-      )
-    }
 
-    const userEmail = userData.user.email
-    const userId = userData.user.id
+    if (userData?.user) {
+      // User is fully authenticated
+      userEmail = userData.user.email || undefined
+      userId = userData.user.id
 
-    // Check if user already has a team with a Stripe customer
-    let customerId: string | undefined
-    let teamId: string | undefined
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', userId)
-      .single()
-
-    if (profile?.current_team_id) {
-      teamId = profile.current_team_id
-      const { data: team } = await supabase
-        .from('teams')
-        .select('stripe_customer_id')
-        .eq('id', teamId)
+      // Check for existing team/customer
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userId)
         .single()
 
-      customerId = team?.stripe_customer_id || undefined
+      if (profile?.current_team_id) {
+        teamId = profile.current_team_id
+        const { data: team } = await supabase
+          .from('teams')
+          .select('stripe_customer_id')
+          .eq('id', teamId)
+          .single()
+        customerId = team?.stripe_customer_id || undefined
+      }
+    } else {
+      // Not authenticated yet (signup flow before email confirmation)
+      // Use client-provided email as fallback
+      userEmail = body.email || undefined
+      userId = body.userId || undefined
     }
 
     // Create Stripe customer if needed
@@ -77,7 +76,7 @@ export async function POST(request: NextRequest) {
       const customer = await stripe.customers.create({
         email: userEmail || undefined,
         metadata: {
-          userId,
+          userId: userId || 'pending',
           teamId: teamId || 'pending',
           plan,
         },
@@ -96,27 +95,20 @@ export async function POST(request: NextRequest) {
     // Create checkout session — auto-apply early access coupon
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
       discounts: [
-        {
-          coupon: process.env.STRIPE_EARLY_ACCESS_COUPON_ID || 'r6pxCjPz',
-        },
+        { coupon: process.env.STRIPE_EARLY_ACCESS_COUPON_ID || 'r6pxCjPz' },
       ],
       subscription_data: {
         metadata: {
-          userId,
+          userId: userId || 'pending',
           teamId: teamId || 'pending',
           plan,
         },
       },
       metadata: {
-        userId,
+        userId: userId || 'pending',
         teamId: teamId || 'pending',
         plan,
       },
