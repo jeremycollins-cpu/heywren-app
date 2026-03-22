@@ -7,15 +7,16 @@ import { createClient } from '@/lib/supabase/client'
 import { WrenFullLogo } from '@/components/logo'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle
 } from 'lucide-react'
 
 interface SidebarProps {
   open: boolean
   onToggle: () => void
+  onHelpClick?: () => void
 }
 
-export default function Sidebar({ open, onToggle }: SidebarProps) {
+export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
   const supabase = createClient()
@@ -53,6 +54,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
     { href: '/handoff', label: 'Handoff', icon: Hand },
     { href: '/achievements', label: 'Achievements', icon: Trophy },
     { href: '/integrations', label: 'Integrations', icon: Zap },
+    { href: '/ideas', label: 'Ideas', icon: Lightbulb },
   ]
 
   const adminLinks = [
@@ -145,6 +147,17 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
               </>
             )}
           </nav>
+
+          {/* Help Button at bottom */}
+          <div className="px-3 py-4 border-t border-gray-200 flex-shrink-0">
+            <button
+              onClick={onHelpClick}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition font-medium text-[13px]"
+            >
+              <HelpCircle className="w-4 h-4 text-gray-400" />
+              <span className="truncate">Help & Tips</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>
