@@ -81,7 +81,11 @@ export default function PlanPage() {
       const response = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({
+          plan,
+          email: sessionStorage.getItem('signupEmail') || undefined,
+          userId: sessionStorage.getItem('signupUserId') || undefined,
+        }),
       })
 
       if (!response.ok) {
