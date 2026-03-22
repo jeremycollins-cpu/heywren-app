@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         teamId: teamId || 'pending',
         plan,
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/callback?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/signup/plan`,
     })
 
