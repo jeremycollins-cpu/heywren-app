@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { createBrowserClient } from '@supabase/ssr'
+import { Suspense } from 'react'
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -33,6 +35,49 @@ export default function LoginPage() {
       }
 
       toast.success('Logged in successfully!')
+
+      // Check if user needs onboarding
+      const needsOnboarding = searchParams.get('onboarding') === 'true'
+        || localStorage.getItem('heywren_needs_onboarding') === 'true'
+
+      if (needsOnboarding) {
+        localStorage.removeItem('heywren_needs_onboarding')
+
+        // Also check if user actually has integrations set up
+        // If not, send them to onboarding
+        const { data: integrations } = await supabase
+          .from('integrations')
+          .select('id')
+          .limit(1)
+
+        if (!integrations || integrations.length === 0) {
+          router.push('/onboarding/profile')
+          return
+        }
+      }
+
+      // Check if user has completed onboarding even without the flag
+      // This catches users who close the browser and come back later
+      if (data?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', data.user.id)
+          .single()
+
+        if (profile?.current_team_id) {
+          const { data: integrations } = await supabase
+            .from('integrations')
+            .select('id')
+            .limit(1)
+
+          if (!integrations || integrations.length === 0) {
+            router.push('/onboarding/profile')
+            return
+          }
+        }
+      }
+
       router.push('/')
     } catch (err) {
       toast.error('An error occurred')
@@ -50,66 +95,27 @@ export default function LoginPage() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-            Email address
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm"
-            placeholder="you@company.com"
-          />
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">Email address</label>
+          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm" placeholder="you@company.com" />
         </div>
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <Link href="/login" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-              Forgot password?
-            </Link>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+            <Link href="/login" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Forgot password?</Link>
           </div>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm"
-            placeholder="Enter your password"
-          />
+          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm" placeholder="Enter your password" />
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full px-4 py-2.5 text-white font-semibold rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          style={{
-            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-            boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
-          }}
-        >
+        <button type="submit" disabled={loading} className="w-full px-4 py-2.5 text-white font-semibold rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)' }}>
           {loading ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
 
       <div className="relative py-1">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200"></div>
-        </div>
-        <div className="relative flex justify-center text-xs">
-          <span className="px-3 bg-white text-gray-400">
-            New to HeyWren?
-          </span>
-        </div>
+        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+        <div className="relative flex justify-center text-xs"><span className="px-3 bg-white text-gray-400">New to HeyWren?</span></div>
       </div>
 
-      <Link
-        href="/signup"
-        className="block w-full px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition text-center text-sm"
-      >
+      <Link href="/signup" className="block w-full px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition text-center text-sm">
         Create an Account
       </Link>
 
@@ -120,5 +126,19 @@ export default function LoginPage() {
         <a href="https://heywren.ai/privacy" className="text-indigo-600 hover:underline">Privacy Policy</a>
       </p>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full max-w-md mx-auto space-y-6">
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }
