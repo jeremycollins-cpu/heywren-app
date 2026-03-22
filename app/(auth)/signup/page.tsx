@@ -73,7 +73,7 @@ export default function SignupPage() {
           Step 1 of 3
         </div>
         <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Create your account</h2>
-        <p className="text-gray-500 mt-1.5 text-sm">Start your 14-day free trial</p>
+        <p className="text-gray-500 mt-1.5 text-sm">Free during beta — no credit card required</p>
       </div>
 
       {/* Progress bar */}
