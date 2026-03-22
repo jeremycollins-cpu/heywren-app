@@ -24,7 +24,7 @@ function CallbackContent() {
           throw new Error('Missing session ID')
         }
 
-        // Clean up sessionStorage
+        // Clean up signup sessionStorage
         sessionStorage.removeItem('signupUserId')
         sessionStorage.removeItem('signupEmail')
         sessionStorage.removeItem('selectedPlan')
@@ -38,9 +38,10 @@ function CallbackContent() {
           toast.success('Welcome to HeyWren!')
           router.push('/onboarding/profile')
         } else {
-          // Session lost during Stripe redirect — send to login
-          toast.success('Account created! Please sign in to continue.')
-          router.push('/login')
+          // Session lost during Stripe redirect — flag for onboarding after login
+          localStorage.setItem('heywren_needs_onboarding', 'true')
+          toast.success('Account created! Sign in to start setting up.')
+          router.push('/login?onboarding=true')
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'An error occurred'
@@ -67,7 +68,7 @@ function CallbackContent() {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-12">
           <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-gray-600">Please wait while we set up your account...</p>
+          <p className="text-gray-600">Finalizing your account...</p>
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -90,7 +91,7 @@ export default function CallbackPage() {
         </div>
         <div className="flex flex-col items-center justify-center py-12">
           <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-gray-600">Please wait while we set up your account...</p>
+          <p className="text-gray-600">Finalizing your account...</p>
         </div>
       </div>
     }>
