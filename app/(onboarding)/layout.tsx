@@ -11,7 +11,7 @@ interface OnboardingLayoutProps {
 
 export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
   const [currentStep, setCurrentStep] = useState(0)
-  const [totalSteps, setTotalSteps] = useState(4)
+  const [totalSteps, setTotalSteps] = useState(5)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const supabase = createClient()
 
