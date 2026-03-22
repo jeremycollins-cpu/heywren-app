@@ -1,18 +1,18 @@
 'use client'
-
-import { useEffect, useState } from 'react'
+ 
+import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { Zap, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-
+ 
 interface Integration {
   id: string
   provider: string
   created_at: string
   config: Record<string, any>
 }
-
+ 
 const availableIntegrations = [
   {
     id: 'slack',
@@ -70,14 +70,14 @@ const availableIntegrations = [
     comingSoon: true,
   },
 ]
-
-export default function IntegrationsPage() {
+ 
+function IntegrationsContent() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
-
+ 
   const supabase = createClient()
-
+ 
   useEffect(() => {
     const fetchIntegrations = async () => {
       try {
@@ -85,7 +85,7 @@ export default function IntegrationsPage() {
           .from('integrations')
           .select('*')
           .order('created_at', { ascending: false })
-
+ 
         setIntegrations(data || [])
       } catch (err) {
         console.error('Error fetching integrations:', err)
@@ -93,15 +93,15 @@ export default function IntegrationsPage() {
         setLoading(false)
       }
     }
-
+ 
     fetchIntegrations()
-
+ 
     // Show success toast if just connected
     if (searchParams.get('status') === 'success') {
       toast.success('Integration connected successfully!')
     }
   }, [supabase, searchParams])
-
+ 
   const handleSlackConnect = () => {
     const clientId = process.env.NEXT_PUBLIC_SLACK_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
@@ -112,11 +112,11 @@ export default function IntegrationsPage() {
       'team:read',
       'emoji:read',
     ].join(',')
-
+ 
     const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}`
     window.location.href = authUrl
   }
-
+ 
   const handleOutlookConnect = () => {
     const clientId = process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
@@ -130,17 +130,17 @@ export default function IntegrationsPage() {
       'User.Read',
       'offline_access',
     ].join(' ')
-
+ 
     const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}&response_mode=query`
     window.location.href = authUrl
   }
-
+ 
   const handleDisconnect = async (id: string) => {
     const { error } = await supabase
       .from('integrations')
       .delete()
       .eq('id', id)
-
+ 
     if (!error) {
       setIntegrations(integrations.filter((i) => i.id !== id))
       toast.success('Integration disconnected')
@@ -148,11 +148,11 @@ export default function IntegrationsPage() {
       toast.error('Failed to disconnect')
     }
   }
-
+ 
   const isConnected = (provider: string) => {
     return integrations.some((i) => i.provider === provider)
   }
-
+ 
   const handleConnect = (integrationId: string) => {
     if (integrationId === 'slack') {
       handleSlackConnect()
@@ -160,7 +160,7 @@ export default function IntegrationsPage() {
       handleOutlookConnect()
     }
   }
-
+ 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -168,10 +168,10 @@ export default function IntegrationsPage() {
       </div>
     )
   }
-
+ 
   const liveIntegrations = availableIntegrations.filter(i => !i.comingSoon)
   const futureIntegrations = availableIntegrations.filter(i => i.comingSoon)
-
+ 
   return (
     <div className="space-y-6">
       <div>
@@ -180,7 +180,7 @@ export default function IntegrationsPage() {
           Connect your tools to improve commitment detection and follow-through
         </p>
       </div>
-
+ 
       {/* Connected Count */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-center justify-between">
@@ -193,7 +193,7 @@ export default function IntegrationsPage() {
           </div>
         </div>
       </div>
-
+ 
       {/* Live Integrations */}
       <div>
         <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Available Now</h2>
@@ -217,7 +217,7 @@ export default function IntegrationsPage() {
                 </div>
                 <h3 className="font-semibold text-gray-900 text-sm">{integration.name}</h3>
                 <p className="text-xs text-gray-500 mt-1 mb-4">{integration.description}</p>
-
+ 
                 {connected ? (
                   <button
                     onClick={() => {
@@ -245,7 +245,7 @@ export default function IntegrationsPage() {
           })}
         </div>
       </div>
-
+ 
       {/* Coming Soon */}
       <div>
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Coming Soon</h2>
@@ -266,7 +266,7 @@ export default function IntegrationsPage() {
           ))}
         </div>
       </div>
-
+ 
       {/* Connected Details */}
       {integrations.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -297,7 +297,7 @@ export default function IntegrationsPage() {
           </div>
         </div>
       )}
-
+ 
       {/* Info */}
       <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-5">
         <h3 className="font-semibold text-indigo-900 text-sm mb-2">Why connect integrations?</h3>
@@ -306,5 +306,13 @@ export default function IntegrationsPage() {
         </p>
       </div>
     </div>
+  )
+}
+ 
+export default function IntegrationsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[400px]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>}>
+      <IntegrationsContent />
+    </Suspense>
   )
 }
