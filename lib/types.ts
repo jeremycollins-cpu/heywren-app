@@ -11,10 +11,11 @@ export interface Profile {
   id: string
   display_name: string
   email: string
-  role: string
+  role: 'user' | 'admin' | 'super_admin'
   company?: string
   team_size?: string
   avatar_url?: string
+  current_team_id?: string
   created_at: string
   updated_at: string
 }
@@ -25,6 +26,12 @@ export interface Team {
   slug: string
   owner_id: string
   slack_team_id?: string
+  stripe_customer_id?: string
+  stripe_subscription_id?: string
+  subscription_plan: 'trial' | 'basic' | 'pro' | 'team'
+  subscription_status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'incomplete'
+  trial_ends_at?: string
+  max_users: number
   created_at: string
   updated_at: string
 }

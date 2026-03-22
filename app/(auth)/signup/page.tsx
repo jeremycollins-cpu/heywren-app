@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [loading, setLoading] = useState(false)
 
   const supabase = createBrowserClient(
@@ -35,12 +36,13 @@ export default function SignupPage() {
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: fullName,
+            company_name: companyName,
           },
         },
       })
@@ -50,8 +52,13 @@ export default function SignupPage() {
         return
       }
 
-      toast.success('Account created! Check your email to verify.')
-      router.push('/login')
+      if (data?.user) {
+        // Store user ID in session storage for plan selection
+        sessionStorage.setItem('signupUserId', data.user.id)
+        sessionStorage.setItem('signupEmail', email)
+        toast.success('Account created! Choose your plan.')
+        router.push('/signup/plan')
+      }
     } catch (err) {
       toast.error('An error occurred')
     } finally {
@@ -61,6 +68,14 @@ export default function SignupPage() {
 
   return (
     <div className="w-full space-y-6">
+      <div className="text-center mb-8">
+        <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium mb-2">
+          Step 1 of 3
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
+        <p className="text-gray-600 mt-2">Get started with HeyWren in minutes</p>
+      </div>
+
       <form onSubmit={handleSignup} className="space-y-4">
         <div>
           <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
@@ -76,9 +91,25 @@ export default function SignupPage() {
             placeholder="John Doe"
           />
         </div>
+
+        <div>
+          <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">
+            Company Name
+          </label>
+          <input
+            id="companyName"
+            type="text"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            required
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            placeholder="Acme Inc"
+          />
+        </div>
+
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-            Email Address
+            Work Email
           </label>
           <input
             id="email"
@@ -87,9 +118,10 @@ export default function SignupPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
-            placeholder="you@example.com"
+            placeholder="you@company.com"
           />
         </div>
+
         <div>
           <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
             Password
@@ -104,6 +136,7 @@ export default function SignupPage() {
             placeholder="••••••••"
           />
         </div>
+
         <div>
           <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
             Confirm Password
@@ -118,12 +151,13 @@ export default function SignupPage() {
             placeholder="••••••••"
           />
         </div>
+
         <button
           type="submit"
           disabled={loading}
           className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Creating account...' : 'Create Account'}
+          {loading ? 'Creating account...' : 'Continue'}
         </button>
       </form>
 

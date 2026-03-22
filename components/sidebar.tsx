@@ -2,9 +2,11 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import {
   Menu, X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -14,8 +16,31 @@ interface SidebarProps {
 
 export default function Sidebar({ open, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const supabase = createClient()
 
-  const links = [
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      try {
+        const { data: user } = await supabase.auth.getUser()
+        if (!user?.user) return
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.user.id)
+          .single()
+
+        setUserRole(profile?.role || 'user')
+      } catch (err) {
+        console.error('Error fetching user role:', err)
+      }
+    }
+
+    fetchUserRole()
+  }, [supabase])
+
+  const mainLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
     { href: '/dashboard/commitments', label: 'Commitments', icon: CheckCircle2 },
     { href: '/dashboard/relationships', label: 'Relationships', icon: Users },
@@ -27,6 +52,11 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
     { href: '/dashboard/handoff', label: 'Handoff', icon: Hand },
     { href: '/dashboard/achievements', label: 'Achievements', icon: Trophy },
     { href: '/dashboard/integrations', label: 'Integrations', icon: Zap },
+  ]
+
+  const adminLinks = [
+    { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+    { href: '/dashboard/team-management', label: 'Team Management', icon: Users },
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   ]
 
@@ -36,6 +66,8 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
     }
     return pathname.startsWith(href)
   }
+
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
 
   return (
     <>
@@ -72,7 +104,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-            {links.map(({ href, label, icon: Icon }) => (
+            {mainLinks.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
@@ -87,15 +119,33 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 <span className="truncate">{label}</span>
               </Link>
             ))}
-          </nav>
 
-          {/* Footer */}
-          <div className="border-t border-gray-200 p-4">
-            <button className="flex items-center gap-3 w-full px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-all">
-              <Settings className="w-5 h-5" />
-              Settings
-            </button>
-          </div>
+            {/* Admin Section */}
+            {isAdmin && (
+              <>
+                <div className="pt-4 mt-4 border-t border-gray-200">
+                  <p className="px-4 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    Administration
+                  </p>
+                  {adminLinks.map(({ href, label, icon: Icon }) => (
+                    <Link
+                      key={href}
+                      href={href}
+                      onClick={() => open && onToggle()}
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                        isActive(href)
+                          ? 'bg-indigo-50 text-indigo-600'
+                          : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+          </nav>
         </div>
       </aside>
     </>
