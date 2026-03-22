@@ -24,42 +24,21 @@ function CallbackContent() {
           throw new Error('Missing session ID')
         }
 
-        const userId = sessionStorage.getItem('signupUserId')
-        const email = sessionStorage.getItem('signupEmail')
-        const companyName = sessionStorage.getItem('companyName')
-
-        const response = await fetch('/api/auth/setup-account', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            userId,
-            email,
-            companyName,
-          }),
-        })
-
-        const result = await response.json()
-
-        if (!response.ok) {
-          // Show full error details for debugging
-          const details = result.details ? ` (${result.details})` : ''
-          const hint = result.hint && result.hint !== 'none' ? ` Hint: ${result.hint}` : ''
-          throw new Error(`${result.error || 'Failed to set up account'}${details}${hint}`)
-        }
-
+        // Clean up sessionStorage
         sessionStorage.removeItem('signupUserId')
         sessionStorage.removeItem('signupEmail')
         sessionStorage.removeItem('selectedPlan')
         sessionStorage.removeItem('tempTeamId')
         sessionStorage.removeItem('companyName')
 
+        // Check if user has an active session
         const { data: sessionData } = await supabase.auth.getSession()
 
         if (sessionData?.session) {
           toast.success('Welcome to HeyWren!')
           router.push('/onboarding/profile')
         } else {
+          // Session lost during Stripe redirect — send to login
           toast.success('Account created! Please sign in to continue.')
           router.push('/login')
         }
@@ -92,11 +71,8 @@ function CallbackContent() {
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800 text-sm break-words">{error}</p>
-          <button
-            onClick={() => window.location.href = '/signup'}
-            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
-          >
+          <p className="text-red-800 text-sm">{error}</p>
+          <button onClick={() => window.location.href = '/signup'} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
             Try Again
           </button>
         </div>
