@@ -6,6 +6,7 @@ const nextConfig = {
     NEXT_PUBLIC_SLACK_CLIENT_ID: '4906304887.10746234288517',
     NEXT_PUBLIC_AZURE_CLIENT_ID: '328441fc-bec2-4dcc-a9b6-0910b84d3ffe',
     NEXT_PUBLIC_APP_URL: 'https://app.heywren.ai',
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_live_T7IUyjQMQYyB1jbM3ArOEZr5',
   },
   typescript: {
     ignoreBuildErrors: true,
@@ -14,5 +15,5 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 }
-
+ 
 module.exports = nextConfig
