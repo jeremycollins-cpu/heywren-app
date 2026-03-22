@@ -4,8 +4,8 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'HeyWren - AI-Powered Follow-Through',
-  description: 'Monitor Slack for commitments and get nudged to follow through',
-  keywords: ['productivity', 'slack', 'ai', 'follow-through', 'commitments'],
+  description: 'Nothing falls through the cracks. HeyWren monitors Slack for commitments and nudges you to follow through.',
+  keywords: ['productivity', 'slack', 'ai', 'follow-through', 'commitments', 'team accountability'],
 }
 
 export default function RootLayout({
@@ -15,9 +15,22 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-white">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      </head>
+      <body style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
         {children}
-        <Toaster position="top-right" />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              fontFamily: 'Inter, -apple-system, system-ui, sans-serif',
+              fontSize: '14px',
+            },
+          }}
+        />
       </body>
     </html>
   )

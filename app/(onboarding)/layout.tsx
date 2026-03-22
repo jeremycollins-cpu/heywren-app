@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronRight } from 'lucide-react'
+import { WrenFullLogo } from '@/components/logo'
 import Link from 'next/link'
 
 interface OnboardingLayoutProps {
@@ -45,25 +45,22 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
   const progressPercentage = (currentStep / totalSteps) * 100
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-violet-50">
+    <div className="min-h-screen" style={{ background: '#fafbfc', fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
       {/* Progress Bar */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
         <div className="h-1 bg-gray-100">
           <div
-            className="h-full bg-gradient-to-r from-indigo-600 to-violet-600 transition-all duration-300"
-            style={{ width: `${progressPercentage}%` }}
+            className="h-full transition-all duration-500 ease-out"
+            style={{ width: `${progressPercentage}%`, background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
           />
         </div>
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">HW</span>
-            </div>
-            <span className="font-bold text-gray-900 group-hover:text-indigo-600 transition">HeyWren</span>
+        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between">
+          <Link href="/" className="flex items-center">
+            <WrenFullLogo width={100} />
           </Link>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="font-medium text-gray-900">{currentStep}</span>
-            <span>/</span>
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span className="font-semibold text-gray-900">{currentStep}</span>
+            <span className="text-gray-300">/</span>
             <span>{totalSteps}</span>
           </div>
         </div>

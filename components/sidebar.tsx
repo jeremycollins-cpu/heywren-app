@@ -4,8 +4,9 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { WrenFullLogo } from '@/components/logo'
 import {
-  Menu, X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
+  X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard
 } from 'lucide-react'
 
@@ -84,15 +85,13 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
         className={`fixed lg:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 z-50 lg:z-0 ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
+        style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}
       >
         <div className="h-screen flex flex-col">
           {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">HW</span>
-              </div>
-              <span className="font-bold text-gray-900">HeyWren</span>
+          <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200">
+            <Link href="/" className="flex items-center">
+              <WrenFullLogo width={110} />
             </Link>
             <button
               onClick={onToggle}
@@ -103,19 +102,19 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
             {mainLinks.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
                 onClick={() => open && onToggle()}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                   isActive(href)
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <Icon className="w-4 h-4 flex-shrink-0" />
+                <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? 'text-indigo-600' : 'text-gray-400'}`} />
                 <span className="truncate">{label}</span>
               </Link>
             ))}
@@ -124,7 +123,7 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
             {isAdmin && (
               <>
                 <div className="pt-4 mt-4 border-t border-gray-200">
-                  <p className="px-4 text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                  <p className="px-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
                     Administration
                   </p>
                   {adminLinks.map(({ href, label, icon: Icon }) => (
@@ -132,13 +131,13 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                       key={href}
                       href={href}
                       onClick={() => open && onToggle()}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                         isActive(href)
-                          ? 'bg-indigo-50 text-indigo-600'
-                          : 'text-gray-600 hover:bg-gray-50'
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                       }`}
                     >
-                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? 'text-indigo-600' : 'text-gray-400'}`} />
                       <span className="truncate">{label}</span>
                     </Link>
                   ))}

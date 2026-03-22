@@ -22,48 +22,46 @@ const PLANS: Record<Plan, PlanConfig> = {
   basic: {
     name: 'Basic',
     price: '$5',
-    description: 'Perfect for small teams getting started',
+    description: 'For individuals getting started',
     features: [
-      'Up to 5 users',
-      'Slack integration',
-      'Basic commitment tracking',
-      'Email nudges',
+      'Slack & email monitoring',
+      'Basic nudges',
+      'Up to 50 commitments',
+      'Email support',
       '14-day free trial',
-      'Credit card required',
     ],
-    cta: 'Start 14-day free trial',
+    cta: 'Start Free Trial',
   },
   pro: {
     name: 'Pro',
     price: '$10',
-    description: 'For growing teams who need more power',
+    description: 'For professionals & small teams',
     features: [
-      'Up to 25 users',
-      'All integrations',
-      'AI coaching',
-      'Playbooks',
-      'Advanced analytics',
+      'Slack, email & calendar',
+      'AI nudges & scoring',
+      'Draft queue',
+      'Pre-meeting briefings',
+      'Unlimited commitments',
+      'Priority support',
       '14-day free trial',
-      'Credit card required',
     ],
-    cta: 'Start 14-day free trial',
+    cta: 'Start Free Trial',
     highlighted: true,
   },
   team: {
     name: 'Team',
     price: '$20',
-    description: 'For large organizations with advanced needs',
+    description: 'For scaling teams',
     features: [
-      'Unlimited users',
       'Everything in Pro',
-      'Priority support',
-      'Custom playbooks',
-      'Team insights',
+      'Team dashboards',
+      'Playbooks & automation',
+      'PTO handoff protocol',
       'Admin controls',
+      'Dedicated support',
       '14-day free trial',
-      'Credit card required',
     ],
-    cta: 'Start 14-day free trial',
+    cta: 'Start Free Trial',
   },
 }
 
@@ -134,13 +132,14 @@ export default function PlanPage() {
   }
 
   return (
-    <div className="w-full space-y-8">
+    <div className="w-full space-y-8" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
       <div className="text-center">
-        <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium mb-2">
+        <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold mb-3">
+          <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
           Step 2 of 3
         </div>
-        <h2 className="text-3xl font-bold text-gray-900">Choose your plan</h2>
-        <p className="text-gray-600 mt-2">All plans include a 14-day free trial with credit card required.</p>
+        <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Choose your plan</h2>
+        <p className="text-gray-500 mt-2 text-sm">All plans include a 14-day free trial. Credit card required.</p>
       </div>
 
       {/* Plans Grid */}
@@ -172,11 +171,15 @@ export default function PlanPage() {
               <button
                 onClick={() => handleSelectPlan(planKey as Plan)}
                 disabled={loading && selectedPlan === planKey}
-                className={`w-full py-3 px-4 rounded-lg font-medium transition-all mb-8 ${
+                className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm transition-all mb-8 disabled:opacity-50 ${
                   plan.highlighted
-                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-lg disabled:opacity-50'
-                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200 disabled:opacity-50'
+                    ? 'text-white hover:shadow-lg'
+                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                 }`}
+                style={plan.highlighted ? {
+                  background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                  boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
+                } : undefined}
               >
                 {loading && selectedPlan === planKey ? 'Processing...' : plan.cta}
               </button>

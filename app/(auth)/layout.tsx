@@ -1,34 +1,38 @@
+import { WrenFullLogoWhite } from '@/components/logo'
+
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-indigo-800 to-violet-900 px-4 py-12 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-20 right-10 w-72 h-72 bg-white rounded-full mix-blend-multiply filter blur-xl" />
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-xl" />
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #312e81 0%, #4338ca 35%, #5b21b6 100%)' }}>
+      {/* Subtle background decoration */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-[0.07]" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-[0.05]" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-400 to-violet-500 rounded-2xl flex items-center justify-center shadow-lg">
-              <span className="text-white font-bold text-lg">HW</span>
-            </div>
+        {/* Logo - uses actual HeyWren SVG from marketing site */}
+        <div className="text-center mb-10">
+          <div className="flex justify-center mb-5">
+            <WrenFullLogoWhite width={180} />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">HeyWren</h1>
-          <p className="text-indigo-200">
+          <p className="text-indigo-200 text-sm font-medium" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
             AI-powered follow-through for your team
           </p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 border border-white/10">
+        <div className="bg-white rounded-2xl p-8" style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.1)' }}>
           {children}
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-indigo-300 text-xs mt-8" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+          &copy; 2026 HeyWren, Inc. All rights reserved.
+        </p>
       </div>
     </div>
   )

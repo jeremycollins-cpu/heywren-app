@@ -42,16 +42,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
-        <p className="text-gray-600 mt-2">Sign in to your HeyWren account</p>
+    <div className="w-full space-y-6" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Welcome back</h2>
+        <p className="text-gray-500 mt-2 text-sm">Sign in to your HeyWren account</p>
       </div>
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-semibold text-gray-900 mb-2">
-            Email Address
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
+            Email address
           </label>
           <input
             id="email"
@@ -59,47 +59,66 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
-            placeholder="you@example.com"
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm"
+            placeholder="you@company.com"
           />
         </div>
         <div>
-          <label htmlFor="password" className="block text-sm font-semibold text-gray-900 mb-2">
-            Password
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Password
+            </label>
+            <Link href="/login" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+              Forgot password?
+            </Link>
+          </div>
           <input
             id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
-            placeholder="••••••••"
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-sm"
+            placeholder="Enter your password"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-violet-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full px-4 py-2.5 text-white font-semibold rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+            boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
+          }}
         >
           {loading ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
 
-      <div className="relative">
+      <div className="relative py-1">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-200"></div>
         </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-white text-gray-600">
+        <div className="relative flex justify-center text-xs">
+          <span className="px-3 bg-white text-gray-400">
             New to HeyWren?
           </span>
         </div>
       </div>
 
-      <Link href="/signup" className="w-full px-4 py-3 border-2 border-indigo-200 text-indigo-600 font-semibold rounded-lg hover:bg-indigo-50 transition text-center">
+      <Link
+        href="/signup"
+        className="block w-full px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition text-center text-sm"
+      >
         Create an Account
       </Link>
+
+      <p className="text-center text-xs text-gray-400 mt-4">
+        By signing in, you agree to our{' '}
+        <a href="https://heywren.ai/terms" className="text-indigo-600 hover:underline">Terms</a>
+        {' '}and{' '}
+        <a href="https://heywren.ai/privacy" className="text-indigo-600 hover:underline">Privacy Policy</a>
+      </p>
     </div>
   )
 }
