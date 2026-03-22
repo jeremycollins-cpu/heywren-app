@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { Check } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import { getStripe } from '@/lib/stripe/client'
 
 type Plan = 'basic' | 'pro' | 'team'
@@ -12,6 +12,7 @@ type Plan = 'basic' | 'pro' | 'team'
 interface PlanConfig {
   name: string
   price: string
+  priceNote: string
   description: string
   features: string[]
   cta: string
@@ -22,19 +23,20 @@ const PLANS: Record<Plan, PlanConfig> = {
   basic: {
     name: 'Basic',
     price: '$5',
+    priceNote: '/month after beta',
     description: 'For individuals getting started',
     features: [
       'Slack & email monitoring',
       'Basic nudges',
       'Up to 50 commitments',
       'Email support',
-      '14-day free trial',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Get Started Free',
   },
   pro: {
     name: 'Pro',
     price: '$10',
+    priceNote: '/month after beta',
     description: 'For professionals & small teams',
     features: [
       'Slack, email & calendar',
@@ -43,14 +45,14 @@ const PLANS: Record<Plan, PlanConfig> = {
       'Pre-meeting briefings',
       'Unlimited commitments',
       'Priority support',
-      '14-day free trial',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Get Started Free',
     highlighted: true,
   },
   team: {
     name: 'Team',
     price: '$20',
+    priceNote: '/month after beta',
     description: 'For scaling teams',
     features: [
       'Everything in Pro',
@@ -59,9 +61,8 @@ const PLANS: Record<Plan, PlanConfig> = {
       'PTO handoff protocol',
       'Admin controls',
       'Dedicated support',
-      '14-day free trial',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Get Started Free',
   },
 }
 
@@ -69,51 +70,27 @@ export default function PlanPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
-  const [teamId, setTeamId] = useState<string | null>(null)
-
-  useEffect(() => {
-    // In a real app, you'd get teamId from the auth state or previous step
-    // For now, we'll need to create the team on plan selection
-    const initTeam = async () => {
-      try {
-        // Team will be created during checkout callback
-        setTeamId('temp-team-id')
-      } catch (err) {
-        console.error('Error initializing team:', err)
-      }
-    }
-
-    initTeam()
-  }, [])
 
   const handleSelectPlan = async (plan: Plan) => {
-
     setSelectedPlan(plan)
     setLoading(true)
 
     try {
-      // Create a temporary team for this signup
-      const tempTeamId = `temp-${Date.now()}`
-      sessionStorage.setItem('tempTeamId', tempTeamId)
       sessionStorage.setItem('selectedPlan', plan)
 
-      // Create checkout session
       const response = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan,
-          teamId: tempTeamId,
-        }),
+        body: JSON.stringify({ plan }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to create checkout session')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to create checkout session')
       }
 
       const { sessionId } = await response.json()
 
-      // Redirect to Stripe Checkout
       const stripe = await getStripe()
       if (!stripe) {
         throw new Error('Failed to load Stripe')
@@ -123,9 +100,9 @@ export default function PlanPage() {
       if (error) {
         throw error
       }
-    } catch (err) {
-      console.error('Error:', err)
-      toast.error('Failed to start checkout. Please try again.')
+    } catch (err: any) {
+      console.error('Checkout error:', err)
+      toast.error(err.message || 'Failed to start checkout. Please try again.')
       setLoading(false)
       setSelectedPlan(null)
     }
@@ -139,56 +116,75 @@ export default function PlanPage() {
           Step 2 of 3
         </div>
         <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Choose your plan</h2>
-        <p className="text-gray-500 mt-2 text-sm">All plans include a 14-day free trial. Credit card required.</p>
+        <div className="flex items-center justify-center gap-2 mt-3">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <p className="text-amber-700 text-sm font-medium bg-amber-50 px-3 py-1 rounded-full">
+            Free during beta — no charge until launch
+          </p>
+        </div>
+        <p className="text-gray-500 mt-2 text-sm">Pick the plan that fits your needs. You won't be charged during beta.</p>
       </div>
 
-      {/* Plans Grid */}
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {Object.entries(PLANS).map(([planKey, plan]) => (
           <div
             key={planKey}
             className={`relative rounded-2xl border-2 transition-all ${
               plan.highlighted
-                ? 'border-indigo-500 bg-indigo-50 shadow-xl scale-105'
-                : 'border-gray-200 bg-white hover:border-gray-300'
+                ? 'border-indigo-500 shadow-lg md:scale-105'
+                : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
             }`}
+            style={plan.highlighted ? {
+              background: 'linear-gradient(180deg, #eef2ff 0%, #ffffff 40%)',
+            } : undefined}
           >
             {plan.highlighted && (
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
                 Most Popular
               </div>
             )}
 
-            <div className="p-8">
-              <h3 className="text-2xl font-bold text-gray-900">{plan.name}</h3>
-              <p className="text-gray-600 text-sm mt-2">{plan.description}</p>
+            <div className="p-6">
+              <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
+              <p className="text-gray-500 text-sm mt-1 leading-snug">{plan.description}</p>
 
-              <div className="mt-6 mb-8">
-                <span className="text-5xl font-bold text-gray-900">{plan.price}</span>
-                {plan.price !== 'Custom' && <span className="text-gray-600">/month</span>}
+              <div className="mt-5 mb-6">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-gray-900">{plan.price}</span>
+                  <span className="text-gray-400 text-sm line-through">/mo</span>
+                </div>
+                <p className="text-green-600 text-xs font-semibold mt-1">FREE during beta</p>
               </div>
 
               <button
                 onClick={() => handleSelectPlan(planKey as Plan)}
-                disabled={loading && selectedPlan === planKey}
-                className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm transition-all mb-8 disabled:opacity-50 ${
+                disabled={loading}
+                className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm transition-all mb-6 disabled:opacity-50 disabled:cursor-not-allowed ${
                   plan.highlighted
-                    ? 'text-white hover:shadow-lg'
+                    ? 'text-white hover:shadow-lg hover:opacity-90'
                     : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                 }`}
                 style={plan.highlighted ? {
                   background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                  boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
+                  boxShadow: '0 4px 16px rgba(79, 70, 229, 0.3)',
                 } : undefined}
               >
-                {loading && selectedPlan === planKey ? 'Processing...' : plan.cta}
+                {loading && selectedPlan === planKey ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : plan.cta}
               </button>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {plan.features.map((feature, idx) => (
-                  <div key={idx} className="flex items-start gap-3">
-                    <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-gray-700 text-sm">{feature}</span>
+                  <div key={idx} className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                    <span className="text-gray-600 text-sm leading-snug">{feature}</span>
                   </div>
                 ))}
               </div>
@@ -197,9 +193,9 @@ export default function PlanPage() {
         ))}
       </div>
 
-      <div className="text-center space-y-4">
-        <p className="text-gray-600">
-          Can't decide? <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">Start for free</Link>
+      <div className="text-center">
+        <p className="text-gray-500 text-sm">
+          Questions? <Link href="mailto:support@heywren.ai" className="text-indigo-600 hover:text-indigo-700 font-medium">Contact us</Link>
         </p>
       </div>
     </div>
