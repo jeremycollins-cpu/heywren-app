@@ -35,8 +35,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const clientId = process.env.AZURE_CLIENT_ID || process.env.AZURE_AD_CLIENT_ID
-    const clientSecret = process.env.AZURE_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET
+    const clientId = process.env.AZURE_CLIENT_ID
+    const clientSecret = process.env.AZURE_CLIENT_SECRET
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
 
     if (!clientId || !clientSecret) {
