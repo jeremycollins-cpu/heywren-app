@@ -63,29 +63,7 @@ const coaches: CoachProfile[] = [
   },
 ]
 
-const alerts = [
-  {
-    id: '1',
-    coach: 'Executive Coach',
-    signal: 'Over-indexing on ops',
-    description: 'You\'ve spent 14 hours this week on operational tasks vs 2 hours on strategic planning',
-    severity: 'high',
-  },
-  {
-    id: '2',
-    coach: 'Revenue Coach',
-    signal: 'Pipeline velocity declining',
-    description: 'Deal progression slowed 23% week-over-week. Check in with Sales team on blockers.',
-    severity: 'medium',
-  },
-  {
-    id: '3',
-    coach: 'Growth Coach',
-    signal: 'Campaign launch delayed',
-    description: 'Q2 campaign still waiting on final creative assets from Design team',
-    severity: 'medium',
-  },
-]
+const alerts: any[] = []
 
 export default function CoachPage() {
   const [selectedCoach, setSelectedCoach] = useState<string | null>(null)
@@ -99,38 +77,45 @@ export default function CoachPage() {
         </p>
       </div>
 
-      {/* Active Alerts */}
+      {/* Active Alerts - Empty State */}
       <div className="space-y-3">
         <h2 className="text-lg font-semibold text-gray-900">Active Signals</h2>
-        {alerts.map((alert) => (
-          <div
-            key={alert.id}
-            className={`border-l-4 rounded-lg p-4 bg-white ${
-              alert.severity === 'high'
-                ? 'border-red-500 bg-red-50'
-                : 'border-yellow-500 bg-yellow-50'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                alert.severity === 'high' ? 'text-red-600' : 'text-yellow-600'
-              }`} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-gray-900">{alert.coach}</span>
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
-                    alert.severity === 'high'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {alert.signal}
-                  </span>
+        {alerts.length === 0 ? (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-8 text-center">
+            <p className="text-gray-600 mb-4">Your AI coaches are learning from your activity. Signals will appear once you have commitment and interaction data.</p>
+            <p className="text-sm text-gray-500">Start by creating commitments or connecting integrations to activate your coaches.</p>
+          </div>
+        ) : (
+          alerts.map((alert: any) => (
+            <div
+              key={alert.id}
+              className={`border-l-4 rounded-lg p-4 bg-white ${
+                alert.severity === 'high'
+                  ? 'border-red-500 bg-red-50'
+                  : 'border-yellow-500 bg-yellow-50'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                  alert.severity === 'high' ? 'text-red-600' : 'text-yellow-600'
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-900">{alert.coach}</span>
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
+                      alert.severity === 'high'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {alert.signal}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-700 mt-1">{alert.description}</p>
                 </div>
-                <p className="text-sm text-gray-700 mt-1">{alert.description}</p>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Coach Profiles Grid */}

@@ -64,9 +64,10 @@ const achievements: Achievement[] = [
 ]
 
 export default function AchievementsPage() {
-  const [streakDays, setStreakDays] = useState(23)
-  const [totalXP, setTotalXP] = useState(4250)
-  const [level, setLevel] = useState(8)
+  const [streakDays, setStreakDays] = useState(0)
+  const [totalXP, setTotalXP] = useState(0)
+  const [level, setLevel] = useState(1)
+  const [hasActivity, setHasActivity] = useState(false)
 
   const getRarityColor = (rarity: string) => {
     switch (rarity) {
@@ -79,6 +80,32 @@ export default function AchievementsPage() {
       default:
         return 'border-gray-300 bg-gray-50'
     }
+  }
+
+  if (!hasActivity) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Achievements</h1>
+          <p className="text-gray-600 mt-1">
+            Milestones earned through consistent follow-through — gamification inspired by Strava
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+            <Trophy className="w-8 h-8 text-indigo-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Unlock Achievements</h3>
+          <p className="text-gray-500 max-w-md mb-6">
+            Complete your first commitment to start earning achievements, building streaks, and gaining XP. Track your progress as you improve your follow-through skills.
+          </p>
+          <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            View Commitments
+          </a>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -130,32 +157,13 @@ export default function AchievementsPage() {
         </div>
       </div>
 
-      {/* Leaderboard */}
+      {/* Leaderboard - Team feature coming soon */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Team Leaderboard</h2>
-        <div className="space-y-3">
-          {[
-            { rank: 1, name: 'You', streak: 23, xp: 4250, emoji: '🏆' },
-            { rank: 2, name: 'Sarah Chen', streak: 18, xp: 3890, emoji: '⭐' },
-            { rank: 3, name: 'Michael Rodriguez', streak: 15, xp: 3120, emoji: '⭐' },
-            { rank: 4, name: 'Emma Thompson', streak: 12, xp: 2950, emoji: '⭐' },
-          ].map((user) => (
-            <div key={user.rank} className={`flex items-center justify-between p-4 rounded-lg ${user.rank === 1 ? 'bg-indigo-50 border border-indigo-200' : 'border border-gray-200'}`}>
-              <div className="flex items-center gap-3 flex-1">
-                <span className="text-2xl">{user.emoji}</span>
-                <div>
-                  <p className={`font-semibold ${user.rank === 1 ? 'text-indigo-900' : 'text-gray-900'}`}>
-                    #{user.rank} {user.name}
-                  </p>
-                  <p className="text-xs text-gray-600">{user.streak}-day streak • {user.xp.toLocaleString()} XP</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <Flame className={`w-5 h-5 ${user.rank === 1 ? 'text-red-500' : 'text-gray-400'}`} />
-              </div>
-            </div>
-          ))}
-        </div>
+        <p className="text-gray-600 mb-4">Team leaderboard coming soon. Invite team members to start competing and tracking progress together.</p>
+        <a href="/dashboard/settings" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+          Invite Team Members
+        </a>
       </div>
 
       {/* Achievements Grid */}

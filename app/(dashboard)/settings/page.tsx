@@ -1,15 +1,36 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Settings as SettingsIcon, Bell, Lock, Users, Mail } from 'lucide-react'
 
 export default function SettingsPage() {
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
   const [notifications, setNotifications] = useState({
     slack: true,
     email: true,
     overdue: true,
     weekly: true,
   })
+  const supabase = createClient()
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        setUser(user)
+      } catch (err) {
+        console.error('Error fetching user:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUser()
+  }, [supabase])
 
   return (
     <div className="space-y-6">
@@ -32,7 +53,7 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Full Name</label>
             <input
               type="text"
-              defaultValue="Alex Johnson"
+              defaultValue={user?.user_metadata?.full_name || ''}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -41,9 +62,11 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Email</label>
             <input
               type="email"
-              defaultValue="alex@company.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              defaultValue={user?.email || ''}
+              disabled
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:outline-none"
             />
+            <p className="text-xs text-gray-500 mt-1">Contact support to change email</p>
           </div>
 
           <div>
@@ -173,24 +196,17 @@ export default function SettingsPage() {
 
           <div>
             <h3 className="text-sm font-medium text-gray-900 mb-4">Team Members</h3>
+            <p className="text-sm text-gray-600 mb-4">Team management coming soon. Invite users through Slack or email integrations.</p>
             <div className="space-y-3">
-              {[
-                { name: 'Sarah Chen', role: 'Admin', email: 'sarah@company.com' },
-                { name: 'Michael Rodriguez', role: 'Member', email: 'michael@company.com' },
-                { name: 'Emma Thompson', role: 'Member', email: 'emma@company.com' },
-              ].map((member) => (
-                <div key={member.email} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+              {user && (
+                <div className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">{member.name}</p>
-                    <p className="text-sm text-gray-600">{member.email}</p>
+                    <p className="font-medium text-gray-900">{user?.user_metadata?.full_name || 'You'}</p>
+                    <p className="text-sm text-gray-600">{user?.email}</p>
                   </div>
-                  <select defaultValue={member.role} className="px-3 py-1 text-sm border border-gray-300 rounded-lg">
-                    <option>Admin</option>
-                    <option>Member</option>
-                    <option>Viewer</option>
-                  </select>
+                  <span className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded-lg font-medium">Owner</span>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -207,30 +223,10 @@ export default function SettingsPage() {
           Connected Integrations
         </h2>
 
-        <div className="space-y-3">
-          {[
-            { name: 'Slack', connected: true },
-            { name: 'Outlook', connected: true },
-            { name: 'Google Calendar', connected: true },
-            { name: 'Asana', connected: true },
-            { name: 'Salesforce', connected: false },
-            { name: 'Jira', connected: false },
-          ].map((integration) => (
-            <div key={integration.name} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gray-200 rounded-lg" />
-                <p className="font-medium text-gray-900">{integration.name}</p>
-              </div>
-              <button className={`px-4 py-2 rounded-lg transition ${
-                integration.connected
-                  ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
-              }`}>
-                {integration.connected ? 'Disconnect' : 'Connect'}
-              </button>
-            </div>
-          ))}
-        </div>
+        <p className="text-sm text-gray-600 mb-4">Manage your integrations from the Integrations page.</p>
+        <a href="/dashboard/integrations" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+          Go to Integrations
+        </a>
       </div>
     </div>
   )

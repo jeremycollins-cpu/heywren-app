@@ -11,29 +11,7 @@ interface Handoff {
   status: 'pending' | 'completed'
 }
 
-const mockHandoffs: Handoff[] = [
-  {
-    id: '1',
-    person: 'Sarah Chen',
-    dates: 'Mar 24 - Mar 31',
-    commitments: 12,
-    status: 'completed',
-  },
-  {
-    id: '2',
-    person: 'Michael Rodriguez',
-    dates: 'Apr 14 - Apr 21',
-    commitments: 8,
-    status: 'pending',
-  },
-  {
-    id: '3',
-    person: 'Emma Thompson',
-    dates: 'May 5 - May 19',
-    commitments: 15,
-    status: 'pending',
-  },
-]
+const mockHandoffs: Handoff[] = []
 
 export default function HandoffPage() {
   const [expandedHandoff, setExpandedHandoff] = useState<string | null>(null)
@@ -49,7 +27,21 @@ export default function HandoffPage() {
 
       {/* Handoff Items */}
       <div className="space-y-3">
-        {mockHandoffs.map((handoff) => (
+        {mockHandoffs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+              <Hand className="w-8 h-8 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No PTO handoffs scheduled</h3>
+            <p className="text-gray-500 max-w-md mb-6">
+              When you schedule time off in your calendar, HeyWren will automatically surface all open commitments and help you delegate to the right team members. Plan your next PTO and ensure zero commitments slip through.
+            </p>
+            <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+              View Your Commitments
+            </a>
+          </div>
+        ) : (
+          mockHandoffs.map((handoff) => (
           <div
             key={handoff.id}
             onClick={() => setExpandedHandoff(expandedHandoff === handoff.id ? null : handoff.id)}
@@ -146,7 +138,8 @@ export default function HandoffPage() {
               </>
             )}
           </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Info Box */}

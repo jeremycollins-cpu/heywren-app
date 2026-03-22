@@ -12,48 +12,7 @@ interface Playbook {
   enabled: boolean
 }
 
-const mockPlaybooks: Playbook[] = [
-  {
-    id: '1',
-    name: 'Customer Success Follow-up',
-    description: 'Auto-send follow-up after customer calls',
-    trigger: 'When a call with customer ends',
-    action: 'Schedule follow-up email in 24 hours',
-    enabled: true,
-  },
-  {
-    id: '2',
-    name: 'Stalled Deal Alert',
-    description: 'Flag deals that haven\'t moved in 14 days',
-    trigger: 'Salesforce deal unchanged for 14 days',
-    action: 'Create Slack reminder and ping manager',
-    enabled: true,
-  },
-  {
-    id: '3',
-    name: 'Weekly Executive Summary',
-    description: 'Auto-generate weekly status for leadership',
-    trigger: 'Every Friday at 5pm',
-    action: 'Send summary to exec email list',
-    enabled: true,
-  },
-  {
-    id: '4',
-    name: 'Onboarding Checkpoint',
-    description: 'Track new employee onboarding progress',
-    trigger: 'New user added to Slack',
-    action: 'Create checklist and track completion',
-    enabled: false,
-  },
-  {
-    id: '5',
-    name: 'At-Risk Account Alert',
-    description: 'Flag accounts showing churn signals',
-    trigger: 'Account engagement drops 40%',
-    action: 'Alert customer success team',
-    enabled: true,
-  },
-]
+const mockPlaybooks: Playbook[] = []
 
 export default function PlaybooksPage() {
   const [playbooks, setPlaybooks] = useState(mockPlaybooks)
@@ -101,7 +60,22 @@ export default function PlaybooksPage() {
 
       {/* Playbooks List */}
       <div className="space-y-3">
-        {playbooks.map((playbook) => (
+        {playbooks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+              <FileText className="w-8 h-8 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No playbooks yet</h3>
+            <p className="text-gray-500 max-w-md mb-6">
+              Create automation rules to handle repetitive workflows. Define triggers based on calendar, email, or tool events and set actions like notifications or automated messages.
+            </p>
+            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+              <Plus className="w-5 h-5" />
+              Create Your First Playbook
+            </button>
+          </div>
+        ) : (
+          playbooks.map((playbook) => (
           <div
             key={playbook.id}
             className={`border rounded-lg p-6 transition-all ${
@@ -151,7 +125,8 @@ export default function PlaybooksPage() {
               </div>
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Info Box */}

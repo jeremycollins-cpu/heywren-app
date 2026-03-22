@@ -69,16 +69,23 @@ export default function SignupPage() {
   return (
     <div className="w-full space-y-6">
       <div className="text-center mb-8">
-        <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium mb-2">
+        <div className="inline-block bg-gradient-to-r from-indigo-100 to-violet-100 text-indigo-700 px-4 py-2 rounded-full text-sm font-semibold mb-3">
           Step 1 of 3
         </div>
         <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
-        <p className="text-gray-600 mt-2">Get started with HeyWren in minutes</p>
+        <p className="text-gray-600 mt-2">Join thousands using HeyWren to follow through</p>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex gap-2">
+        <div className="flex-1 h-1 bg-indigo-600 rounded-full" />
+        <div className="flex-1 h-1 bg-gray-200 rounded-full" />
+        <div className="flex-1 h-1 bg-gray-200 rounded-full" />
       </div>
 
       <form onSubmit={handleSignup} className="space-y-4">
         <div>
-          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="fullName" className="block text-sm font-semibold text-gray-900 mb-2">
             Full Name
           </label>
           <input
@@ -87,13 +94,13 @@ export default function SignupPage() {
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
             placeholder="John Doe"
           />
         </div>
 
         <div>
-          <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="companyName" className="block text-sm font-semibold text-gray-900 mb-2">
             Company Name
           </label>
           <input
@@ -102,13 +109,13 @@ export default function SignupPage() {
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
             placeholder="Acme Inc"
           />
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="email" className="block text-sm font-semibold text-gray-900 mb-2">
             Work Email
           </label>
           <input
@@ -117,13 +124,13 @@ export default function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
             placeholder="you@company.com"
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="password" className="block text-sm font-semibold text-gray-900 mb-2">
             Password
           </label>
           <input
@@ -132,13 +139,13 @@ export default function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
             placeholder="••••••••"
           />
         </div>
 
         <div>
-          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-900 mb-2">
             Confirm Password
           </label>
           <input
@@ -147,7 +154,7 @@ export default function SignupPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white text-gray-900"
             placeholder="••••••••"
           />
         </div>
@@ -155,7 +162,7 @@ export default function SignupPage() {
         <button
           type="submit"
           disabled={loading}
-          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-lg hover:from-indigo-700 hover:to-violet-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Creating account...' : 'Continue'}
         </button>
@@ -163,16 +170,16 @@ export default function SignupPage() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
+          <div className="w-full border-t border-gray-200"></div>
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-gradient-to-br from-indigo-50 via-white to-violet-50 text-gray-500">
+          <span className="px-2 bg-white text-gray-600">
             Already have an account?
           </span>
         </div>
       </div>
 
-      <Link href="/login" className="btn-secondary w-full text-center">
+      <Link href="/login" className="w-full px-4 py-3 border-2 border-indigo-200 text-indigo-600 font-semibold rounded-lg hover:bg-indigo-50 transition text-center">
         Sign In
       </Link>
     </div>

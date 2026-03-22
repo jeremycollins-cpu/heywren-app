@@ -12,40 +12,7 @@ interface Briefing {
   keyTopics: string[]
 }
 
-const mockBriefings: Briefing[] = [
-  {
-    id: '1',
-    meeting: 'Executive Sync',
-    time: '2:00 PM Today',
-    attendees: 5,
-    openCommitments: 3,
-    keyTopics: ['Q2 revenue targets', 'Hiring plan', 'Product roadmap'],
-  },
-  {
-    id: '2',
-    meeting: 'Board Prep',
-    time: 'Tomorrow 10:00 AM',
-    attendees: 7,
-    openCommitments: 8,
-    keyTopics: ['YoY growth metrics', 'Investor updates', 'Strategic initiatives'],
-  },
-  {
-    id: '3',
-    meeting: 'Product Planning',
-    time: 'Tomorrow 3:00 PM',
-    attendees: 12,
-    openCommitments: 5,
-    keyTopics: ['Roadmap alignment', 'Feature prioritization', 'Technical debt'],
-  },
-  {
-    id: '4',
-    meeting: 'Customer Advisory Board',
-    time: 'Next Wed 1:00 PM',
-    attendees: 8,
-    openCommitments: 4,
-    keyTopics: ['Product feedback', 'Feature requests', 'Account expansion'],
-  },
-]
+const mockBriefings: Briefing[] = []
 
 export default function BriefingsPage() {
   const [expandedBriefing, setExpandedBriefing] = useState<string | null>(null)
@@ -61,7 +28,21 @@ export default function BriefingsPage() {
 
       {/* Upcoming Briefings */}
       <div className="space-y-3">
-        {mockBriefings.map((briefing) => (
+        {mockBriefings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+              <Briefcase className="w-8 h-8 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No upcoming meetings</h3>
+            <p className="text-gray-500 max-w-md mb-6">
+              Connect your calendar to Slack or Outlook to automatically generate context briefings for your upcoming meetings. HeyWren will surface relevant commitments and relationships for each meeting.
+            </p>
+            <a href="/dashboard/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+              Connect Calendar
+            </a>
+          </div>
+        ) : (
+          mockBriefings.map((briefing) => (
           <div
             key={briefing.id}
             onClick={() => setExpandedBriefing(expandedBriefing === briefing.id ? null : briefing.id)}
@@ -141,7 +122,8 @@ export default function BriefingsPage() {
               )}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Briefing Features */}

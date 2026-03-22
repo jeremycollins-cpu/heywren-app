@@ -13,53 +13,7 @@ interface Draft {
   status: 'ready' | 'pending' | 'scheduled'
 }
 
-const mockDrafts: Draft[] = [
-  {
-    id: '1',
-    recipient: 'Sarah Chen',
-    channel: '#sales',
-    subject: 'Q2 Pipeline Review - Action Items',
-    preview: 'Hi Sarah, following up on our Q2 review. We discussed 5 key action items...',
-    createdAt: '2 hours ago',
-    status: 'ready',
-  },
-  {
-    id: '2',
-    recipient: 'Michael Rodriguez',
-    channel: 'Slack DM',
-    subject: 'Budget Approval - FY2025 Plan',
-    preview: 'Thanks for reviewing the budget proposal. As discussed, we\'re proposing...',
-    createdAt: '4 hours ago',
-    status: 'ready',
-  },
-  {
-    id: '3',
-    recipient: 'Product Team',
-    channel: '#product',
-    subject: 'Roadmap Update - Quarterly Goals',
-    preview: 'Team, here\'s the updated roadmap incorporating feedback from...',
-    createdAt: '1 day ago',
-    status: 'pending',
-  },
-  {
-    id: '4',
-    recipient: 'Investor Group',
-    channel: 'Email',
-    subject: 'Board Meeting - Recap & Next Steps',
-    preview: 'Thank you all for attending the board meeting. Attached is...',
-    createdAt: '3 days ago',
-    status: 'scheduled',
-  },
-  {
-    id: '5',
-    recipient: 'Emma Thompson',
-    channel: 'Slack DM',
-    subject: 'Code Review Feedback - PR #2847',
-    preview: 'Thanks for submitting the PR. I\'ve reviewed the changes and have...',
-    createdAt: '5 days ago',
-    status: 'pending',
-  },
-]
+const mockDrafts: Draft[] = []
 
 export default function DraftQueuePage() {
   const [drafts, setDrafts] = useState(mockDrafts)
@@ -113,7 +67,21 @@ export default function DraftQueuePage() {
 
       {/* Drafts List */}
       <div className="space-y-3">
-        {drafts.map((draft) => (
+        {drafts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+              <MessageSquare className="w-8 h-8 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No drafts yet</h3>
+            <p className="text-gray-500 max-w-md mb-6">
+              HeyWren will pre-write follow-ups based on your open commitments. Once you have commitments tracked, you'll see AI-generated drafts here that you can review and send.
+            </p>
+            <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+              Create Commitments
+            </a>
+          </div>
+        ) : (
+          drafts.map((draft) => (
           <div
             key={draft.id}
             onClick={() => setSelectedDraft(selectedDraft === draft.id ? null : draft.id)}
@@ -168,7 +136,8 @@ export default function DraftQueuePage() {
               </div>
             )}
           </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Info Box */}

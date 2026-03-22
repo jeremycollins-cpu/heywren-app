@@ -13,53 +13,7 @@ interface Relationship {
   health: number
 }
 
-const mockRelationships: Relationship[] = [
-  {
-    id: '1',
-    name: 'Sarah Chen',
-    title: 'VP of Product',
-    lastInteraction: '2 days ago',
-    sentiment: 'positive',
-    commitments: 5,
-    health: 92,
-  },
-  {
-    id: '2',
-    name: 'Michael Rodriguez',
-    title: 'Head of Sales',
-    lastInteraction: '1 week ago',
-    sentiment: 'neutral',
-    commitments: 3,
-    health: 65,
-  },
-  {
-    id: '3',
-    name: 'Emma Thompson',
-    title: 'Engineering Lead',
-    lastInteraction: '3 days ago',
-    sentiment: 'positive',
-    commitments: 8,
-    health: 88,
-  },
-  {
-    id: '4',
-    name: 'James Park',
-    title: 'CEO',
-    lastInteraction: '4 days ago',
-    sentiment: 'positive',
-    commitments: 12,
-    health: 95,
-  },
-  {
-    id: '5',
-    name: 'Lisa Wang',
-    title: 'Finance Director',
-    lastInteraction: '1 week ago',
-    sentiment: 'neutral',
-    commitments: 2,
-    health: 72,
-  },
-]
+const mockRelationships: Relationship[] = []
 
 export default function RelationshipsPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -144,7 +98,21 @@ export default function RelationshipsPage() {
 
       {/* Relationships List */}
       <div className="space-y-4">
-        {filtered.map((relationship) => (
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+              <Users className="w-8 h-8 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No relationships tracked yet</h3>
+            <p className="text-gray-500 max-w-md mb-6">
+              Connect Slack or Outlook to start automatically tracking relationship health based on your interactions and follow-through on commitments.
+            </p>
+            <a href="/dashboard/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+              Connect an Integration
+            </a>
+          </div>
+        ) : (
+          filtered.map((relationship) => (
           <div key={relationship.id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
@@ -190,7 +158,8 @@ export default function RelationshipsPage() {
               </div>
             </div>
           </div>
-        ))}
+        ))
+        )}
       </div>
     </div>
   )
