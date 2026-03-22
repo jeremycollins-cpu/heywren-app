@@ -39,9 +39,13 @@ function CallbackContent() {
           }),
         })
 
+        const result = await response.json()
+
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || 'Failed to set up account')
+          // Show full error details for debugging
+          const details = result.details ? ` (${result.details})` : ''
+          const hint = result.hint && result.hint !== 'none' ? ` Hint: ${result.hint}` : ''
+          throw new Error(`${result.error || 'Failed to set up account'}${details}${hint}`)
         }
 
         sessionStorage.removeItem('signupUserId')
@@ -88,7 +92,7 @@ function CallbackContent() {
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">{error}</p>
+          <p className="text-red-800 text-sm break-words">{error}</p>
           <button
             onClick={() => window.location.href = '/signup'}
             className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
