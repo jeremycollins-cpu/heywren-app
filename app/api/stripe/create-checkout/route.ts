@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         .eq('id', teamId)
     }
 
-    // Create checkout session with trial
+    // Create checkout session — auto-apply early access coupon
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
@@ -85,8 +85,12 @@ export async function POST(request: NextRequest) {
         },
       ],
       mode: 'subscription',
+      discounts: [
+        {
+          coupon: process.env.STRIPE_EARLY_ACCESS_COUPON_ID || 'r6pxCjPz',
+        },
+      ],
       subscription_data: {
-        trial_period_days: 14,
         metadata: {
           teamId,
         },
