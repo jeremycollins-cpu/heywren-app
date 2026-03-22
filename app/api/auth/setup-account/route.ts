@@ -54,9 +54,6 @@ export async function POST(request: NextRequest) {
       .insert([{
         name: teamName,
         slug: `team-${Date.now()}`,
-        subscription_plan: resolvedPlan,
-        stripe_customer_id: checkoutSession.customer as string,
-        subscription_status: 'active',
       }])
       .select()
       .single()
