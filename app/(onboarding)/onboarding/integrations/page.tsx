@@ -3,12 +3,122 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, Zap, AlertCircle } from 'lucide-react'
+import { CheckCircle2, Zap, AlertCircle, Shield, ChevronDown, ChevronUp, Copy, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
  
 interface Integration {
   id: string
   provider: string
+}
+ 
+const OUTLOOK_ADMIN_CONSENT_URL = `https://login.microsoftonline.com/common/adminconsent?client_id=${process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || '328441fc-bec2-4dcc-a9b6-0910b84d3ffe'}&redirect_uri=${encodeURIComponent(process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai')}`
+ 
+function OnboardingITGuide({ showSlack, showOutlook }: { showSlack: boolean; showOutlook: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+ 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(label)
+    toast.success(`${label} copied!`)
+    setTimeout(() => setCopied(null), 3000)
+  }
+ 
+  const tools = [showSlack && 'Slack', showOutlook && 'Outlook'].filter(Boolean).join(' or ')
+ 
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-start gap-3 text-left"
+      >
+        <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="font-semibold text-blue-900 text-sm">Need admin approval to connect {tools}?</p>
+          <p className="text-xs text-blue-700 mt-1">
+            Most organizations require a workspace or IT admin to approve new apps. This is normal — click here to see how it works.
+          </p>
+        </div>
+        {expanded ? (
+          <ChevronUp className="w-4 h-4 text-blue-600 flex-shrink-0 mt-1" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-blue-600 flex-shrink-0 mt-1" />
+        )}
+      </button>
+ 
+      {expanded && (
+        <div className="mt-4 ml-8 space-y-5">
+          {/* General Steps */}
+          <div className="space-y-3">
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">1</span>
+              <div>
+                <p className="text-sm font-medium text-blue-900">Click "Connect" on Slack or Outlook above</p>
+                <p className="text-xs text-blue-700 mt-0.5">You'll be redirected to the service's authorization page</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">2</span>
+              <div>
+                <p className="text-sm font-medium text-blue-900">If you see "Approval required" or "Request to install" — submit the request</p>
+                <p className="text-xs text-blue-700 mt-0.5">Add a message like: "I need HeyWren to track my commitments and follow-ups." Your admin will be notified automatically.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-xs font-bold">3</span>
+              <div>
+                <p className="text-sm font-medium text-blue-900">Once approved, come back and click "Connect" again</p>
+                <p className="text-xs text-blue-700 mt-0.5">You can skip this step for now and add integrations later from Settings → Integrations</p>
+              </div>
+            </div>
+          </div>
+ 
+          {/* Slack-specific guidance */}
+          {showSlack && (
+            <div className="bg-white border border-blue-200 rounded-lg p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: '#4A154B' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z" fill="white"/></svg>
+                </div>
+                <p className="text-xs font-semibold text-blue-900">For Slack workspace admins</p>
+              </div>
+              <p className="text-xs text-blue-700">
+                A Slack workspace admin needs to approve HeyWren in <strong>Slack Admin Dashboard → Manage Apps</strong>. Once approved, all workspace members can connect.
+              </p>
+            </div>
+          )}
+ 
+          {/* Outlook-specific guidance */}
+          {showOutlook && (
+            <div className="bg-white border border-blue-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: '#0078D4' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M24 7.387v10.478c0 .23-.08.424-.238.583a.793.793 0 01-.584.238h-8.322V6.566h8.322c.228 0 .422.08.584.238.159.16.238.353.238.583z" fill="white"/></svg>
+                </div>
+                <p className="text-xs font-semibold text-blue-900">For Microsoft 365 / IT admins</p>
+              </div>
+              <p className="text-xs text-blue-700">
+                Share this link with your IT admin to approve HeyWren for your entire organization. We only need <strong>read-only</strong> access — we never send emails or modify calendars.
+              </p>
+              <button
+                onClick={() => copyToClipboard(OUTLOOK_ADMIN_CONSENT_URL, 'Admin consent link')}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 hover:bg-blue-200 border border-blue-300 rounded-lg text-xs font-medium text-blue-900 transition"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {copied === 'Admin consent link' ? 'Copied!' : 'Copy link for IT admin'}
+              </button>
+            </div>
+          )}
+ 
+          <div className="bg-blue-100/50 rounded-lg p-3">
+            <p className="text-xs text-blue-800">
+              <strong>What permissions does HeyWren need?</strong> Read-only access to your messages, email, and calendar so we can detect commitments and follow-ups. We never send messages, emails, or modify your calendar on your behalf.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
  
 function IntegrationsSetupContent() {
@@ -246,6 +356,11 @@ function IntegrationsSetupContent() {
           </button>
         </div>
       </div>
+ 
+      {/* IT Approval Guidance */}
+      {(!isSlackConnected || !isOutlookConnected) && (
+        <OnboardingITGuide showSlack={!isSlackConnected} showOutlook={!isOutlookConnected} />
+      )}
  
       {/* Warning if no integrations */}
       {integrations.length === 0 && (
