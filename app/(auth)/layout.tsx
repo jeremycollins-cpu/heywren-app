@@ -13,8 +13,8 @@ export default function AuthLayout({
         <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-[0.05]" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
       </div>
 
-      <div className="relative z-10 w-full max-w-md">
-        {/* Logo - uses actual HeyWren SVG from marketing site */}
+      <div className="relative z-10 w-full max-w-4xl">
+        {/* Logo */}
         <div className="text-center mb-10">
           <div className="flex justify-center mb-5">
             <WrenFullLogoWhite width={180} />
@@ -25,8 +25,10 @@ export default function AuthLayout({
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl p-8" style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.1)' }}>
-          {children}
+        <div className="flex justify-center">
+          <div className="bg-white rounded-2xl p-8 w-full" style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.1)' }}>
+            {children}
+          </div>
         </div>
 
         {/* Footer */}
