@@ -66,7 +66,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="w-full space-y-5" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+    <div className="w-full max-w-md mx-auto space-y-5" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
       <div className="text-center mb-4">
         <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold mb-3">
           <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
