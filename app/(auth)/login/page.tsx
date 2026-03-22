@@ -42,7 +42,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full space-y-6" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+    <div className="w-full max-w-md mx-auto space-y-6" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Welcome back</h2>
         <p className="text-gray-500 mt-2 text-sm">Sign in to your HeyWren account</p>
