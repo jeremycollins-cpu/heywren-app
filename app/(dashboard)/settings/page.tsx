@@ -224,7 +224,7 @@ export default function SettingsPage() {
         </h2>
 
         <p className="text-sm text-gray-600 mb-4">Manage your integrations from the Integrations page.</p>
-        <a href="/dashboard/integrations" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+        <a href="/integrations" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
           Go to Integrations
         </a>
       </div>

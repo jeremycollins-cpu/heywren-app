@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine redirect URL based on where the connection was initiated
-    let redirectUrl = '/dashboard/integrations?status=success'
+    let redirectUrl = '/integrations?status=success'
     if (redirect === 'onboarding') {
       redirectUrl = '/onboarding/integrations?slack=connected'
     }

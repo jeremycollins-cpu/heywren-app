@@ -36,7 +36,7 @@ export default function HandoffPage() {
             <p className="text-gray-500 max-w-md mb-6">
               When you schedule time off in your calendar, HeyWren will automatically surface all open commitments and help you delegate to the right team members. Plan your next PTO and ensure zero commitments slip through.
             </p>
-            <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
               View Your Commitments
             </a>
           </div>

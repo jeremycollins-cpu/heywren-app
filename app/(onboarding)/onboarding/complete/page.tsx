@@ -154,7 +154,7 @@ export default function OnboardingCompletePage() {
 
       {/* CTA Button */}
       <Link
-        href="/dashboard"
+        href="/"
         className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-all flex items-center justify-center gap-2"
       >
         Go to Dashboard
@@ -166,13 +166,13 @@ export default function OnboardingCompletePage() {
         <p className="text-sm text-gray-600">Questions? Need help?</p>
         <div className="flex flex-col gap-2 text-sm">
           <Link
-            href="/dashboard/integrations"
+            href="/integrations"
             className="text-indigo-600 hover:text-indigo-700 font-medium"
           >
             Manage Integrations
           </Link>
           <Link
-            href="/dashboard/settings"
+            href="/settings"
             className="text-indigo-600 hover:text-indigo-700 font-medium"
           >
             View Settings

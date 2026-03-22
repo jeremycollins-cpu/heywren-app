@@ -41,28 +41,28 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
   }, [supabase])
 
   const mainLinks = [
-    { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
-    { href: '/dashboard/commitments', label: 'Commitments', icon: CheckCircle2 },
-    { href: '/dashboard/relationships', label: 'Relationships', icon: Users },
-    { href: '/dashboard/coach', label: 'Coach', icon: Brain },
-    { href: '/dashboard/weekly', label: 'Weekly', icon: Calendar },
-    { href: '/dashboard/playbooks', label: 'Playbooks', icon: FileText },
-    { href: '/dashboard/draft-queue', label: 'Draft Queue', icon: Edit },
-    { href: '/dashboard/briefings', label: 'Briefings', icon: Briefcase },
-    { href: '/dashboard/handoff', label: 'Handoff', icon: Hand },
-    { href: '/dashboard/achievements', label: 'Achievements', icon: Trophy },
-    { href: '/dashboard/integrations', label: 'Integrations', icon: Zap },
+    { href: '/', label: 'Dashboard', icon: BarChart3 },
+    { href: '/commitments', label: 'Commitments', icon: CheckCircle2 },
+    { href: '/relationships', label: 'Relationships', icon: Users },
+    { href: '/coach', label: 'Coach', icon: Brain },
+    { href: '/weekly', label: 'Weekly', icon: Calendar },
+    { href: '/playbooks', label: 'Playbooks', icon: FileText },
+    { href: '/draft-queue', label: 'Draft Queue', icon: Edit },
+    { href: '/briefings', label: 'Briefings', icon: Briefcase },
+    { href: '/handoff', label: 'Handoff', icon: Hand },
+    { href: '/achievements', label: 'Achievements', icon: Trophy },
+    { href: '/integrations', label: 'Integrations', icon: Zap },
   ]
 
   const adminLinks = [
-    { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
-    { href: '/dashboard/team-management', label: 'Team Management', icon: Users },
-    { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+    { href: '/billing', label: 'Billing', icon: CreditCard },
+    { href: '/team-management', label: 'Team Management', icon: Users },
+    { href: '/settings', label: 'Settings', icon: Settings },
   ]
 
   const isActive = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
+    if (href === '/') {
+      return pathname === '/'
     }
     return pathname.startsWith(href)
   }

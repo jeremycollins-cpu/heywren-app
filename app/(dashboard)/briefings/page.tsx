@@ -37,7 +37,7 @@ export default function BriefingsPage() {
             <p className="text-gray-500 max-w-md mb-6">
               Connect your calendar to Slack or Outlook to automatically generate context briefings for your upcoming meetings. HeyWren will surface relevant commitments and relationships for each meeting.
             </p>
-            <a href="/dashboard/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
               Connect Calendar
             </a>
           </div>

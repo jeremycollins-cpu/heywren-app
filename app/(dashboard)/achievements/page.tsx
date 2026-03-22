@@ -100,7 +100,7 @@ export default function AchievementsPage() {
           <p className="text-gray-500 max-w-md mb-6">
             Complete your first commitment to start earning achievements, building streaks, and gaining XP. Track your progress as you improve your follow-through skills.
           </p>
-          <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+          <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
             View Commitments
           </a>
         </div>
@@ -161,7 +161,7 @@ export default function AchievementsPage() {
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Team Leaderboard</h2>
         <p className="text-gray-600 mb-4">Team leaderboard coming soon. Invite team members to start competing and tracking progress together.</p>
-        <a href="/dashboard/settings" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+        <a href="/settings" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
           Invite Team Members
         </a>
       </div>

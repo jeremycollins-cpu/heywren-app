@@ -76,7 +76,7 @@ export default function DraftQueuePage() {
             <p className="text-gray-500 max-w-md mb-6">
               HeyWren will pre-write follow-ups based on your open commitments. Once you have commitments tracked, you'll see AI-generated drafts here that you can review and send.
             </p>
-            <a href="/dashboard/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
               Create Commitments
             </a>
           </div>
