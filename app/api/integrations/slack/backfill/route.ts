@@ -77,14 +77,30 @@ export async function POST(request: NextRequest) {
       params.append('cursor', channelCursor)
     }
 
-    const channelRes = await fetch('https://slack.com/api/conversations.list?' + params.toString(), {
-      headers: { Authorization: 'Bearer ' + slackToken },
-    })
-    const channelData = await channelRes.json()
+    let channelData: any
+    let retries = 0
+    while (retries < 3) {
+      const channelRes = await fetch('https://slack.com/api/conversations.list?' + params.toString(), {
+        headers: { Authorization: 'Bearer ' + slackToken },
+      })
+      channelData = await channelRes.json()
 
-    if (!channelData.ok) {
+      if (channelData.ok) break
+
+      if (channelData.error === 'ratelimited') {
+        const retryAfter = parseInt(channelRes.headers.get('Retry-After') || '5')
+        console.log('Rate limited on conversations.list, waiting ' + retryAfter + 's')
+        await sleep(retryAfter * 1000)
+        retries++
+        continue
+      }
+
       console.error('Slack conversations.list error:', channelData.error)
       return NextResponse.json({ error: 'Failed to list Slack channels: ' + channelData.error }, { status: 500 })
+    }
+
+    if (!channelData.ok) {
+      return NextResponse.json({ error: 'Slack rate limit exceeded. Please wait a minute and try again.' }, { status: 429 })
     }
 
     // Only include channels where the bot is a member
@@ -92,7 +108,7 @@ export async function POST(request: NextRequest) {
     channels = channels.concat(memberChannels.map((ch: any) => ({ id: ch.id, name: ch.name })))
     channelCursor = channelData.response_metadata?.next_cursor || undefined
 
-    await sleep(500)
+    await sleep(1500)
   } while (channelCursor)
 
   if (channels.length === 0) {
@@ -123,14 +139,31 @@ export async function POST(request: NextRequest) {
           historyParams.append('cursor', messageCursor)
         }
 
-        const historyRes = await fetch('https://slack.com/api/conversations.history?' + historyParams.toString(), {
-          headers: { Authorization: 'Bearer ' + slackToken },
-        })
-        const historyData = await historyRes.json()
+        let historyData: any
+        let histRetries = 0
+        while (histRetries < 3) {
+          const historyRes = await fetch('https://slack.com/api/conversations.history?' + historyParams.toString(), {
+            headers: { Authorization: 'Bearer ' + slackToken },
+          })
+          historyData = await historyRes.json()
 
-        if (!historyData.ok) {
+          if (historyData.ok) break
+
+          if (historyData.error === 'ratelimited') {
+            const retryAfter = parseInt(historyRes.headers.get('Retry-After') || '5')
+            console.log('Rate limited on history for #' + channel.name + ', waiting ' + retryAfter + 's')
+            await sleep(retryAfter * 1000)
+            histRetries++
+            continue
+          }
+
           console.error('Slack history error for #' + channel.name + ':', historyData.error)
           errors.push('Channel #' + channel.name + ': ' + historyData.error)
+          break
+        }
+
+        if (!historyData.ok) {
+          errors.push('Channel #' + channel.name + ': rate limited after retries')
           break
         }
 
@@ -218,7 +251,7 @@ export async function POST(request: NextRequest) {
         messageCursor = historyData.response_metadata?.next_cursor || undefined
 
         // Rate limit Slack API
-        await sleep(1000)
+        await sleep(1500)
       } while (messageCursor)
     } catch (channelErr) {
       console.error('Error processing channel #' + channel.name + ':', channelErr)
