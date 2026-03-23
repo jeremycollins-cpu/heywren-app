@@ -1,9 +1,14 @@
+Your vercel.json should now look like this (add the outlook backfill line):
+
 {
   "buildCommand": "npm run build",
   "installCommand": "npm install --legacy-peer-deps",
   "devCommand": "npm run dev",
   "functions": {
     "app/api/integrations/slack/backfill/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/integrations/outlook/backfill/route.ts": {
       "maxDuration": 300
     }
   }
