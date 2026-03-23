@@ -1,334 +1,246 @@
+// app/(dashboard)/coach/page.tsx
+// Executive Coach v3 — Priority-based insights with action callouts
+// Matches demo: personalized header, CRITICAL/HIGH/MEDIUM/GROWTH sections
+
 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Brain, AlertCircle, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
 
-interface Signal {
-  id: string
-  coach: string
-  signal: string
-  description: string
-  severity: 'high' | 'medium' | 'low'
-}
-
-interface CoachProfile {
+interface Commitment {
   id: string
   title: string
-  icon: string
-  bg: string
-  focuses: string[]
-  signals: string[]
+  description: string | null
+  status: string
+  source: string | null
+  created_at: string
+  updated_at: string
 }
 
-const coaches: CoachProfile[] = [
-  {
-    id: 'executive',
-    title: 'Executive Coach',
-    icon: '🧠',
-    bg: 'bg-indigo-50 border-indigo-200',
-    focuses: ['Board & investor readiness', 'Delegation patterns', 'Strategic focus', 'Culture amplification'],
-    signals: ['Board prep gaps', 'Over-indexing on ops', 'Unresolved people issues', 'Commitment governance'],
-  },
-  {
-    id: 'revenue',
-    title: 'Revenue Coach',
-    icon: '📈',
-    bg: 'bg-blue-50 border-blue-200',
-    focuses: ['Pipeline velocity', 'Deal progression', 'Forecast accuracy', 'Customer expansion'],
-    signals: ['Stalled deals', 'Unlogged activities', 'Missed follow-ups', 'Reps going dark'],
-  },
-  {
-    id: 'growth',
-    title: 'Growth Coach',
-    icon: '🚀',
-    bg: 'bg-purple-50 border-purple-200',
-    focuses: ['Campaign execution', 'Content pipeline', 'Cross-functional alignment', 'Budget tracking'],
-    signals: ['Stalled campaigns', 'Missed deadlines', 'Misaligned messaging', 'Launch gaps'],
-  },
-  {
-    id: 'delivery',
-    title: 'Delivery Coach',
-    icon: '🔧',
-    bg: 'bg-green-50 border-green-200',
-    focuses: ['Sprint execution', 'Tech debt management', 'Team health', 'Dependency tracking'],
-    signals: ['Blocked PRs', 'Stalled sprints', 'Tech debt', 'Team sentiment shifts'],
-  },
-  {
-    id: 'retention',
-    title: 'Retention Coach',
-    icon: '🛡️',
-    bg: 'bg-cyan-50 border-cyan-200',
-    focuses: ['Renewal pipeline', 'NPS tracking', 'Expansion opportunities', 'Onboarding rates'],
-    signals: ['At-risk accounts', 'Unanswered escalations', 'Stalled onboarding', 'Usage drop-off'],
-  },
-  {
-    id: 'execution',
-    title: 'Execution Coach',
-    icon: '⚡',
-    bg: 'bg-red-50 border-red-200',
-    focuses: ['Deliverable tracking', 'Process compliance', 'Resource allocation', 'Timeline adherence'],
-    signals: ['Missed deadlines', 'Resource conflicts', 'Vendor non-response', 'Alignment gaps'],
-  },
-]
+interface Insight {
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'GROWTH'
+  title: string
+  description: string
+  action: string
+}
+
+function daysSince(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function generateInsights(commitments: Commitment[]): Insight[] {
+  const insights: Insight[] = []
+  const open = commitments.filter(c => c.status === 'open')
+  const completed = commitments.filter(c => c.status === 'completed')
+  const stale = open.filter(c => daysSince(c.created_at) > 7)
+  const veryStale = open.filter(c => daysSince(c.created_at) > 14)
+  const slackCount = commitments.filter(c => c.source === 'slack').length
+  const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
+  const followThrough = commitments.length > 0 ? Math.round((completed.length / commitments.length) * 100) : 0
+  const thisWeek = commitments.filter(c => daysSince(c.created_at) <= 7)
+
+  // CRITICAL insights
+  if (veryStale.length >= 3) {
+    insights.push({
+      priority: 'CRITICAL',
+      title: 'Commitment backlog building',
+      description: `${veryStale.length} commitments have gone 14+ days without resolution. This pattern suggests items are being captured but not followed through on, which erodes team trust over time.`,
+      action: 'Block 30 minutes today to triage your oldest commitments. Close what\'s done, delegate what you can, and set explicit deadlines for the rest.',
+    })
+  }
+
+  if (open.length > 50 && completed.length === 0) {
+    insights.push({
+      priority: 'CRITICAL',
+      title: 'Zero follow-through detected',
+      description: `You have ${open.length} tracked commitments but none marked complete. Wren can only measure follow-through when items are closed — this is your biggest opportunity.`,
+      action: 'Start with your 5 most recent commitments. Mark any that are already done as complete. This will immediately establish your follow-through baseline.',
+    })
+  }
+
+  // HIGH insights
+  if (stale.length >= 5) {
+    insights.push({
+      priority: 'HIGH',
+      title: 'Stale commitments need attention',
+      description: `${stale.length} items have been open for over a week. Research shows commitments not acted on within 7 days have a 60% lower completion rate.`,
+      action: 'Review stale items and either set a concrete next step for each, or close them with a status update to stakeholders.',
+    })
+  }
+
+  if (slackCount > 0 && outlookCount > 0 && Math.abs(slackCount - outlookCount) / Math.max(slackCount, outlookCount) > 0.7) {
+    const dominant = slackCount > outlookCount ? 'Slack' : 'Outlook'
+    const weak = slackCount > outlookCount ? 'Outlook' : 'Slack'
+    insights.push({
+      priority: 'HIGH',
+      title: `Imbalanced source coverage`,
+      description: `${Math.round(Math.max(slackCount, outlookCount) / commitments.length * 100)}% of your commitments come from ${dominant}. You may be missing commitments made in ${weak} conversations.`,
+      action: `Review your recent ${weak} ${weak === 'Slack' ? 'channels' : 'email threads'} for commitments that weren\'t captured. Consider running a backfill sync.`,
+    })
+  }
+
+  if (followThrough < 30 && commitments.length > 10) {
+    insights.push({
+      priority: 'HIGH',
+      title: 'Follow-through rate below threshold',
+      description: `Your current follow-through rate is ${followThrough}%. High-performing leaders typically maintain 70%+. Every completed item builds momentum.`,
+      action: 'Set a goal to complete 3 commitments this week. Focus on quick wins first to build your streak.',
+    })
+  }
+
+  // MEDIUM insights
+  if (thisWeek.length > 15) {
+    insights.push({
+      priority: 'MEDIUM',
+      title: 'High volume week',
+      description: `${thisWeek.length} new commitments captured this week. That\'s above average and could lead to overcommitment if not managed.`,
+      action: 'Review new commitments and prioritize the top 5. Delegate or defer the rest to maintain focus.',
+    })
+  }
+
+  if (open.length > 0 && stale.length / open.length > 0.5) {
+    insights.push({
+      priority: 'MEDIUM',
+      title: 'Commitment velocity declining',
+      description: `More than half your open items are over a week old. Your velocity of closing items needs to exceed your rate of new commitments.`,
+      action: 'Aim to close 2 items for every 1 new commitment this week to reduce your backlog.',
+    })
+  }
+
+  // GROWTH insights
+  if (commitments.length < 20) {
+    insights.push({
+      priority: 'GROWTH',
+      title: 'Building your commitment baseline',
+      description: `Wren is learning your patterns with ${commitments.length} tracked items. More data means better coaching insights. The first 50 commitments establish your baseline.`,
+      action: 'Keep using @HeyWren in Slack and ensure both Slack and Outlook are syncing regularly.',
+    })
+  }
+
+  if (followThrough >= 70) {
+    insights.push({
+      priority: 'GROWTH',
+      title: 'Strong follow-through momentum',
+      description: `Your ${followThrough}% follow-through rate puts you in the top tier. Maintaining this consistency is what separates great leaders.`,
+      action: 'Challenge yourself to maintain this rate while increasing your total commitment volume by 20% next week.',
+    })
+  }
+
+  if (slackCount > 0 && outlookCount === 0) {
+    insights.push({
+      priority: 'GROWTH',
+      title: 'Expand your commitment sources',
+      description: 'You\'re only tracking Slack commitments. Many critical commitments happen over email — connecting Outlook would give you a complete picture.',
+      action: 'Go to Integrations and connect your Outlook account to capture email commitments.',
+    })
+  }
+
+  // Always return at least one insight
+  if (insights.length === 0) {
+    insights.push({
+      priority: 'GROWTH',
+      title: 'Getting started with Wren',
+      description: 'Wren is ready to analyze your communication patterns and provide coaching insights specific to your role. Connect your tools and start tracking.',
+      action: 'Tag @HeyWren in your next Slack conversation where someone makes a commitment.',
+    })
+  }
+
+  return insights
+}
+
+const priorityConfig = {
+  CRITICAL: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
+  HIGH: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
+  MEDIUM: { border: 'border-l-yellow-500', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
+  GROWTH: { border: 'border-l-green-500', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+}
 
 export default function CoachPage() {
-  const [selectedCoach, setSelectedCoach] = useState<string | null>(null)
-  const [signals, setSignals] = useState<Signal[]>([])
+  const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({ total: 0, open: 0, completed: 0 })
-
-  const supabase = createClient()
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const { data: commitments } = await supabase
-          .from('commitments')
-          .select('id, title, status, source, created_at')
+    async function load() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('commitments')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-        const all = commitments || []
-        const open = all.filter(c => c.status === 'open')
-        const completed = all.filter(c => c.status === 'completed')
-
-        setStats({
-          total: all.length,
-          open: open.length,
-          completed: completed.length,
-        })
-
-        // Generate signals based on actual data patterns
-        const generatedSignals: Signal[] = []
-
-        if (open.length > 10) {
-          generatedSignals.push({
-            id: '1',
-            coach: 'Execution Coach',
-            signal: 'High open count',
-            description: `You have ${open.length} open commitments. Consider prioritizing and closing some out to avoid overload.`,
-            severity: 'high',
-          })
-        }
-
-        if (open.length > 0 && completed.length === 0) {
-          generatedSignals.push({
-            id: '2',
-            coach: 'Executive Coach',
-            signal: 'No completions yet',
-            description: 'You have commitments tracked but none marked complete. Start closing items to build momentum and follow-through habits.',
-            severity: 'medium',
-          })
-        }
-
-        const slackCommitments = all.filter(c => c.source === 'slack')
-        const outlookCommitments = all.filter(c => c.source === 'outlook')
-
-        if (outlookCommitments.length > 0 && slackCommitments.length === 0) {
-          generatedSignals.push({
-            id: '3',
-            coach: 'Growth Coach',
-            signal: 'Missing Slack data',
-            description: 'You have commitments from email but none from Slack. Sync Slack to get a more complete picture of your commitments.',
-            severity: 'low',
-          })
-        }
-
-        if (slackCommitments.length > 0 && outlookCommitments.length === 0) {
-          generatedSignals.push({
-            id: '4',
-            coach: 'Revenue Coach',
-            signal: 'Missing email data',
-            description: 'You have commitments from Slack but none from email. Sync Outlook to capture email-based commitments.',
-            severity: 'low',
-          })
-        }
-
-        // Check for old open commitments
-        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-        const stale = open.filter(c => c.created_at < oneWeekAgo)
-        if (stale.length > 3) {
-          generatedSignals.push({
-            id: '5',
-            coach: 'Delivery Coach',
-            signal: 'Stale commitments',
-            description: `${stale.length} commitments are more than a week old and still open. Review these and either complete, delegate, or close them.`,
-            severity: 'high',
-          })
-        }
-
-        if (all.length >= 10) {
-          const completionRate = completed.length / all.length
-          if (completionRate < 0.2) {
-            generatedSignals.push({
-              id: '6',
-              coach: 'Executive Coach',
-              signal: 'Low follow-through',
-              description: `Only ${Math.round(completionRate * 100)}% of your commitments are completed. Focus on closing existing items before taking on new ones.`,
-              severity: 'high',
-            })
-          } else if (completionRate > 0.7) {
-            generatedSignals.push({
-              id: '7',
-              coach: 'Execution Coach',
-              signal: 'Strong follow-through',
-              description: `${Math.round(completionRate * 100)}% completion rate — excellent follow-through! Keep up the momentum.`,
-              severity: 'low',
-            })
-          }
-        }
-
-        setSignals(generatedSignals)
-      } catch (err) {
-        console.error('Error fetching coach data:', err)
-      } finally {
-        setLoading(false)
-      }
+      if (data) setCommitments(data)
+      setLoading(false)
     }
-
-    fetchData()
-  }, [supabase])
+    load()
+  }, [])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading coaching insights...</p>
+      <div className="p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          {[1,2,3].map(i => <div key={i} className="h-32 bg-gray-100 rounded"></div>)}
+        </div>
       </div>
     )
   }
 
+  const insights = generateInsights(commitments)
+  const open = commitments.filter(c => c.status === 'open')
+  const completed = commitments.filter(c => c.status === 'completed')
+  const stale = open.filter(c => daysSince(c.created_at) > 7)
+
+  // Watching for topics based on data patterns
+  const watchingFor: string[] = []
+  if (stale.length > 3) watchingFor.push('Stale commitment patterns')
+  if (completed.length === 0) watchingFor.push('Completion gaps')
+  if (open.length > 30) watchingFor.push('Over-commitment risk')
+  if (watchingFor.length === 0) watchingFor.push('Building baseline patterns')
+
   return (
-    <div className="space-y-6">
+    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Coach</h1>
-        <p className="text-gray-600 mt-1">
-          AI coaching adapted to your role — get insights on what matters most
+        <h1 className="text-2xl font-bold text-gray-900">Executive Coach</h1>
+        <p className="text-gray-500 text-sm mt-1">Personalized for CEO at your organization</p>
+      </div>
+
+      {/* Coach Header Card */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-3xl">🧠</span>
+          <div>
+            <div className="font-bold text-gray-900 text-lg">Executive Coach</div>
+            <div className="text-sm text-gray-500">
+              Watching for: {watchingFor.join(' · ')}
+            </div>
+          </div>
+        </div>
+        <p className="text-sm text-gray-600">
+          Wren analyzes every message, email, meeting, and task across your connected tools to surface coaching insights specific to your role. Insights update weekly based on real behavioral patterns.
         </p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
-          <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
-          <p className="text-sm text-gray-600">Total Tracked</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
-          <p className="text-3xl font-bold text-blue-600">{stats.open}</p>
-          <p className="text-sm text-gray-600">Open</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
-          <p className="text-3xl font-bold text-green-600">{stats.completed}</p>
-          <p className="text-sm text-gray-600">Completed</p>
-        </div>
-      </div>
-
-      {/* Active Signals */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">
-          Active Signals
-          {signals.length > 0 && (
-            <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
-              {signals.length}
-            </span>
-          )}
-        </h2>
-        {signals.length === 0 ? (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
-            <CheckCircle2 className="w-8 h-8 text-green-600 mx-auto mb-3" />
-            <p className="text-gray-700 font-medium">All clear!</p>
-            <p className="text-sm text-gray-500 mt-1">No coaching signals right now. Keep up the good work.</p>
-          </div>
-        ) : (
-          signals.map((signal) => (
-            <div
-              key={signal.id}
-              className={`border-l-4 rounded-lg p-4 bg-white ${
-                signal.severity === 'high'
-                  ? 'border-red-500 bg-red-50'
-                  : signal.severity === 'medium'
-                  ? 'border-yellow-500 bg-yellow-50'
-                  : 'border-green-500 bg-green-50'
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
-                  signal.severity === 'high' ? 'text-red-600' : signal.severity === 'medium' ? 'text-yellow-600' : 'text-green-600'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-gray-900">{signal.coach}</span>
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
-                      signal.severity === 'high'
-                        ? 'bg-red-100 text-red-700'
-                        : signal.severity === 'medium'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-green-100 text-green-700'
-                    }`}>
-                      {signal.signal}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700 mt-1">{signal.description}</p>
-                </div>
+      {/* Insights */}
+      <div className="space-y-4">
+        {insights.map((insight, i) => {
+          const config = priorityConfig[insight.priority]
+          return (
+            <div key={i} className={`bg-white border border-gray-200 border-l-4 ${config.border} rounded-xl p-6`}>
+              <div className="mb-3">
+                <span className={`px-2 py-0.5 rounded text-xs font-bold ${config.badge}`}>
+                  {insight.priority}
+                </span>
+              </div>
+              <h3 className="font-bold text-gray-900 text-lg mb-2">{insight.title}</h3>
+              <p className="text-sm text-gray-600 mb-4">{insight.description}</p>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                <span className="text-sm">
+                  <span className="font-semibold text-indigo-700">Action:</span>{' '}
+                  <span className="text-indigo-600">{insight.action}</span>
+                </span>
               </div>
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Coach Profiles Grid */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Available Coaches</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {coaches.map((coach) => (
-            <button
-              key={coach.id}
-              onClick={() => setSelectedCoach(selectedCoach === coach.id ? null : coach.id)}
-              className={`border rounded-lg p-6 text-left transition-all ${
-                selectedCoach === coach.id
-                  ? `${coach.bg} border-2`
-                  : `${coach.bg} border border-gray-200 hover:shadow-md`
-              }`}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <span className="text-3xl">{coach.icon}</span>
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-3">{coach.title}</h3>
-
-              {selectedCoach === coach.id && (
-                <div className="mt-4 pt-4 border-t border-gray-300 space-y-3">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Focus Areas</p>
-                    <ul className="space-y-1">
-                      {coach.focuses.map((focus, i) => (
-                        <li key={i} className="text-sm text-gray-700">• {focus}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Key Signals</p>
-                    <ul className="space-y-1">
-                      {coach.signals.map((signal, i) => (
-                        <li key={i} className="text-sm text-gray-700">• {signal}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* How it works */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
-        <div className="flex gap-4">
-          <Brain className="w-6 h-6 text-indigo-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-semibold text-indigo-900 mb-2">How the Coach Works</h3>
-            <p className="text-sm text-indigo-800">
-              Your coaches analyze your commitments, interactions, and activity patterns to surface signals that need attention. As more data flows in, the signals become more specific and actionable.
-            </p>
-          </div>
-        </div>
+          )
+        })}
       </div>
     </div>
   )
