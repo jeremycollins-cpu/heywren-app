@@ -13,38 +13,77 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function slackGet(url: string, token: string, maxRetries: number = 2): Promise<any> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-    })
-    const data = await res.json()
+async function refreshMicrosoftToken(
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<string | null> {
+  try {
+    const tokenRes = await fetch(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: process.env.AZURE_AD_CLIENT_ID!,
+          client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          scope: 'openid profile email Mail.Read Calendars.Read User.Read offline_access',
+        }),
+      }
+    )
 
-    if (data.ok) return data
-
-    if (data.error === 'ratelimited') {
-      const retryAfter = parseInt(res.headers.get('Retry-After') || '3')
-      console.log('Rate limited, waiting ' + retryAfter + 's (attempt ' + (attempt + 1) + ')')
-      await sleep(retryAfter * 1000)
-      continue
+    const tokenData = await tokenRes.json()
+    if (!tokenData.access_token) {
+      console.error('Token refresh failed:', tokenData.error_description || tokenData.error)
+      return null
     }
 
-    return data
-  }
+    const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+    await supabase
+      .from('integrations')
+      .update({
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || refreshToken,
+        config: { token_expires_at: expiresAt },
+      })
+      .eq('id', integrationId)
 
-  return { ok: false, error: 'ratelimited_after_retries' }
+    console.log('Microsoft token refreshed, expires at', expiresAt)
+    return tokenData.access_token
+  } catch (err) {
+    console.error('Token refresh error:', (err as Error).message)
+    return null
+  }
 }
 
-async function slackPost(url: string, token: string, body: any): Promise<any> {
+async function graphFetch(
+  url: string,
+  token: string,
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<{ data: any; token: string }> {
+  let currentToken = token
+
   const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+    headers: { Authorization: 'Bearer ' + currentToken },
   })
-  return res.json()
+
+  if (res.status === 401) {
+    const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+    if (!newToken) {
+      return { data: { error: 'Token refresh failed. Reconnect Outlook.' }, token: currentToken }
+    }
+    currentToken = newToken
+    const retryRes = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + currentToken },
+    })
+    return { data: await retryRes.json(), token: currentToken }
+  }
+
+  return { data: await res.json(), token: currentToken }
 }
 
 export async function POST(request: NextRequest) {
@@ -52,14 +91,11 @@ export async function POST(request: NextRequest) {
 
   let userId: string
   let daysBack: number = 30
-  let channelId: string | null = null
 
   try {
     const body = await request.json()
     userId = body.userId
     daysBack = body.daysBack || 30
-    channelId = body.channelId || null
-
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
     }
@@ -73,247 +109,293 @@ export async function POST(request: NextRequest) {
     .from('team_members')
     .select('team_id')
     .eq('user_id', userId)
+  if (members && members.length > 0) teamId = members[0].team_id
+  if (!teamId) return NextResponse.json({ error: 'No team found' }, { status: 400 })
 
-  if (members && members.length > 0) {
-    teamId = members[0].team_id
-  }
-
-  if (!teamId) {
-    return NextResponse.json({ error: 'No team found for user' }, { status: 400 })
-  }
-
-  // Get the Slack access token
+  // Get Outlook integration
   const { data: integration } = await supabase
     .from('integrations')
-    .select('access_token, config')
+    .select('id, access_token, refresh_token, config')
     .eq('team_id', teamId)
-    .eq('provider', 'slack')
+    .eq('provider', 'outlook')
     .single()
 
   if (!integration || !integration.access_token) {
-    return NextResponse.json({ error: 'Slack not connected or missing access token' }, { status: 400 })
+    return NextResponse.json({ error: 'Outlook not connected.' }, { status: 400 })
   }
 
-  const slackToken = integration.access_token
-  const oldestTimestamp = Math.floor((Date.now() - daysBack * 24 * 60 * 60 * 1000) / 1000)
+  let msToken = integration.access_token
+  const refreshToken = integration.refresh_token || ''
+  const integrationId = integration.id
 
-  // Test the token
-  const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
-  console.log('Slack auth.test:', JSON.stringify(authTest))
-  if (!authTest.ok) {
-    return NextResponse.json({
-      error: 'Slack token invalid: ' + authTest.error + '. Please reconnect Slack.',
-    }, { status: 401 })
+  // Proactive token refresh
+  const tokenExpiresAt = integration.config?.token_expires_at
+  if (tokenExpiresAt && new Date(tokenExpiresAt) < new Date()) {
+    const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+    if (newToken) {
+      msToken = newToken
+    } else {
+      return NextResponse.json({ error: 'Token expired. Reconnect Outlook.' }, { status: 401 })
+    }
   }
 
-  let channels: Array<{ id: string; name: string; type: string }> = []
-  let joinedCount = 0
-  const joinErrors: string[] = []
+  // ================================================================
+  // STEP 0: Re-process any previously stored but unprocessed messages
+  // This handles the case where messages were stored but AI/insert failed
+  // ================================================================
+  const { data: unprocessed } = await supabase
+    .from('outlook_messages')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
+    .eq('team_id', teamId)
+    .eq('processed', false)
+    .limit(200)
 
-  if (channelId) {
-    channels = [{ id: channelId, name: channelId, type: 'channel' }]
-  } else {
-    // Get public channels + auto-join
-    const publicData = await slackGet(
-      'https://slack.com/api/conversations.list?types=public_channel&exclude_archived=true&limit=200',
-      slackToken
-    )
+  let reprocessedCommitments = 0
 
-    if (publicData.ok) {
-      for (const ch of (publicData.channels || [])) {
-        if (!ch.is_member) {
-          const joinData = await slackPost(
-            'https://slack.com/api/conversations.join',
-            slackToken,
-            { channel: ch.id }
-          )
-          if (joinData.ok) {
-            joinedCount++
-          } else if (joinData.error === 'missing_scope') {
-            joinErrors.push('Missing channels:join scope. Reconnect Slack with updated permissions.')
-            break
+  if (unprocessed && unprocessed.length > 0) {
+    console.log('Re-processing ' + unprocessed.length + ' previously stored but unprocessed emails')
+
+    const batch: Array<{ id: string; text: string; dbId: string }> = []
+
+    for (const msg of unprocessed) {
+      const messageText = [
+        'From: ' + (msg.from_name || '') + ' <' + (msg.from_email || '') + '>',
+        'To: ' + (msg.to_recipients || ''),
+        'Subject: ' + (msg.subject || '(no subject)'),
+        'Date: ' + msg.received_at,
+        '',
+        msg.body_preview || '',
+      ].join('\n')
+
+      batch.push({ id: msg.message_id, text: messageText, dbId: msg.id })
+    }
+
+    // Process in chunks of 15
+    for (let i = 0; i < batch.length; i += 15) {
+      const chunk = batch.slice(i, i + 15)
+      try {
+        const batchInput = chunk.map((b) => ({ id: b.id, text: b.text }))
+        const batchResults = await detectCommitmentsBatch(batchInput)
+
+        for (const item of chunk) {
+          const commitments = batchResults.get(item.id) || []
+
+          for (const commitment of commitments) {
+            const { error: commitErr } = await supabase.from('commitments').insert({
+              team_id: teamId,
+              creator_id: userId,
+              title: commitment.title || 'Untitled commitment',
+              description: commitment.description || null,
+              status: 'open',
+              source: 'outlook',
+              source_ref: item.dbId,
+            })
+            if (commitErr) {
+              console.error('COMMITMENT INSERT FAILED:', JSON.stringify({
+                message: commitErr.message,
+                details: commitErr.details,
+                hint: commitErr.hint,
+                code: commitErr.code,
+              }))
+            } else {
+              reprocessedCommitments++
+            }
           }
-          await sleep(1200)
+
+          await supabase
+            .from('outlook_messages')
+            .update({ processed: true, commitments_found: commitments.length })
+            .eq('id', item.dbId)
         }
-        channels.push({ id: ch.id, name: ch.name, type: 'channel' })
+      } catch (batchErr) {
+        console.error('Re-process batch AI error:', (batchErr as Error).message)
       }
     }
 
-    // Get private channels
-    const privateData = await slackGet(
-      'https://slack.com/api/conversations.list?types=private_channel&exclude_archived=true&limit=200',
-      slackToken
-    )
-    if (privateData.ok) {
-      for (const ch of (privateData.channels || []).filter((c: any) => c.is_member)) {
-        channels.push({ id: ch.id, name: ch.name, type: 'private' })
-      }
-    }
-
-    // Get DMs
-    const dmData = await slackGet(
-      'https://slack.com/api/conversations.list?types=im&limit=200',
-      slackToken
-    )
-    if (dmData.ok) {
-      for (const dm of (dmData.channels || [])) {
-        channels.push({ id: dm.id, name: 'DM-' + (dm.user || dm.id), type: 'dm' })
-      }
-    }
+    console.log('Re-processing complete: ' + reprocessedCommitments + ' commitments found')
   }
 
-  if (channels.length === 0) {
-    return NextResponse.json({ error: 'No channels found.' }, { status: 400 })
-  }
-
-  console.log('Scanning ' + channels.length + ' conversations. Auto-joined: ' + joinedCount)
-
-  let totalMessages = 0
-  let totalCommitments = 0
-  let processedChannels = 0
-  const errors: string[] = [...joinErrors]
+  // ================================================================
+  // STEP 1: Fetch NEW emails from Graph API
+  // ================================================================
   const startTime = Date.now()
+  const oldestDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
 
-  for (const channel of channels) {
+  let totalEmails = 0
+  let totalNewEmails = 0
+  let totalCommitments = reprocessedCommitments
+  let processedPages = 0
+  const errors: string[] = []
+
+  const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
+  const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead'
+  let nextLink: string | null =
+    `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
+
+  while (nextLink) {
     if (Date.now() - startTime > 250000) {
-      errors.push('Time limit reached at ' + processedChannels + '/' + channels.length + ' channels.')
+      errors.push('Time limit reached at page ' + processedPages)
       break
     }
 
-    processedChannels++
-    let messageCursor: string | undefined
+    const { data: pageData, token: updatedToken } = await graphFetch(
+      nextLink, msToken, supabase, integrationId, refreshToken
+    )
+    msToken = updatedToken
 
-    try {
-      do {
-        if (Date.now() - startTime > 250000) break
-
-        const historyParams = new URLSearchParams({
-          channel: channel.id,
-          oldest: oldestTimestamp.toString(),
-          limit: '50',
-          inclusive: 'true',
-        })
-        if (messageCursor) historyParams.append('cursor', messageCursor)
-
-        const historyData = await slackGet(
-          'https://slack.com/api/conversations.history?' + historyParams.toString(),
-          slackToken
-        )
-
-        if (!historyData.ok) {
-          errors.push('#' + channel.name + ': ' + historyData.error)
-          break
-        }
-
-        const messages = (historyData.messages || []).filter(
-          (msg: any) => msg.type === 'message' && !msg.bot_id && !msg.subtype && msg.text && msg.text.length >= 15
-        )
-
-        // Collect batch of new messages for this page
-        const batch: Array<{ id: string; text: string; dbId: string }> = []
-
-        for (const msg of messages) {
-          totalMessages++
-
-          // Skip already processed
-          const { data: existing } = await supabase
-            .from('slack_messages')
-            .select('id')
-            .eq('team_id', teamId)
-            .eq('message_ts', msg.ts)
-            .maybeSingle()
-
-          if (existing) continue
-
-          // Store the message
-          const { data: messageData, error: msgErr } = await supabase
-            .from('slack_messages')
-            .insert({
-              team_id: teamId,
-              channel_id: channel.id,
-              user_id: msg.user || 'unknown',
-              message_text: msg.text,
-              message_ts: msg.ts,
-              thread_ts: msg.thread_ts || null,
-              processed: false,
-            })
-            .select()
-            .single()
-
-          if (msgErr) {
-            console.error('Failed to store:', msgErr.message)
-            continue
-          }
-
-          batch.push({ id: msg.ts, text: msg.text, dbId: messageData.id })
-        }
-
-        // Process batch through the 3-tier AI pipeline
-        if (batch.length > 0) {
-          try {
-            const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
-            const batchResults = await detectCommitmentsBatch(batchInput)
-
-            for (const item of batch) {
-              const commitments = batchResults.get(item.id) || []
-
-              if (commitments.length > 0) {
-                for (const commitment of commitments) {
-                  const { error: commitErr } = await supabase.from('commitments').insert({
-                    team_id: teamId,
-                    creator_id: null,
-                    title: commitment.title,
-                    description: commitment.description,
-                    status: 'pending',
-                    priority_score: commitment.confidence,
-                    source: 'slack',
-                    source_message_id: item.dbId,
-                    due_date: commitment.dueDate || null,
-                  })
-                  if (!commitErr) totalCommitments++
-                }
-              }
-
-              await supabase
-                .from('slack_messages')
-                .update({ processed: true, commitments_found: commitments.length })
-                .eq('id', item.dbId)
-            }
-          } catch (batchErr) {
-            console.error('Batch AI error:', (batchErr as Error).message)
-            errors.push('AI error: ' + (batchErr as Error).message)
-          }
-        }
-
-        messageCursor = historyData.response_metadata?.next_cursor || undefined
-        await sleep(1200)
-      } while (messageCursor)
-    } catch (channelErr) {
-      errors.push('#' + channel.name + ': ' + (channelErr as Error).message)
+    if (pageData.error) {
+      errors.push('Graph API error: ' + (pageData.error.message || pageData.error.code || JSON.stringify(pageData.error)))
+      break
     }
+
+    const emails = pageData.value || []
+    processedPages++
+    console.log('Page ' + processedPages + ': ' + emails.length + ' emails')
+
+    // Collect batch of new emails
+    const batch: Array<{ id: string; text: string; dbId: string; email: any }> = []
+
+    for (const email of emails) {
+      totalEmails++
+
+      const preview = email.bodyPreview || ''
+      if (preview.length < 20) continue
+
+      // Check if already exists in our DB
+      const { data: existing } = await supabase
+        .from('outlook_messages')
+        .select('id, processed')
+        .eq('team_id', teamId)
+        .eq('message_id', email.id)
+        .maybeSingle()
+
+      // Skip if already exists AND processed
+      if (existing && existing.processed) continue
+
+      const fromName = email.from?.emailAddress?.name || email.from?.emailAddress?.address || 'Unknown'
+      const fromEmail = email.from?.emailAddress?.address || ''
+      const toList = (email.toRecipients || [])
+        .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
+        .join(', ')
+      const subject = email.subject || '(no subject)'
+
+      const messageText = [
+        'From: ' + fromName + ' <' + fromEmail + '>',
+        'To: ' + toList,
+        'Subject: ' + subject,
+        'Date: ' + email.receivedDateTime,
+        '',
+        preview,
+      ].join('\n')
+
+      let dbId: string
+
+      if (existing && !existing.processed) {
+        // Already stored but not processed — use existing ID
+        dbId = existing.id
+      } else {
+        // New email — store it
+        const { data: messageData, error: msgErr } = await supabase
+          .from('outlook_messages')
+          .insert({
+            team_id: teamId,
+            message_id: email.id,
+            conversation_id: email.conversationId || null,
+            from_name: fromName,
+            from_email: fromEmail,
+            to_recipients: toList,
+            subject: subject,
+            body_preview: preview,
+            received_at: email.receivedDateTime,
+            processed: false,
+          })
+          .select()
+          .single()
+
+        if (msgErr) {
+          console.error('Failed to store email:', msgErr.message)
+          if (msgErr.message?.includes('outlook_messages')) {
+            errors.push('outlook_messages table missing. Run the migration SQL first.')
+            nextLink = null
+            break
+          }
+          continue
+        }
+        dbId = messageData.id
+      }
+
+      totalNewEmails++
+      batch.push({ id: email.id, text: messageText, dbId, email })
+    }
+
+    // Process batch through 3-tier AI pipeline
+    if (batch.length > 0) {
+      try {
+        const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
+        const batchResults = await detectCommitmentsBatch(batchInput)
+
+        for (const item of batch) {
+          const commitments = batchResults.get(item.id) || []
+
+          for (const commitment of commitments) {
+            const { error: commitErr } = await supabase.from('commitments').insert({
+              team_id: teamId,
+              creator_id: userId,
+              title: commitment.title || 'Untitled commitment',
+              description: commitment.description || null,
+              status: 'open',
+              source: 'outlook',
+              source_ref: item.dbId,
+            })
+            if (commitErr) {
+              console.error('COMMITMENT INSERT FAILED:', JSON.stringify({
+                message: commitErr.message,
+                details: commitErr.details,
+                hint: commitErr.hint,
+                code: commitErr.code,
+              }))
+            } else {
+              totalCommitments++
+            }
+          }
+
+          await supabase
+            .from('outlook_messages')
+            .update({ processed: true, commitments_found: commitments.length })
+            .eq('id', item.dbId)
+        }
+      } catch (batchErr) {
+        console.error('Batch AI error:', (batchErr as Error).message)
+        errors.push('AI error: ' + (batchErr as Error).message)
+      }
+    }
+
+    nextLink = pageData['@odata.nextLink'] || null
+    if (nextLink) await sleep(500)
   }
 
   const duration = Math.round((Date.now() - startTime) / 1000)
   const aiStats = getDetectionStats()
 
-  console.log('BACKFILL DONE: ' + totalMessages + ' msgs, ' + totalCommitments + ' commitments, ' +
-    'Tier1 filtered: ' + aiStats.tier1_filtered + ', Tier2 filtered: ' + aiStats.tier2_filtered +
-    ', Tier3 analyzed: ' + aiStats.tier3_analyzed + ', errors: ' + aiStats.errors)
+  console.log('OUTLOOK BACKFILL DONE: ' + totalEmails + ' total emails, ' + totalNewEmails + ' new, ' +
+    totalCommitments + ' commitments, ' +
+    'Tier1: ' + aiStats.tier1_filtered + ', Tier2: ' + aiStats.tier2_filtered +
+    ', Tier3: ' + aiStats.tier3_analyzed + ', errors: ' + aiStats.errors)
 
   return NextResponse.json({
     success: true,
     summary: {
-      channels_processed: processedChannels,
-      total_channels: channels.length,
-      messages_scanned: totalMessages,
+      emails_scanned: totalEmails,
+      new_emails_processed: totalNewEmails,
       commitments_detected: totalCommitments,
+      pages_processed: processedPages,
+      reprocessed_from_previous: unprocessed?.length || 0,
       ai_stats: {
         skipped_by_keyword_filter: aiStats.tier1_filtered,
         skipped_by_haiku_triage: aiStats.tier2_filtered,
         fully_analyzed_by_sonnet: aiStats.tier3_analyzed,
         errors: aiStats.errors,
       },
-      channels_joined: joinedCount,
       duration_seconds: duration,
       errors: errors.length > 0 ? errors : undefined,
     },
