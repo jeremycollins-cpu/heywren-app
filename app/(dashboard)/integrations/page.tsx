@@ -223,7 +223,13 @@ function IntegrationsContent() {
     }
   }, [supabase, searchParams])
 
-  const handleSlackConnect = () => {
+  const handleSlackConnect = async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
     const clientId = process.env.NEXT_PUBLIC_SLACK_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
     const scopes = [
@@ -238,14 +244,21 @@ function IntegrationsContent() {
       'team:read',
     ].join(',')
 
-    const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
     window.location.href = authUrl
   }
 
-  const handleOutlookConnect = () => {
+  const handleOutlookConnect = async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
     const clientId = process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
-    const state = Buffer.from(JSON.stringify({ redirect: 'dashboard' })).toString('base64')
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
     const scopes = [
       'openid',
       'profile',
