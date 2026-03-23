@@ -2,14 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!url || !key) {
-    throw new Error('Missing Supabase environment variables')
-  }
-
-  return createClient(url, key)
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 }
 
 export async function GET(request: NextRequest) {
@@ -19,63 +15,49 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
-  // Parse state for userId, teamId, and redirect target
+  // Parse state
   let userId: string | null = null
-  let teamId: string | null = null
-  let redirectTarget = 'dashboard'
-
-  if (state) {
-    try {
+  let redirect = 'dashboard'
+  try {
+    if (state) {
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
       userId = stateData.userId || null
-      teamId = stateData.teamId || null
-      redirectTarget = stateData.redirect || 'dashboard'
-    } catch (e) {
-      console.error('Failed to parse state:', e)
+      redirect = stateData.redirect || 'dashboard'
     }
+  } catch (e) {
+    console.error('Failed to parse state:', e)
   }
 
   if (error) {
     console.error('Microsoft OAuth error:', error, errorDescription)
-    const redirectUrl = redirectTarget === 'onboarding'
+    const redirectUrl = redirect === 'onboarding'
       ? '/onboarding/integrations?outlook=error'
       : '/integrations?status=error'
     return NextResponse.redirect(new URL(redirectUrl, request.url))
   }
 
   if (!code) {
-    return NextResponse.json(
-      { error: 'Missing authorization code' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Missing authorization code' }, { status: 400 })
   }
 
   if (!userId) {
-    return NextResponse.json(
-      { error: 'Missing user context. Please try connecting again.' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Missing user context. Please try connecting again.' }, { status: 400 })
   }
 
   try {
-    const clientId = process.env.AZURE_AD_CLIENT_ID
-    const clientSecret = process.env.AZURE_AD_CLIENT_SECRET
-    const redirectUri = 'https://app.heywren.ai/api/integrations/outlook/connect'
+    const clientId = process.env.AZURE_AD_CLIENT_ID || process.env.AZURE_CLIENT_ID
+    const clientSecret = process.env.AZURE_AD_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
 
     if (!clientId || !clientSecret) {
-      console.error('Missing Azure credentials. AZURE_AD_CLIENT_ID set:', !!clientId, 'AZURE_AD_CLIENT_SECRET set:', !!clientSecret)
-      return NextResponse.json(
-        { error: 'Server configuration error — missing Azure credentials' },
-        { status: 500 }
-      )
+      console.error('Missing Azure credentials. AZURE_AD_CLIENT_ID:', !!clientId, 'AZURE_AD_CLIENT_SECRET:', !!clientSecret)
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }
 
     // Exchange code for tokens
     const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
@@ -90,127 +72,88 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error, tokenData.error_description)
-      return NextResponse.json(
-        { error: tokenData.error_description || 'Failed to get access token' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: tokenData.error_description || 'Failed to get access token' }, { status: 400 })
     }
 
     // Get user profile from Microsoft Graph
     const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: {
-        Authorization: 'Bearer ' + tokenData.access_token,
-      },
+      headers: { Authorization: 'Bearer ' + tokenData.access_token },
     })
-
     const profileData = await profileResponse.json()
 
-    // Use admin client — server session is lost after external OAuth redirect
     const supabase = getAdminClient()
 
-    // Resolve teamId if not in state
-    if (!teamId) {
-      const { data: members } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', userId)
+    // Look up team: team_members → profiles → create if needed
+    let teamId: string | null = null
 
-      if (members && members.length > 0) {
-        teamId = members[0].team_id
+    const { data: members } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', userId)
+
+    if (members && members.length > 0) {
+      teamId = members[0].team_id
+    }
+
+    if (!teamId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userId)
+        .single()
+
+      if (profile?.current_team_id) {
+        teamId = profile.current_team_id
       }
     }
 
     if (!teamId) {
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', userId)
-          .single()
-
-        if (profile && profile.current_team_id) {
-          teamId = profile.current_team_id
-        }
-      } catch (e) {
-        // Column might not exist
-      }
-    }
-
-    // Last resort: create a team
-    if (!teamId) {
-      const { data: newTeam, error: teamErr } = await supabase
+      const { data: newTeam } = await supabase
         .from('teams')
-        .insert([{
-          name: 'My Team',
-          slug: 'team-' + Date.now(),
-          owner_id: userId
-        }])
+        .insert({ name: 'My Team', owner_id: userId })
         .select()
         .single()
 
-      if (newTeam && !teamErr) {
+      if (newTeam) {
         teamId = newTeam.id
-
-        await supabase.from('team_members').insert([{
-          team_id: newTeam.id,
-          user_id: userId,
-          role: 'owner',
-        }])
-
-        try {
-          await supabase.from('profiles').update({
-            current_team_id: newTeam.id,
-          }).eq('id', userId)
-        } catch (e) {
-          // OK if column does not exist
-        }
-      } else {
-        console.error('Team creation error:', JSON.stringify(teamErr))
+        await supabase.from('team_members').insert({ team_id: teamId, user_id: userId, role: 'owner' })
+        await supabase.from('profiles').update({ current_team_id: teamId }).eq('id', userId)
       }
     }
 
     if (!teamId) {
-      return NextResponse.json(
-        { error: 'Could not find or create a team.' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Could not resolve team' }, { status: 400 })
     }
 
     // Upsert the integration
-    const { error: upsertErr } = await supabase.from('integrations').upsert({
-      team_id: teamId,
-      provider: 'outlook',
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token || null,
-      config: {
-        microsoft_user_id: profileData.id,
-        display_name: profileData.displayName,
-        email: profileData.mail || profileData.userPrincipalName,
-        token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
-        connected_by: userId,
+    const { error: upsertError } = await supabase.from('integrations').upsert(
+      {
+        team_id: teamId,
+        provider: 'outlook',
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || null,
+        config: {
+          microsoft_user_id: profileData.id,
+          display_name: profileData.displayName,
+          email: profileData.mail || profileData.userPrincipalName,
+          token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
+        },
       },
-    }, { onConflict: 'team_id,provider' })
+      { onConflict: 'team_id,provider' }
+    )
 
-    if (upsertErr) {
-      console.error('Integration upsert error:', JSON.stringify(upsertErr))
-      return NextResponse.json(
-        { error: 'Failed to store integration: ' + upsertErr.message },
-        { status: 500 }
-      )
+    if (upsertError) {
+      console.error('Failed to store Outlook integration:', upsertError)
+      return NextResponse.json({ error: 'Failed to store integration: ' + upsertError.message }, { status: 500 })
     }
 
-    // Redirect based on where the connection was initiated
-    let redirectUrl = '/integrations?status=success'
-    if (redirectTarget === 'onboarding') {
-      redirectUrl = '/onboarding/integrations?outlook=connected'
-    }
+    const redirectUrl = redirect === 'onboarding'
+      ? '/onboarding/integrations?outlook=connected'
+      : '/integrations?status=success'
 
     return NextResponse.redirect(new URL(redirectUrl, request.url))
   } catch (err) {
     console.error('Microsoft OAuth error:', err)
-    return NextResponse.json(
-      { error: 'Authentication failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Authentication failed' }, { status: 500 })
   }
 }
