@@ -1,31 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-
-// Use admin client since session may be lost after OAuth redirect
+ 
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 }
-
+ 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')
-
+ 
   if (!code) {
     return NextResponse.json(
       { error: 'Missing authorization code' },
       { status: 400 }
     )
   }
-
-  // Parse user info from state parameter
+ 
   let userId: string | null = null
   let teamId: string | null = null
   let redirect = 'dashboard'
-
+ 
   if (state) {
     try {
       const stateData = JSON.parse(atob(state))
@@ -36,7 +34,7 @@ export async function GET(request: NextRequest) {
       console.error('Failed to parse state:', e)
     }
   }
-
+ 
   if (!userId || !teamId) {
     console.error('Missing userId or teamId in state')
     return NextResponse.json(
@@ -44,10 +42,10 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     )
   }
-
+ 
   try {
     const redirectUri = 'https://app.heywren.ai/api/integrations/slack/connect'
-
+ 
     const response = await fetch('https://slack.com/api/oauth.v2.access', {
       method: 'POST',
       headers: {
@@ -60,9 +58,9 @@ export async function GET(request: NextRequest) {
         redirect_uri: redirectUri,
       }).toString(),
     })
-
+ 
     const data = await response.json()
-
+ 
     if (!data.ok) {
       console.error('Slack token exchange failed:', data.error)
       return NextResponse.json(
@@ -70,11 +68,9 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    // Use admin client to store integration (bypasses session requirement)
+ 
     const supabase = getAdminClient()
-
-    // Store the integration
+ 
     const { error } = await supabase.from('integrations').insert({
       team_id: teamId,
       provider: 'slack',
@@ -86,7 +82,7 @@ export async function GET(request: NextRequest) {
         slack_team_name: data.team?.name,
       },
     })
-
+ 
     if (error) {
       console.error('Error storing integration:', error)
       return NextResponse.json(
@@ -94,13 +90,12 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
-
-    // Redirect back to integrations page
+ 
     let redirectUrl = '/integrations?status=success'
     if (redirect === 'onboarding') {
       redirectUrl = '/onboarding/integrations?slack=connected'
     }
-
+ 
     return NextResponse.redirect(
       new URL(redirectUrl, request.url)
     )
