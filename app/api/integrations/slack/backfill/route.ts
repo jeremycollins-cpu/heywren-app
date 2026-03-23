@@ -85,41 +85,103 @@ export async function POST(request: NextRequest) {
   const slackToken = integration.access_token
   const oldestTimestamp = Math.floor((Date.now() - daysBack * 24 * 60 * 60 * 1000) / 1000)
 
-  // Get channels to process
-  let channels: Array<{ id: string; name: string }> = []
+  // Get channels to process — includes public channels, private channels, and DMs
+  let channels: Array<{ id: string; name: string; type: string }> = []
 
   if (channelId) {
-    // Process a specific channel
-    channels = [{ id: channelId, name: channelId }]
+    channels = [{ id: channelId, name: channelId, type: 'channel' }]
   } else {
-    // List channels the bot is in
-    const params = new URLSearchParams({
-      types: 'public_channel,private_channel',
+    // Step A: Get ALL public channels (not just ones bot is in)
+    const publicParams = new URLSearchParams({
+      types: 'public_channel',
       exclude_archived: 'true',
-      limit: '100',
+      limit: '200',
     })
 
-    const channelData = await slackFetch(
-      'https://slack.com/api/conversations.list?' + params.toString(),
+    const publicData = await slackFetch(
+      'https://slack.com/api/conversations.list?' + publicParams.toString(),
       slackToken
     )
 
-    if (!channelData.ok) {
-      return NextResponse.json({
-        error: 'Failed to list channels: ' + channelData.error,
-      }, { status: 500 })
+    if (publicData.ok) {
+      const publicChannels = publicData.channels || []
+
+      // Auto-join public channels the bot is not yet in
+      for (const ch of publicChannels) {
+        if (!ch.is_member) {
+          const joinResult = await slackFetch(
+            'https://slack.com/api/conversations.join',
+            slackToken,
+            1
+          )
+          // We need POST for join, so use fetch directly
+          const joinRes = await fetch('https://slack.com/api/conversations.join', {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + slackToken,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ channel: ch.id }),
+          })
+          const joinData = await joinRes.json()
+          if (joinData.ok) {
+            console.log('Auto-joined #' + ch.name)
+          }
+          await sleep(1200)
+        }
+        channels.push({ id: ch.id, name: ch.name, type: 'channel' })
+      }
     }
 
-    channels = (channelData.channels || [])
-      .filter((ch: any) => ch.is_member)
-      .map((ch: any) => ({ id: ch.id, name: ch.name }))
+    // Step B: Get private channels bot is already in
+    const privateParams = new URLSearchParams({
+      types: 'private_channel',
+      exclude_archived: 'true',
+      limit: '200',
+    })
+
+    const privateData = await slackFetch(
+      'https://slack.com/api/conversations.list?' + privateParams.toString(),
+      slackToken
+    )
+
+    if (privateData.ok) {
+      const privateChannels = (privateData.channels || []).filter((ch: any) => ch.is_member)
+      for (const ch of privateChannels) {
+        channels.push({ id: ch.id, name: ch.name, type: 'private' })
+      }
+    }
+
+    // Step C: Get DM conversations
+    const dmParams = new URLSearchParams({
+      types: 'im',
+      limit: '200',
+    })
+
+    const dmData = await slackFetch(
+      'https://slack.com/api/conversations.list?' + dmParams.toString(),
+      slackToken
+    )
+
+    if (dmData.ok) {
+      const dms = dmData.channels || []
+      for (const dm of dms) {
+        channels.push({ id: dm.id, name: 'DM-' + (dm.user || dm.id), type: 'dm' })
+      }
+    }
   }
 
   if (channels.length === 0) {
     return NextResponse.json({
-      error: 'The HeyWren bot is not a member of any channels. Add it to channels in Slack first.',
+      error: 'Could not find any channels or DMs to scan. Check that the Slack integration has the right permissions.',
     }, { status: 400 })
   }
+
+  console.log('Found ' + channels.length + ' conversations to scan (' +
+    channels.filter(c => c.type === 'channel').length + ' public, ' +
+    channels.filter(c => c.type === 'private').length + ' private, ' +
+    channels.filter(c => c.type === 'dm').length + ' DMs)'
+  )
 
   let totalMessages = 0
   let totalCommitments = 0
