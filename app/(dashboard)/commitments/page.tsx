@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Trash2, Edit2, CheckCircle2 } from 'lucide-react'
+import { Trash2, CheckCircle2, RotateCcw } from 'lucide-react'
 
 interface Commitment {
   id: string
   title: string
   description: string | null
   status: string
-  priority_score: number
+  source: string
   due_date: string | null
   created_at: string
 }
@@ -26,14 +26,18 @@ export default function CommitmentsPage() {
       try {
         let query = supabase
           .from('commitments')
-          .select('*')
+          .select('id, title, description, status, source, due_date, created_at')
           .order('created_at', { ascending: false })
 
         if (filter !== 'all') {
           query = query.eq('status', filter)
         }
 
-        const { data } = await query
+        const { data, error } = await query
+
+        if (error) {
+          console.error('Commitments query error:', error)
+        }
 
         setCommitments(data || [])
       } catch (err) {
@@ -61,6 +65,21 @@ export default function CommitmentsPage() {
     }
   }
 
+  const handleReopen = async (id: string) => {
+    const { error } = await supabase
+      .from('commitments')
+      .update({ status: 'open' })
+      .eq('id', id)
+
+    if (!error) {
+      setCommitments(
+        commitments.map((c) =>
+          c.id === id ? { ...c, status: 'open' } : c
+        )
+      )
+    }
+  }
+
   const handleDelete = async (id: string) => {
     const { error } = await supabase
       .from('commitments')
@@ -69,6 +88,21 @@ export default function CommitmentsPage() {
 
     if (!error) {
       setCommitments(commitments.filter((c) => c.id !== id))
+    }
+  }
+
+  const getSourceBadge = (source: string) => {
+    switch (source) {
+      case 'slack':
+        return 'bg-purple-100 text-purple-700'
+      case 'outlook':
+        return 'bg-blue-100 text-blue-700'
+      case 'email':
+        return 'bg-cyan-100 text-cyan-700'
+      case 'meeting':
+        return 'bg-orange-100 text-orange-700'
+      default:
+        return 'bg-gray-100 text-gray-700'
     }
   }
 
@@ -91,28 +125,46 @@ export default function CommitmentsPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        {['all', 'pending', 'in_progress', 'completed', 'overdue'].map(
+        {['all', 'open', 'completed', 'overdue'].map(
           (filterVal) => (
             <button
               key={filterVal}
-              onClick={() => setFilter(filterVal)}
+              onClick={() => { setFilter(filterVal); setLoading(true) }}
               className={`px-4 py-2 rounded-lg font-medium transition-all ${
                 filter === filterVal
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {filterVal.charAt(0).toUpperCase() + filterVal.slice(1)}
+              {filterVal === 'all' ? 'All' : filterVal.charAt(0).toUpperCase() + filterVal.slice(1)}
+              {filterVal !== 'all' && (
+                <span className="ml-2 text-xs opacity-75">
+                  ({commitments.filter(c => filterVal === 'all' || c.status === filterVal).length})
+                </span>
+              )}
             </button>
           )
         )}
       </div>
+
+      {/* Summary bar */}
+      {commitments.length > 0 && (
+        <div className="flex items-center gap-6 text-sm text-gray-600">
+          <span>{commitments.length} commitment{commitments.length !== 1 ? 's' : ''}</span>
+          <span className="text-blue-600">{commitments.filter(c => c.source === 'slack').length} from Slack</span>
+          <span className="text-indigo-600">{commitments.filter(c => c.source === 'outlook').length} from Outlook</span>
+        </div>
+      )}
 
       {/* Commitments List */}
       <div className="space-y-4">
         {commitments.length === 0 ? (
           <div className="card text-center py-12">
             <p className="text-gray-500">No commitments found</p>
+            <p className="text-sm text-gray-400 mt-2">
+              {filter !== 'all' ? 'Try a different filter or ' : ''}
+              Sync your integrations to capture commitments.
+            </p>
           </div>
         ) : (
           commitments.map((commitment) => (
@@ -134,22 +186,25 @@ export default function CommitmentsPage() {
                           className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
                             commitment.status === 'completed'
                               ? 'bg-green-100 text-green-800'
-                              : commitment.status === 'pending'
-                              ? 'bg-yellow-100 text-yellow-800'
+                              : commitment.status === 'open'
+                              ? 'bg-blue-100 text-blue-800'
                               : commitment.status === 'overdue'
                               ? 'bg-red-100 text-red-800'
-                              : 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-800'
                           }`}
                         >
                           {commitment.status}
+                        </span>
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getSourceBadge(commitment.source)}`}>
+                          {commitment.source}
                         </span>
                         {commitment.due_date && (
                           <span className="text-xs text-gray-500">
                             Due: {new Date(commitment.due_date).toLocaleDateString()}
                           </span>
                         )}
-                        <span className="text-xs text-indigo-600 font-medium">
-                          {(commitment.priority_score * 100).toFixed(0)}% confidence
+                        <span className="text-xs text-gray-400">
+                          {new Date(commitment.created_at).toLocaleDateString()}
                         </span>
                       </div>
                     </div>
@@ -158,13 +213,21 @@ export default function CommitmentsPage() {
 
                 {/* Actions */}
                 <div className="flex gap-2 ml-4">
-                  {commitment.status !== 'completed' && (
+                  {commitment.status !== 'completed' ? (
                     <button
                       onClick={() => handleMarkComplete(commitment.id)}
                       className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
                       title="Mark complete"
                     >
                       <CheckCircle2 className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleReopen(commitment.id)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                      title="Reopen"
+                    >
+                      <RotateCcw className="w-5 h-5" />
                     </button>
                   )}
                   <button
