@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !key) {
+    throw new Error('Missing Supabase environment variables')
+  }
+
+  return createClient(url, key)
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -8,15 +19,20 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
-  // Parse redirect target from state
+  // Parse state for userId, teamId, and redirect target
+  let userId: string | null = null
+  let teamId: string | null = null
   let redirectTarget = 'dashboard'
-  try {
-    if (state) {
+
+  if (state) {
+    try {
       const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
+      userId = stateData.userId || null
+      teamId = stateData.teamId || null
       redirectTarget = stateData.redirect || 'dashboard'
+    } catch (e) {
+      console.error('Failed to parse state:', e)
     }
-  } catch (e) {
-    // State parsing failed, use default
   }
 
   if (error) {
@@ -34,15 +50,22 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  if (!userId) {
+    return NextResponse.json(
+      { error: 'Missing user context. Please try connecting again.' },
+      { status: 400 }
+    )
+  }
+
   try {
     const clientId = process.env.AZURE_CLIENT_ID
     const clientSecret = process.env.AZURE_CLIENT_SECRET
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
+    const redirectUri = 'https://app.heywren.ai/api/integrations/outlook/connect'
 
     if (!clientId || !clientSecret) {
-      console.error('Missing Azure credentials')
+      console.error('Missing Azure credentials. AZURE_CLIENT_ID set:', !!clientId, 'AZURE_CLIENT_SECRET set:', !!clientSecret)
       return NextResponse.json(
-        { error: 'Server configuration error' },
+        { error: 'Server configuration error — missing Azure credentials' },
         { status: 500 }
       )
     }
@@ -76,40 +99,86 @@ export async function GET(request: NextRequest) {
     // Get user profile from Microsoft Graph
     const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
       headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
+        Authorization: 'Bearer ' + tokenData.access_token,
       },
     })
 
     const profileData = await profileResponse.json()
 
-    const supabase = await createClient()
+    // Use admin client — server session is lost after external OAuth redirect
+    const supabase = getAdminClient()
 
-    // Get current user
-    const { data: authData } = await supabase.auth.getUser()
-    if (!authData?.user) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      )
+    // Resolve teamId if not in state
+    if (!teamId) {
+      const { data: members } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+
+      if (members && members.length > 0) {
+        teamId = members[0].team_id
+      }
     }
 
-    // Get user's current team
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', authData.user.id)
-      .single()
+    if (!teamId) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userId)
+          .single()
 
-    if (!profile?.current_team_id) {
+        if (profile && profile.current_team_id) {
+          teamId = profile.current_team_id
+        }
+      } catch (e) {
+        // Column might not exist
+      }
+    }
+
+    // Last resort: create a team
+    if (!teamId) {
+      const { data: newTeam, error: teamErr } = await supabase
+        .from('teams')
+        .insert([{
+          name: 'My Team',
+          slug: 'team-' + Date.now(),
+          owner_id: userId
+        }])
+        .select()
+        .single()
+
+      if (newTeam && !teamErr) {
+        teamId = newTeam.id
+
+        await supabase.from('team_members').insert([{
+          team_id: newTeam.id,
+          user_id: userId,
+          role: 'owner',
+        }])
+
+        try {
+          await supabase.from('profiles').update({
+            current_team_id: newTeam.id,
+          }).eq('id', userId)
+        } catch (e) {
+          // OK if column does not exist
+        }
+      } else {
+        console.error('Team creation error:', JSON.stringify(teamErr))
+      }
+    }
+
+    if (!teamId) {
       return NextResponse.json(
-        { error: 'No team found' },
+        { error: 'Could not find or create a team.' },
         { status: 400 }
       )
     }
 
-    // Store the integration
-    const { error: insertError } = await supabase.from('integrations').insert({
-      team_id: profile.current_team_id,
+    // Upsert the integration
+    const { error: upsertErr } = await supabase.from('integrations').upsert({
+      team_id: teamId,
       provider: 'outlook',
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token || null,
@@ -118,13 +187,14 @@ export async function GET(request: NextRequest) {
         display_name: profileData.displayName,
         email: profileData.mail || profileData.userPrincipalName,
         token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
+        connected_by: userId,
       },
-    })
+    }, { onConflict: 'team_id,provider' })
 
-    if (insertError) {
-      console.error('Error storing integration:', insertError)
+    if (upsertErr) {
+      console.error('Integration upsert error:', JSON.stringify(upsertErr))
       return NextResponse.json(
-        { error: 'Failed to store integration' },
+        { error: 'Failed to store integration: ' + upsertErr.message },
         { status: 500 }
       )
     }
