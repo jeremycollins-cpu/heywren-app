@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Exchange code for token
+    // Exchange code for token — redirect_uri MUST match what was used in the authorize step
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
+
     const response = await fetch('https://slack.com/api/oauth.v2.access', {
       method: 'POST',
       headers: {
@@ -25,6 +27,7 @@ export async function GET(request: NextRequest) {
         client_id: process.env.SLACK_CLIENT_ID!,
         client_secret: process.env.SLACK_CLIENT_SECRET!,
         code,
+        redirect_uri: redirectUri,
       }).toString(),
     })
 
