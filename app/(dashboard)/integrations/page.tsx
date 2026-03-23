@@ -1,18 +1,18 @@
 'use client'
-
+ 
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
-
+ 
 interface Integration {
   id: string
   provider: string
   created_at: string
   config: Record<string, any>
 }
-
+ 
 const availableIntegrations = [
   {
     id: 'slack',
@@ -70,22 +70,25 @@ const availableIntegrations = [
     comingSoon: true,
   },
 ]
-
-const OUTLOOK_ADMIN_CONSENT_URL = `https://login.microsoftonline.com/common/adminconsent?client_id=${process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || '328441fc-bec2-4dcc-a9b6-0910b84d3ffe'}&redirect_uri=${encodeURIComponent(process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai')}`
-
+ 
+const OUTLOOK_ADMIN_CONSENT_URL = 'https://login.microsoftonline.com/common/adminconsent?client_id=' + (process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || '328441fc-bec2-4dcc-a9b6-0910b84d3ffe') + '&redirect_uri=' + encodeURIComponent(process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai')
+ 
 function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showOutlook: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
-
+ 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
     setCopied(label)
-    toast.success(`${label} copied!`)
+    toast.success(label + ' copied!')
     setTimeout(() => setCopied(null), 3000)
   }
-
-  const tools = [showSlack && 'Slack', showOutlook && 'Outlook'].filter(Boolean).join(' and ')
-
+ 
+  const parts: string[] = []
+  if (showSlack) parts.push('Slack')
+  if (showOutlook) parts.push('Outlook')
+  const tools = parts.join(' and ')
+ 
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
       <button
@@ -105,35 +108,33 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
           <ChevronDown className="w-4 h-4 text-amber-600 flex-shrink-0 mt-1" />
         )}
       </button>
-
+ 
       {expanded && (
         <div className="mt-4 ml-8 space-y-5">
-          {/* General Steps */}
           <div className="space-y-3">
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">1</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">Click "Connect" on the integration above</p>
-                <p className="text-xs text-amber-700 mt-0.5">You'll be redirected to Slack or Microsoft's authorization page</p>
+                <p className="text-sm font-medium text-amber-900">{"Click \"Connect\" on the integration above"}</p>
+                <p className="text-xs text-amber-700 mt-0.5">{"You'll be redirected to Slack or Microsoft's authorization page"}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">2</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">If you see "Approval required" or "Request to install" — submit the request</p>
-                <p className="text-xs text-amber-700 mt-0.5">Add a message like: "I need HeyWren to track my commitments and follow-ups." Your admin will be notified.</p>
+                <p className="text-sm font-medium text-amber-900">{"If you see \"Approval required\" or \"Request to install\" — submit the request"}</p>
+                <p className="text-xs text-amber-700 mt-0.5">{"Add a message like: \"I need HeyWren to track my commitments and follow-ups.\" Your admin will be notified."}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">3</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">Once approved, come back and click "Connect" again</p>
+                <p className="text-sm font-medium text-amber-900">{"Once approved, come back and click \"Connect\" again"}</p>
                 <p className="text-xs text-amber-700 mt-0.5">After your admin approves the app, connecting will work instantly</p>
               </div>
             </div>
           </div>
-
-          {/* Slack-specific guidance */}
+ 
           {showSlack && (
             <div className="bg-white border border-amber-200 rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -143,12 +144,13 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
                 <p className="text-xs font-semibold text-amber-900">For Slack workspace admins</p>
               </div>
               <p className="text-xs text-amber-700">
-                A Slack workspace admin needs to approve HeyWren in the <strong>Slack Admin Dashboard → Manage Apps</strong>. Once approved, all workspace members can connect instantly.
+                {"A Slack workspace admin needs to approve HeyWren in the "}
+                <strong>{"Slack Admin Dashboard \u2192 Manage Apps"}</strong>
+                {". Once approved, all workspace members can connect instantly."}
               </p>
             </div>
           )}
-
-          {/* Outlook-specific guidance */}
+ 
           {showOutlook && (
             <div className="bg-white border border-amber-200 rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -158,7 +160,9 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
                 <p className="text-xs font-semibold text-amber-900">For Microsoft 365 / IT admins</p>
               </div>
               <p className="text-xs text-amber-700">
-                Share this link with your IT admin to grant organization-wide access in one click. HeyWren only requests <strong>read-only</strong> permissions — we never send emails or modify calendars.
+                {"Share this link with your IT admin to grant organization-wide access in one click. HeyWren only requests "}
+                <strong>read-only</strong>
+                {" permissions — we never send emails or modify calendars."}
               </p>
               <div className="flex gap-2">
                 <button
@@ -168,7 +172,7 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
                   <Copy className="w-3.5 h-3.5" />
                   {copied === 'Admin consent link' ? 'Copied!' : 'Copy admin consent link'}
                 </button>
-                
+                <a
                   href={OUTLOOK_ADMIN_CONSENT_URL}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -180,10 +184,12 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
               </div>
             </div>
           )}
-
+ 
           <div className="bg-amber-100/50 rounded-lg p-3">
             <p className="text-xs text-amber-800">
-              <strong>What permissions does HeyWren need?</strong> Read-only access to your messages, email, and calendar so we can detect commitments and follow-ups. We never send messages, emails, or modify your calendar on your behalf. <a href="https://heywren.ai/security" target="_blank" rel="noopener noreferrer" className="underline font-medium">Learn more about our security practices →</a>
+              <strong>What permissions does HeyWren need?</strong>
+              {" Read-only access to your messages, email, and calendar so we can detect commitments and follow-ups. We never send messages, emails, or modify your calendar on your behalf. "}
+              <a href="https://heywren.ai/security" target="_blank" rel="noopener noreferrer" className="underline font-medium">{"Learn more about our security practices \u2192"}</a>
             </p>
           </div>
         </div>
@@ -191,14 +197,14 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
     </div>
   )
 }
-
+ 
 function IntegrationsContent() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
-
+ 
   const supabase = createClient()
-
+ 
   useEffect(() => {
     const fetchIntegrations = async () => {
       try {
@@ -206,7 +212,7 @@ function IntegrationsContent() {
           .from('integrations')
           .select('*')
           .order('created_at', { ascending: false })
-
+ 
         setIntegrations(data || [])
       } catch (err) {
         console.error('Error fetching integrations:', err)
@@ -214,18 +220,17 @@ function IntegrationsContent() {
         setLoading(false)
       }
     }
-
+ 
     fetchIntegrations()
-
-    // Show success toast if just connected
+ 
     if (searchParams.get('status') === 'success') {
       toast.success('Integration connected successfully!')
     }
   }, [supabase, searchParams])
-
+ 
   const handleSlackConnect = async () => {
     const clientId = process.env.NEXT_PUBLIC_SLACK_CLIENT_ID || ''
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
+    const redirectUri = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai') + '/api/integrations/slack/connect'
     const scopes = [
       'chat:write',
       'channels:read',
@@ -233,7 +238,7 @@ function IntegrationsContent() {
       'team:read',
       'emoji:read',
     ].join(',')
-
+ 
     // Get current user info to pass through OAuth state
     const { data: authData } = await supabase.auth.getUser()
     const { data: profile } = await supabase
@@ -241,20 +246,21 @@ function IntegrationsContent() {
       .select('current_team_id')
       .eq('id', authData?.user?.id)
       .single()
-
-    const state = btoa(JSON.stringify({
+ 
+    const stateObj = {
       userId: authData?.user?.id,
       teamId: profile?.current_team_id,
-      redirect: 'dashboard',
-    }))
-
-    const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
+      redirect: 'dashboard'
+    }
+    const state = btoa(JSON.stringify(stateObj))
+ 
+    const authUrl = 'https://slack.com/oauth/v2/authorize?client_id=' + clientId + '&scope=' + scopes + '&redirect_uri=' + encodeURIComponent(redirectUri) + '&state=' + encodeURIComponent(state)
     window.location.href = authUrl
   }
-
+ 
   const handleOutlookConnect = async () => {
     const clientId = process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || ''
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
+    const redirectUri = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai') + '/api/integrations/outlook/connect'
     const scopes = [
       'openid',
       'profile',
@@ -264,7 +270,7 @@ function IntegrationsContent() {
       'User.Read',
       'offline_access',
     ].join(' ')
-
+ 
     // Get current user info to pass through OAuth state
     const { data: authData } = await supabase.auth.getUser()
     const { data: profile } = await supabase
@@ -272,23 +278,24 @@ function IntegrationsContent() {
       .select('current_team_id')
       .eq('id', authData?.user?.id)
       .single()
-
-    const state = btoa(JSON.stringify({
+ 
+    const stateObj = {
       userId: authData?.user?.id,
       teamId: profile?.current_team_id,
-      redirect: 'dashboard',
-    }))
-
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}&response_mode=query`
+      redirect: 'dashboard'
+    }
+    const state = btoa(JSON.stringify(stateObj))
+ 
+    const authUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=' + clientId + '&response_type=code&redirect_uri=' + encodeURIComponent(redirectUri) + '&scope=' + encodeURIComponent(scopes) + '&state=' + encodeURIComponent(state) + '&response_mode=query'
     window.location.href = authUrl
   }
-
+ 
   const handleDisconnect = async (id: string) => {
     const { error } = await supabase
       .from('integrations')
       .delete()
       .eq('id', id)
-
+ 
     if (!error) {
       setIntegrations(integrations.filter((i) => i.id !== id))
       toast.success('Integration disconnected')
@@ -296,11 +303,11 @@ function IntegrationsContent() {
       toast.error('Failed to disconnect')
     }
   }
-
+ 
   const isConnected = (provider: string) => {
     return integrations.some((i) => i.provider === provider)
   }
-
+ 
   const handleConnect = (integrationId: string) => {
     if (integrationId === 'slack') {
       handleSlackConnect()
@@ -308,7 +315,7 @@ function IntegrationsContent() {
       handleOutlookConnect()
     }
   }
-
+ 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -316,10 +323,10 @@ function IntegrationsContent() {
       </div>
     )
   }
-
-  const liveIntegrations = availableIntegrations.filter(i => !i.comingSoon)
-  const futureIntegrations = availableIntegrations.filter(i => i.comingSoon)
-
+ 
+  const liveIntegrations = availableIntegrations.filter(i => !(i as any).comingSoon)
+  const futureIntegrations = availableIntegrations.filter(i => (i as any).comingSoon)
+ 
   return (
     <div className="space-y-6">
       <div>
@@ -328,8 +335,7 @@ function IntegrationsContent() {
           Connect your tools to improve commitment detection and follow-through
         </p>
       </div>
-
-      {/* Connected Count */}
+ 
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-center justify-between">
           <div>
@@ -341,8 +347,7 @@ function IntegrationsContent() {
           </div>
         </div>
       </div>
-
-      {/* Live Integrations */}
+ 
       <div>
         <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Available Now</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -351,11 +356,7 @@ function IntegrationsContent() {
             return (
               <div
                 key={integration.id}
-                className={`border rounded-xl p-5 transition-all ${
-                  connected
-                    ? 'bg-green-50 border-green-200'
-                    : 'bg-white border-gray-200 hover:border-indigo-200 hover:shadow-sm'
-                }`}
+                className={'border rounded-xl p-5 transition-all ' + (connected ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:border-indigo-200 hover:shadow-sm')}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: integration.color }}>
@@ -365,7 +366,7 @@ function IntegrationsContent() {
                 </div>
                 <h3 className="font-semibold text-gray-900 text-sm">{integration.name}</h3>
                 <p className="text-xs text-gray-500 mt-1 mb-4">{integration.description}</p>
-
+ 
                 {connected ? (
                   <button
                     onClick={() => {
@@ -393,13 +394,11 @@ function IntegrationsContent() {
           })}
         </div>
       </div>
-
-      {/* IT Approval Guidance */}
+ 
       {(!isConnected('slack') || !isConnected('outlook')) && (
         <ITApprovalGuide showSlack={!isConnected('slack')} showOutlook={!isConnected('outlook')} />
       )}
-
-      {/* Coming Soon */}
+ 
       <div>
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Coming Soon</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -419,8 +418,7 @@ function IntegrationsContent() {
           ))}
         </div>
       </div>
-
-      {/* Connected Details */}
+ 
       {integrations.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Your Connections</h2>
@@ -439,7 +437,7 @@ function IntegrationsContent() {
                     <div>
                       <p className="font-medium text-gray-900 text-sm capitalize">{integration.provider}</p>
                       <p className="text-xs text-gray-500">
-                        Connected {new Date(integration.created_at).toLocaleDateString()}
+                        {'Connected ' + new Date(integration.created_at).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -450,8 +448,7 @@ function IntegrationsContent() {
           </div>
         </div>
       )}
-
-      {/* Info */}
+ 
       <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-5">
         <h3 className="font-semibold text-indigo-900 text-sm mb-2">Why connect integrations?</h3>
         <p className="text-xs text-indigo-700 leading-relaxed">
@@ -461,7 +458,7 @@ function IntegrationsContent() {
     </div>
   )
 }
-
+ 
 export default function IntegrationsPage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center min-h-[400px]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>}>
