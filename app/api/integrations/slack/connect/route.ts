@@ -5,12 +5,11 @@ function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  console.log('=== ADMIN CLIENT DEBUG ===')
-  console.log('SUPABASE_URL set:', !!url)
-  console.log('SERVICE_ROLE_KEY set:', !!key)
-  console.log('SERVICE_ROLE_KEY starts with:', key ? key.substring(0, 10) + '...' : 'NOT SET')
+  if (!url || !key) {
+    throw new Error('Missing Supabase environment variables')
+  }
 
-  return createClient(url!, key!)
+  return createClient(url, key)
 }
 
 export async function GET(request: NextRequest) {
@@ -32,7 +31,6 @@ export async function GET(request: NextRequest) {
       userId = stateData.userId || null
       teamId = stateData.teamId || null
       redirect = stateData.redirect || 'dashboard'
-      console.log('State parsed - userId:', userId, 'teamId:', teamId)
     } catch (e) {
       console.error('Failed to parse state:', e)
     }
@@ -44,73 +42,75 @@ export async function GET(request: NextRequest) {
 
   const supabase = getAdminClient()
 
-  // Step 1: Try profile
+  // Step 1: Use teamId from state if provided
+  // (already set above from state parsing)
+
+  // Step 2: Try team_members table (most reliable — no dependency on current_team_id column)
   if (!teamId) {
-    console.log('Step 1: Looking up profile for user:', userId)
-    const { data: profile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', userId)
-      .single()
-
-    console.log('Profile result:', JSON.stringify(profile))
-    console.log('Profile error:', JSON.stringify(profileErr))
-
-    if (profile?.current_team_id) {
-      teamId = profile.current_team_id
-      console.log('Found teamId from profile:', teamId)
-    }
-  }
-
-  // Step 2: Try team_members
-  if (!teamId) {
-    console.log('Step 2: Looking up team_members for user:', userId)
     const { data: members, error: memberErr } = await supabase
       .from('team_members')
       .select('team_id')
       .eq('user_id', userId)
 
-    console.log('Members result:', JSON.stringify(members))
-    console.log('Members error:', JSON.stringify(memberErr))
-
     if (members && members.length > 0) {
       teamId = members[0].team_id
-      console.log('Found teamId from team_members:', teamId)
     }
   }
 
-  // Step 3: Try creating a team
+  // Step 3: Try profile current_team_id (may not exist on all schemas)
   if (!teamId) {
-    console.log('Step 3: Creating new team for user:', userId)
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userId)
+        .single()
+
+      if (profile && profile.current_team_id) {
+        teamId = profile.current_team_id
+      }
+    } catch (e) {
+      // Column might not exist — that is OK, we continue
+    }
+  }
+
+  // Step 4: Create a new team — MUST include owner_id (NOT NULL in DB)
+  if (!teamId) {
     const { data: newTeam, error: teamErr } = await supabase
       .from('teams')
-      .insert([{ name: 'My Team', slug: 'team-' + Date.now() }])
+      .insert([{
+        name: 'My Team',
+        slug: 'team-' + Date.now(),
+        owner_id: userId
+      }])
       .select()
       .single()
-
-    console.log('New team result:', JSON.stringify(newTeam))
-    console.log('New team error:', JSON.stringify(teamErr))
 
     if (newTeam && !teamErr) {
       teamId = newTeam.id
 
-      const { error: memberInsertErr } = await supabase.from('team_members').insert([{
+      await supabase.from('team_members').insert([{
         team_id: newTeam.id,
         user_id: userId,
         role: 'owner',
       }])
-      console.log('Member insert error:', JSON.stringify(memberInsertErr))
 
-      const { error: profileUpdateErr } = await supabase.from('profiles').update({
-        current_team_id: newTeam.id,
-      }).eq('id', userId)
-      console.log('Profile update error:', JSON.stringify(profileUpdateErr))
+      // Try to update profile — column might not exist yet
+      try {
+        await supabase.from('profiles').update({
+          current_team_id: newTeam.id,
+        }).eq('id', userId)
+      } catch (e) {
+        // OK if current_team_id column does not exist
+      }
+    } else {
+      console.error('Team creation error:', JSON.stringify(teamErr))
     }
   }
 
   if (!teamId) {
     return NextResponse.json({
-      error: 'Could not find or create a team. Check Vercel logs for details.',
+      error: 'Could not find or create a team. Please run the database migration first.',
     }, { status: 400 })
   }
 
@@ -129,7 +129,6 @@ export async function GET(request: NextRequest) {
     })
 
     const data = await response.json()
-    console.log('Slack exchange ok:', data.ok, 'error:', data.error)
 
     if (!data.ok) {
       return NextResponse.json(
@@ -138,23 +137,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log('Inserting integration with teamId:', teamId)
-    const { error: insertErr } = await supabase.from('integrations').insert({
+    // Upsert integration — handles reconnecting existing Slack
+    const { error: upsertErr } = await supabase.from('integrations').upsert({
       team_id: teamId,
       provider: 'slack',
       access_token: data.access_token,
       refresh_token: data.refresh_token || null,
       config: {
         bot_id: data.bot_user_id,
-        slack_team_id: data.team?.id,
-        slack_team_name: data.team?.name,
+        slack_team_id: data.team ? data.team.id : null,
+        slack_team_name: data.team ? data.team.name : null,
         connected_by: userId,
       },
-    })
+    }, { onConflict: 'team_id,provider' })
 
-    if (insertErr) {
-      console.error('Integration insert error:', JSON.stringify(insertErr))
-      return NextResponse.json({ error: 'Failed to store integration: ' + insertErr.message }, { status: 500 })
+    if (upsertErr) {
+      console.error('Integration upsert error:', JSON.stringify(upsertErr))
+      return NextResponse.json(
+        { error: 'Failed to store integration: ' + upsertErr.message },
+        { status: 500 }
+      )
     }
 
     let redirectUrl = '/integrations?status=success'
