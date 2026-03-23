@@ -1,5 +1,3 @@
-Your vercel.json should now look like this (add the outlook backfill line):
-
 {
   "buildCommand": "npm run build",
   "installCommand": "npm install --legacy-peer-deps",
