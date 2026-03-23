@@ -13,7 +13,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function slackFetch(url: string, token: string, maxRetries: number = 2): Promise<any> {
+async function slackGet(url: string, token: string, maxRetries: number = 2): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(url, {
       headers: { Authorization: 'Bearer ' + token },
@@ -29,10 +29,22 @@ async function slackFetch(url: string, token: string, maxRetries: number = 2): P
       continue
     }
 
-    return data // Return non-rate-limit errors immediately
+    return data
   }
 
   return { ok: false, error: 'ratelimited_after_retries' }
+}
+
+async function slackPost(url: string, token: string, body: any): Promise<any> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  return res.json()
 }
 
 export async function POST(request: NextRequest) {
@@ -40,7 +52,7 @@ export async function POST(request: NextRequest) {
 
   let userId: string
   let daysBack: number = 30
-  let channelId: string | null = null // Optional: sync a specific channel
+  let channelId: string | null = null
 
   try {
     const body = await request.json()
@@ -85,52 +97,67 @@ export async function POST(request: NextRequest) {
   const slackToken = integration.access_token
   const oldestTimestamp = Math.floor((Date.now() - daysBack * 24 * 60 * 60 * 1000) / 1000)
 
-  // Get channels to process — includes public channels, private channels, and DMs
+  // First: test the token by calling auth.test
+  const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
+  console.log('Slack auth.test result:', JSON.stringify(authTest))
+  if (!authTest.ok) {
+    return NextResponse.json({
+      error: 'Slack token is invalid: ' + authTest.error + '. Please reconnect Slack.',
+    }, { status: 401 })
+  }
+  console.log('Slack bot: ' + authTest.user + ' in team ' + authTest.team)
+
   let channels: Array<{ id: string; name: string; type: string }> = []
+  let joinedCount = 0
+  let joinFailCount = 0
+  const joinErrors: string[] = []
 
   if (channelId) {
     channels = [{ id: channelId, name: channelId, type: 'channel' }]
   } else {
-    // Step A: Get ALL public channels (not just ones bot is in)
+    // Step A: Get ALL public channels
     const publicParams = new URLSearchParams({
       types: 'public_channel',
       exclude_archived: 'true',
       limit: '200',
     })
 
-    const publicData = await slackFetch(
+    const publicData = await slackGet(
       'https://slack.com/api/conversations.list?' + publicParams.toString(),
       slackToken
     )
 
     if (publicData.ok) {
       const publicChannels = publicData.channels || []
+      console.log('Found ' + publicChannels.length + ' public channels')
 
-      // Auto-join public channels the bot is not yet in
       for (const ch of publicChannels) {
         if (!ch.is_member) {
-          const joinResult = await slackFetch(
+          // Auto-join using POST (conversations.join requires POST with channel ID)
+          const joinData = await slackPost(
             'https://slack.com/api/conversations.join',
             slackToken,
-            1
+            { channel: ch.id }
           )
-          // We need POST for join, so use fetch directly
-          const joinRes = await fetch('https://slack.com/api/conversations.join', {
-            method: 'POST',
-            headers: {
-              Authorization: 'Bearer ' + slackToken,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ channel: ch.id }),
-          })
-          const joinData = await joinRes.json()
+
           if (joinData.ok) {
             console.log('Auto-joined #' + ch.name)
+            joinedCount++
+          } else {
+            console.log('Failed to join #' + ch.name + ': ' + joinData.error)
+            joinFailCount++
+            if (joinData.error === 'missing_scope') {
+              joinErrors.push('Missing channels:join scope. Please reinstall the Slack app with updated permissions.')
+              // Don't try more joins if scope is missing
+              break
+            }
           }
-          await sleep(1200)
+          await sleep(1200) // Rate limit: ~1 join per second
         }
         channels.push({ id: ch.id, name: ch.name, type: 'channel' })
       }
+    } else {
+      console.error('Failed to list public channels:', publicData.error)
     }
 
     // Step B: Get private channels bot is already in
@@ -140,13 +167,14 @@ export async function POST(request: NextRequest) {
       limit: '200',
     })
 
-    const privateData = await slackFetch(
+    const privateData = await slackGet(
       'https://slack.com/api/conversations.list?' + privateParams.toString(),
       slackToken
     )
 
     if (privateData.ok) {
       const privateChannels = (privateData.channels || []).filter((ch: any) => ch.is_member)
+      console.log('Found ' + privateChannels.length + ' private channels (member)')
       for (const ch of privateChannels) {
         channels.push({ id: ch.id, name: ch.name, type: 'private' })
       }
@@ -158,13 +186,14 @@ export async function POST(request: NextRequest) {
       limit: '200',
     })
 
-    const dmData = await slackFetch(
+    const dmData = await slackGet(
       'https://slack.com/api/conversations.list?' + dmParams.toString(),
       slackToken
     )
 
     if (dmData.ok) {
       const dms = dmData.channels || []
+      console.log('Found ' + dms.length + ' DM conversations')
       for (const dm of dms) {
         channels.push({ id: dm.id, name: 'DM-' + (dm.user || dm.id), type: 'dm' })
       }
@@ -173,26 +202,28 @@ export async function POST(request: NextRequest) {
 
   if (channels.length === 0) {
     return NextResponse.json({
-      error: 'Could not find any channels or DMs to scan. Check that the Slack integration has the right permissions.',
+      error: 'No channels found. Check Slack permissions.',
     }, { status: 400 })
   }
 
-  console.log('Found ' + channels.length + ' conversations to scan (' +
-    channels.filter(c => c.type === 'channel').length + ' public, ' +
+  console.log('Total conversations to scan: ' + channels.length +
+    ' (' + channels.filter(c => c.type === 'channel').length + ' public, ' +
     channels.filter(c => c.type === 'private').length + ' private, ' +
-    channels.filter(c => c.type === 'dm').length + ' DMs)'
+    channels.filter(c => c.type === 'dm').length + ' DMs). ' +
+    'Auto-joined: ' + joinedCount + ', join failed: ' + joinFailCount
   )
 
   let totalMessages = 0
   let totalCommitments = 0
   let processedChannels = 0
-  const errors: string[] = []
+  let aiSuccessCount = 0
+  let aiFailCount = 0
+  const errors: string[] = [...joinErrors]
   const startTime = Date.now()
 
   for (const channel of channels) {
-    // Safety: stop if we're approaching the 300s timeout (leave 30s buffer)
     if (Date.now() - startTime > 250000) {
-      errors.push('Stopped early due to time limit. Processed ' + processedChannels + ' of ' + channels.length + ' channels.')
+      errors.push('Stopped early due to time limit. Processed ' + processedChannels + '/' + channels.length + ' channels.')
       break
     }
 
@@ -202,7 +233,6 @@ export async function POST(request: NextRequest) {
 
     try {
       do {
-        // Time check inside the loop too
         if (Date.now() - startTime > 250000) break
 
         const historyParams = new URLSearchParams({
@@ -215,7 +245,7 @@ export async function POST(request: NextRequest) {
           historyParams.append('cursor', messageCursor)
         }
 
-        const historyData = await slackFetch(
+        const historyData = await slackGet(
           'https://slack.com/api/conversations.history?' + historyParams.toString(),
           slackToken
         )
@@ -230,7 +260,6 @@ export async function POST(request: NextRequest) {
         )
 
         for (const msg of messages) {
-          // Time check per message
           if (Date.now() - startTime > 250000) break
 
           totalMessages++
@@ -266,9 +295,10 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // Detect commitments
+          // Detect commitments via AI
           try {
             const commitments = await detectCommitments(msg.text)
+            aiSuccessCount++
 
             if (commitments && commitments.length > 0) {
               for (const commitment of commitments) {
@@ -293,14 +323,21 @@ export async function POST(request: NextRequest) {
               .update({ processed: true, commitments_found: commitments?.length || 0 })
               .eq('id', messageData.id)
           } catch (aiErr) {
-            console.error('AI detection failed:', (aiErr as Error).message)
+            aiFailCount++
+            const errMsg = (aiErr as Error).message || 'unknown error'
+            console.error('AI detection FAILED for message "' + msg.text.substring(0, 50) + '": ' + errMsg)
+
+            // Log the first few AI failures as errors so they show in the UI
+            if (aiFailCount <= 3) {
+              errors.push('AI error: ' + errMsg)
+            }
+
             await supabase
               .from('slack_messages')
               .update({ processed: true, commitments_found: 0 })
               .eq('id', messageData.id)
           }
 
-          // Small delay between Claude calls
           await sleep(200)
         }
 
@@ -311,10 +348,14 @@ export async function POST(request: NextRequest) {
       errors.push('#' + channel.name + ': ' + (channelErr as Error).message)
     }
 
-    console.log('Channel #' + channel.name + ': scanned ' + channelMessageCount + ' messages')
+    console.log('#' + channel.name + ': ' + channelMessageCount + ' messages')
   }
 
   const duration = Math.round((Date.now() - startTime) / 1000)
+
+  console.log('BACKFILL COMPLETE: ' + totalMessages + ' messages, ' +
+    totalCommitments + ' commitments, AI success: ' + aiSuccessCount +
+    ', AI fail: ' + aiFailCount + ', duration: ' + duration + 's')
 
   return NextResponse.json({
     success: true,
@@ -323,6 +364,9 @@ export async function POST(request: NextRequest) {
       total_channels: channels.length,
       messages_scanned: totalMessages,
       commitments_detected: totalCommitments,
+      ai_calls_succeeded: aiSuccessCount,
+      ai_calls_failed: aiFailCount,
+      channels_joined: joinedCount,
       duration_seconds: duration,
       errors: errors.length > 0 ? errors : undefined,
     },
