@@ -35,10 +35,68 @@ export async function GET(request: NextRequest) {
     }
   }
  
-  if (!userId || !teamId) {
-    console.error('Missing userId or teamId in state')
+  if (!userId) {
+    console.error('Missing userId in state')
     return NextResponse.json(
       { error: 'Missing user context. Please try connecting again.' },
+      { status: 400 }
+    )
+  }
+ 
+  const supabase = getAdminClient()
+ 
+  // If teamId is missing from state, look it up
+  if (!teamId) {
+    console.log('No teamId in state, looking up from profile for user:', userId)
+ 
+    // Try profile first
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userId)
+      .single()
+ 
+    if (profile?.current_team_id) {
+      teamId = profile.current_team_id
+    } else {
+      // Try team_members table
+      const { data: membership } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+ 
+      if (membership?.team_id) {
+        teamId = membership.team_id
+      } else {
+        // Last resort: create a team for this user
+        console.log('No team found, creating one for user:', userId)
+        const { data: newTeam } = await supabase
+          .from('teams')
+          .insert([{ name: 'My Team', slug: 'team-' + Date.now() }])
+          .select()
+          .single()
+ 
+        if (newTeam) {
+          teamId = newTeam.id
+          await supabase.from('team_members').insert([{
+            team_id: newTeam.id,
+            user_id: userId,
+            role: 'owner',
+          }])
+          await supabase.from('profiles').update({
+            current_team_id: newTeam.id,
+          }).eq('id', userId)
+        }
+      }
+    }
+  }
+ 
+  if (!teamId) {
+    console.error('Could not determine team for user:', userId)
+    return NextResponse.json(
+      { error: 'Could not find or create a team. Please contact support.' },
       { status: 400 }
     )
   }
@@ -69,8 +127,6 @@ export async function GET(request: NextRequest) {
       )
     }
  
-    const supabase = getAdminClient()
- 
     const { error } = await supabase.from('integrations').insert({
       team_id: teamId,
       provider: 'slack',
@@ -80,6 +136,7 @@ export async function GET(request: NextRequest) {
         bot_id: data.bot_user_id,
         slack_team_id: data.team?.id,
         slack_team_name: data.team?.name,
+        connected_by: userId,
       },
     })
  
