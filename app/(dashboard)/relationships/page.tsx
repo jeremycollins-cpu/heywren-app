@@ -1,226 +1,228 @@
+// app/(dashboard)/relationships/page.tsx
+// Relationship Health v3 — Card grid with health scores, trend arrows, alerts
+// Matches demo layout with 2-column cards
+
 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, MessageCircle, TrendingUp, Search, Mail, Hash } from 'lucide-react'
 
-interface Relationship {
+interface Contact {
   name: string
   email: string
-  source: string
-  commitmentCount: number
-  lastInteraction: string
+  interactions: number
+  lastActive: string
+  daysSinceContact: number
+  healthScore: number
+  trend: 'up' | 'down' | 'stable'
+  role: string
+}
+
+function daysSince(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function calculateHealthScore(interactions: number, daysSinceLastContact: number): number {
+  let score = 50
+  // Interaction frequency boost
+  if (interactions >= 20) score += 25
+  else if (interactions >= 10) score += 15
+  else if (interactions >= 5) score += 8
+  // Recency penalty
+  if (daysSinceLastContact > 14) score -= 30
+  else if (daysSinceLastContact > 7) score -= 15
+  else if (daysSinceLastContact > 3) score -= 5
+  else score += 10
+  return Math.max(10, Math.min(99, score))
+}
+
+function getScoreColor(score: number): { ring: string; text: string; bg: string } {
+  if (score >= 75) return { ring: '#22c55e', text: 'text-green-600', bg: 'bg-green-50' }
+  if (score >= 50) return { ring: '#6366f1', text: 'text-indigo-600', bg: 'bg-indigo-50' }
+  if (score >= 35) return { ring: '#f59e0b', text: 'text-yellow-600', bg: 'bg-yellow-50' }
+  return { ring: '#ef4444', text: 'text-red-600', bg: 'bg-red-50' }
+}
+
+function getTrend(daysSinceLastContact: number, interactions: number): 'up' | 'down' | 'stable' {
+  if (daysSinceLastContact <= 2 && interactions >= 10) return 'up'
+  if (daysSinceLastContact > 7) return 'down'
+  return 'stable'
+}
+
+function inferRole(email: string, name: string, interactions: number): string {
+  const domain = email.split('@')[1]?.toLowerCase() || ''
+  if (domain.includes('routeware')) return interactions > 15 ? 'Direct Report' : 'Team Member'
+  if (interactions > 10) return 'Key Stakeholder'
+  if (interactions > 5) return 'Collaborator'
+  return 'Contact'
 }
 
 export default function RelationshipsPage() {
-  const [relationships, setRelationships] = useState<Relationship[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-
-  const supabase = createClient()
 
   useEffect(() => {
-    const fetchRelationships = async () => {
-      try {
-        // Get relationships from Outlook messages (senders)
-        const { data: outlookMsgs } = await supabase
-          .from('outlook_messages')
-          .select('from_name, from_email, received_at')
-          .order('received_at', { ascending: false })
+    async function load() {
+      const supabase = createClient()
 
-        // Get commitments for source counts
-        const { data: commitments } = await supabase
-          .from('commitments')
-          .select('id, source, created_at')
+      const { data: emailData } = await supabase
+        .from('outlook_messages')
+        .select('sender_email, sender_name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1000)
 
-        // Aggregate by sender
-        const peopleMap = new Map<string, Relationship>()
+      if (emailData) {
+        const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
 
-        for (const msg of (outlookMsgs || [])) {
-          const key = (msg.from_email || '').toLowerCase()
-          if (!key || key.includes('noreply') || key.includes('no-reply') || key.includes('mailer-daemon') || key.includes('notifications')) continue
+        emailData.forEach((msg: any) => {
+          const email = msg.sender_email?.toLowerCase() || ''
+          if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
 
-          const existing = peopleMap.get(key)
-          if (existing) {
-            existing.commitmentCount++
-            // Keep the most recent interaction
-            if (msg.received_at > existing.lastInteraction) {
-              existing.lastInteraction = msg.received_at
+          if (!contactMap[email]) {
+            contactMap[email] = {
+              name: msg.sender_name || email.split('@')[0],
+              email,
+              count: 0,
+              lastDate: msg.created_at,
+              dates: []
             }
-          } else {
-            peopleMap.set(key, {
-              name: msg.from_name || key,
-              email: key,
-              source: 'outlook',
-              commitmentCount: 1,
-              lastInteraction: msg.received_at || new Date().toISOString(),
-            })
           }
-        }
+          contactMap[email].count++
+          contactMap[email].dates.push(msg.created_at)
+          if (msg.created_at > contactMap[email].lastDate) {
+            contactMap[email].lastDate = msg.created_at
+          }
+        })
 
-        // Sort by interaction count (most interactions first)
-        const sorted = Array.from(peopleMap.values())
-          .sort((a, b) => b.commitmentCount - a.commitmentCount)
-          .slice(0, 50) // Top 50 relationships
+        const sorted = Object.values(contactMap)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 20)
+          .map(c => {
+            const dsc = daysSince(c.lastDate)
+            const score = calculateHealthScore(c.count, dsc)
+            return {
+              name: c.name,
+              email: c.email,
+              interactions: c.count,
+              lastActive: c.lastDate,
+              daysSinceContact: dsc,
+              healthScore: score,
+              trend: getTrend(dsc, c.count),
+              role: inferRole(c.email, c.name, c.count),
+            }
+          })
 
-        setRelationships(sorted)
-      } catch (err) {
-        console.error('Error fetching relationships:', err)
-      } finally {
-        setLoading(false)
+        setContacts(sorted)
       }
+      setLoading(false)
     }
-
-    fetchRelationships()
-  }, [supabase])
-
-  const filtered = relationships.filter(r =>
-    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.email.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  const getInteractionRecency = (date: string) => {
-    const days = Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24))
-    if (days === 0) return { label: 'Today', color: 'text-green-600' }
-    if (days === 1) return { label: 'Yesterday', color: 'text-green-600' }
-    if (days <= 7) return { label: days + ' days ago', color: 'text-blue-600' }
-    if (days <= 30) return { label: Math.floor(days / 7) + ' weeks ago', color: 'text-yellow-600' }
-    return { label: Math.floor(days / 30) + ' months ago', color: 'text-red-600' }
-  }
-
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-  }
+    load()
+  }, [])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading relationships...</p>
+      <div className="p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="grid grid-cols-2 gap-4">
+            {[1,2,3,4].map(i => <div key={i} className="h-40 bg-gray-100 rounded"></div>)}
+          </div>
+        </div>
       </div>
     )
   }
 
+  const needsAttention = contacts.filter(c => c.healthScore < 50 && c.interactions >= 5)
+  const totalInteractions = contacts.reduce((sum, c) => sum + c.interactions, 0)
+
   return (
-    <div className="space-y-6">
+    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Relationships</h1>
-        <p className="text-gray-600 mt-1">
-          People you interact with most, derived from your email and Slack activity
-        </p>
+        <h1 className="text-2xl font-bold text-gray-900">Relationship Health</h1>
+        <p className="text-gray-500 text-sm mt-1">How strong are your key relationships — based on interaction patterns and follow-through</p>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search by name or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        />
-      </div>
+      {/* Alert banner */}
+      {needsAttention.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-yellow-600 text-lg">⚠</span>
+          <div className="text-sm text-yellow-800">
+            <span className="font-semibold">{needsAttention.length} relationship{needsAttention.length > 1 ? 's' : ''} need{needsAttention.length === 1 ? 's' : ''} attention:</span>{' '}
+            {needsAttention.slice(0, 2).map(c => c.name).join(', ')}
+            {needsAttention.length > 2 ? ` and ${needsAttention.length - 2} more` : ''}
+            {' — '} interaction frequency dropping
+          </div>
+        </div>
+      )}
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Contacts</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{relationships.length}</p>
-            </div>
-            <Users className="w-10 h-10 text-indigo-100" />
-          </div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Active This Week</p>
-              <p className="text-3xl font-bold text-green-600 mt-2">
-                {relationships.filter(r => {
-                  const days = Math.floor((Date.now() - new Date(r.lastInteraction).getTime()) / (1000 * 60 * 60 * 24))
-                  return days <= 7
-                }).length}
-              </p>
-            </div>
-            <TrendingUp className="w-10 h-10 text-green-100" />
-          </div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Interactions</p>
-              <p className="text-3xl font-bold text-blue-600 mt-2">
-                {relationships.reduce((sum, r) => sum + r.commitmentCount, 0)}
-              </p>
-            </div>
-            <MessageCircle className="w-10 h-10 text-blue-100" />
-          </div>
-        </div>
-      </div>
+      {/* Relationship Cards — 2 column grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {contacts.slice(0, 10).map(contact => {
+          const scoreColor = getScoreColor(contact.healthScore)
+          const initials = contact.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+          const colors = ['bg-indigo-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-cyan-500', 'bg-pink-500']
+          const bgColor = colors[contact.name.charCodeAt(0) % colors.length]
+          const lastContactText = contact.daysSinceContact === 0 ? 'Today' : contact.daysSinceContact === 1 ? '1 day ago' : `${contact.daysSinceContact} days ago`
 
-      {/* Relationships List */}
-      <div className="space-y-3">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
-              <Users className="w-8 h-8 text-indigo-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {searchTerm ? 'No matching contacts' : 'No relationships tracked yet'}
-            </h3>
-            <p className="text-gray-500 max-w-md mb-6">
-              {searchTerm
-                ? 'Try a different search term.'
-                : 'Connect Slack or Outlook and sync your messages to start tracking relationships.'}
-            </p>
-            {!searchTerm && (
-              <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                Connect an Integration
-              </a>
-            )}
-          </div>
-        ) : (
-          filtered.map((relationship, idx) => {
-            const recency = getInteractionRecency(relationship.lastInteraction)
-            return (
-              <div key={relationship.email + idx} className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-indigo-600 font-bold text-sm">
-                        {getInitials(relationship.name)}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{relationship.name}</h3>
-                      <p className="text-sm text-gray-500">{relationship.email}</p>
-                    </div>
+          return (
+            <div key={contact.email} className="bg-white border border-gray-200 rounded-xl p-5">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
+                    {initials}
                   </div>
+                  <div>
+                    <div className="font-semibold text-gray-900">{contact.name}</div>
+                    <div className="text-xs text-gray-500">{contact.role}</div>
+                  </div>
+                </div>
 
-                  <div className="flex items-center gap-6 text-right">
-                    <div>
-                      <p className="text-xs text-gray-500">Interactions</p>
-                      <p className="text-lg font-bold text-gray-900">{relationship.commitmentCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Last Active</p>
-                      <p className={`text-sm font-medium ${recency.color}`}>{recency.label}</p>
-                    </div>
-                    <div className="flex items-center">
-                      {relationship.source === 'outlook' ? (
-                        <Mail className="w-5 h-5 text-blue-400" />
-                      ) : (
-                        <Hash className="w-5 h-5 text-purple-400" />
-                      )}
-                    </div>
+                {/* Health Score Ring */}
+                <div className="relative w-12 h-12">
+                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+                    <circle cx="24" cy="24" r="20" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                    <circle
+                      cx="24" cy="24" r="20" fill="none"
+                      stroke={scoreColor.ring}
+                      strokeWidth="3"
+                      strokeDasharray={`${(contact.healthScore / 100) * 125.6} 125.6`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className={`text-sm font-bold ${scoreColor.text}`}>{contact.healthScore}</span>
+                  </div>
+                  {/* Trend arrow */}
+                  <div className={`absolute -bottom-1 -right-1 text-xs ${
+                    contact.trend === 'up' ? 'text-green-500' : contact.trend === 'down' ? 'text-red-500' : 'text-gray-400'
+                  }`}>
+                    {contact.trend === 'up' ? '▲' : contact.trend === 'down' ? '▼' : '→'}
                   </div>
                 </div>
               </div>
-            )
-          })
-        )}
+
+              {/* Stats row */}
+              <div className="flex justify-between mt-4 pt-3 border-t border-gray-100">
+                <div>
+                  <div className="text-xs text-gray-400">Last 1:1</div>
+                  <div className="text-sm font-semibold text-gray-900">{lastContactText}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">This week</div>
+                  <div className="text-sm font-semibold text-gray-900">{contact.interactions} interactions</div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
+
+      {/* Summary */}
+      {contacts.length > 10 && (
+        <p className="text-center text-sm text-gray-400">
+          Showing top 10 of {contacts.length} relationships · {totalInteractions} total interactions
+        </p>
+      )}
     </div>
   )
 }
