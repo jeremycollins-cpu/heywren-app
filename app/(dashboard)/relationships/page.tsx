@@ -67,30 +67,30 @@ export default function RelationshipsPage() {
 
       const { data: emailData } = await supabase
         .from('outlook_messages')
-        .select('sender_email, sender_name, created_at')
-        .order('created_at', { ascending: false })
+        .select('from_email, from_name, received_at')
+        .order('received_at', { ascending: false })
         .limit(1000)
 
       if (emailData) {
         const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
 
         emailData.forEach((msg: any) => {
-          const email = msg.sender_email?.toLowerCase() || ''
+          const email = (msg.from_email || '').toLowerCase()
           if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
 
           if (!contactMap[email]) {
             contactMap[email] = {
-              name: msg.sender_name || email.split('@')[0],
+              name: msg.from_name || email.split('@')[0],
               email,
               count: 0,
-              lastDate: msg.created_at,
+              lastDate: msg.received_at,
               dates: []
             }
           }
           contactMap[email].count++
-          contactMap[email].dates.push(msg.created_at)
-          if (msg.created_at > contactMap[email].lastDate) {
-            contactMap[email].lastDate = msg.created_at
+          contactMap[email].dates.push(msg.received_at)
+          if (msg.received_at > contactMap[email].lastDate) {
+            contactMap[email].lastDate = msg.received_at
           }
         })
 
