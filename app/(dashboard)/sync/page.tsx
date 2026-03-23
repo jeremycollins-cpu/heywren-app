@@ -31,7 +31,7 @@ export default function SyncPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userData.user.id,
-          daysBack: 90,
+          daysBack: 30,
         }),
       })
 
@@ -73,7 +73,7 @@ export default function SyncPage() {
           <div className="flex-1">
             <h2 className="font-semibold text-gray-900">Slack History Sync</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Scans your Slack channels from the last 90 days to find commitments, promises,
+              Scans your Slack channels from the last 30 days to find commitments, promises,
               deadlines, and tasks that may need follow-up. Uses AI to identify what matters.
             </p>
           </div>
@@ -97,7 +97,7 @@ export default function SyncPage() {
             ) : (
               <>
                 <RefreshCw className="w-4 h-4" />
-                Sync Last 90 Days
+                Sync Last 30 Days
               </>
             )}
           </button>
