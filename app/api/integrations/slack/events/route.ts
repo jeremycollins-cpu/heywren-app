@@ -1,15 +1,22 @@
+// app/api/integrations/slack/events/route.ts
+// Handles incoming Slack events — specifically @HeyWren mentions
+// Verifies request signatures, then dispatches to Inngest for async processing
+
 import { NextRequest, NextResponse } from 'next/server'
 import { inngest } from '@/inngest/client'
 import crypto from 'crypto'
+
+// ─── Slack Signature Verification ───────────────────────────────────────────
 
 function verifySlackRequest(
   timestamp: string,
   signature: string,
   rawBody: string
 ): boolean {
-  // Reject requests older than 5 minutes to prevent replay attacks
+  // Reject requests older than 5 minutes (replay attack prevention)
   const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 60 * 5
   if (parseInt(timestamp) < fiveMinutesAgo) {
+    console.warn('Slack request too old — possible replay attack')
     return false
   }
 
@@ -19,13 +26,10 @@ function verifySlackRequest(
     return false
   }
 
-  const baseString = 'v0:' + timestamp + ':' + rawBody
+  const baseString = `v0:${timestamp}:${rawBody}`
   const mySignature =
     'v0=' +
-    crypto
-      .createHmac('sha256', signingSecret)
-      .update(baseString)
-      .digest('hex')
+    crypto.createHmac('sha256', signingSecret).update(baseString).digest('hex')
 
   try {
     return crypto.timingSafeEqual(
@@ -37,6 +41,8 @@ function verifySlackRequest(
   }
 }
 
+// ─── POST Handler ───────────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
   const timestamp = request.headers.get('x-slack-request-timestamp') || ''
@@ -44,47 +50,75 @@ export async function POST(request: NextRequest) {
 
   // Verify the request is actually from Slack
   if (!verifySlackRequest(timestamp, signature, rawBody)) {
-    console.error('Invalid Slack signature — check SLACK_SIGNING_SECRET env var')
+    console.error('Invalid Slack signature — rejecting request')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
-  let body
+  let body: any
   try {
     body = JSON.parse(rawBody)
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Handle Slack URL verification (required when setting up Event Subscriptions)
+  // ── URL Verification (required when first setting up Event Subscriptions) ──
   if (body.type === 'url_verification') {
+    console.log('Slack URL verification challenge received')
     return NextResponse.json({ challenge: body.challenge })
   }
 
-  // Handle events
+  // ── Event Callback Processing ──
   if (body.type === 'event_callback') {
     const event = body.event
 
-    // Process human messages only (skip bot messages, message_changed, etc.)
-    if (event.type === 'message' && !event.bot_id && !event.subtype) {
+    // ── app_mention: Someone tagged @HeyWren ──
+    if (event.type === 'app_mention') {
+      console.log(
+        `@HeyWren mentioned in channel ${event.channel} by user ${event.user}`
+      )
+
       try {
         await inngest.send({
-          name: 'slack/message.received',
+          name: 'slack/mention.received',
           data: {
-            team_id: body.team_id,
+            team_id: body.team_id, // Slack workspace ID
             channel_id: event.channel,
-            user_id: event.user,
+            user_id: event.user, // Who tagged @HeyWren
             text: event.text || '',
-            ts: event.ts,
-            thread_ts: event.thread_ts || null,
+            ts: event.ts, // Message timestamp (Slack's unique message ID)
+            thread_ts: event.thread_ts || null, // Thread parent if in a thread
           },
         })
       } catch (err) {
-        console.error('Failed to send event to Inngest:', err)
-        // Still return 200 to Slack so it does not retry endlessly
+        console.error('Failed to send app_mention event to Inngest:', err)
+      }
+    }
+
+    // ── message: Regular channel message (for passive monitoring mode) ──
+    // Only processes if the message is from a human (no bots, no subtypes)
+    if (event.type === 'message' && !event.bot_id && !event.subtype) {
+      // Skip very short messages (likely not commitments)
+      if (event.text && event.text.trim().length >= 15) {
+        try {
+          await inngest.send({
+            name: 'slack/message.received',
+            data: {
+              team_id: body.team_id,
+              channel_id: event.channel,
+              user_id: event.user,
+              text: event.text || '',
+              ts: event.ts,
+              thread_ts: event.thread_ts || null,
+            },
+          })
+        } catch (err) {
+          console.error('Failed to send message event to Inngest:', err)
+        }
       }
     }
   }
 
   // Always return 200 quickly — Slack expects a response within 3 seconds
+  // Actual processing happens asynchronously via Inngest
   return NextResponse.json({ ok: true })
 }
