@@ -9,22 +9,44 @@ function getAdminClient() {
   )
 }
 
-// Rate limit helper — Slack allows ~1 request per second for history
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function slackFetch(url: string, token: string, maxRetries: number = 2): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    const data = await res.json()
+
+    if (data.ok) return data
+
+    if (data.error === 'ratelimited') {
+      const retryAfter = parseInt(res.headers.get('Retry-After') || '3')
+      console.log('Rate limited, waiting ' + retryAfter + 's (attempt ' + (attempt + 1) + ')')
+      await sleep(retryAfter * 1000)
+      continue
+    }
+
+    return data // Return non-rate-limit errors immediately
+  }
+
+  return { ok: false, error: 'ratelimited_after_retries' }
 }
 
 export async function POST(request: NextRequest) {
   const supabase = getAdminClient()
 
-  // Authenticate the request — must include userId in body
   let userId: string
-  let daysBack: number = 90
+  let daysBack: number = 30
+  let channelId: string | null = null // Optional: sync a specific channel
 
   try {
     const body = await request.json()
     userId = body.userId
-    daysBack = body.daysBack || 90
+    daysBack = body.daysBack || 30
+    channelId = body.channelId || null
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
@@ -48,7 +70,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No team found for user' }, { status: 400 })
   }
 
-  // Get the Slack access token from integrations
+  // Get the Slack access token
   const { data: integration } = await supabase
     .from('integrations')
     .select('access_token, config')
@@ -63,57 +85,39 @@ export async function POST(request: NextRequest) {
   const slackToken = integration.access_token
   const oldestTimestamp = Math.floor((Date.now() - daysBack * 24 * 60 * 60 * 1000) / 1000)
 
-  // Step 1: Get all channels the bot is a member of
+  // Get channels to process
   let channels: Array<{ id: string; name: string }> = []
-  let channelCursor: string | undefined
 
-  do {
+  if (channelId) {
+    // Process a specific channel
+    channels = [{ id: channelId, name: channelId }]
+  } else {
+    // List channels the bot is in
     const params = new URLSearchParams({
       types: 'public_channel,private_channel',
       exclude_archived: 'true',
-      limit: '200',
+      limit: '100',
     })
-    if (channelCursor) {
-      params.append('cursor', channelCursor)
-    }
 
-    let channelData: any
-    let retries = 0
-    while (retries < 3) {
-      const channelRes = await fetch('https://slack.com/api/conversations.list?' + params.toString(), {
-        headers: { Authorization: 'Bearer ' + slackToken },
-      })
-      channelData = await channelRes.json()
-
-      if (channelData.ok) break
-
-      if (channelData.error === 'ratelimited') {
-        const retryAfter = parseInt(channelRes.headers.get('Retry-After') || '5')
-        console.log('Rate limited on conversations.list, waiting ' + retryAfter + 's')
-        await sleep(retryAfter * 1000)
-        retries++
-        continue
-      }
-
-      console.error('Slack conversations.list error:', channelData.error)
-      return NextResponse.json({ error: 'Failed to list Slack channels: ' + channelData.error }, { status: 500 })
-    }
+    const channelData = await slackFetch(
+      'https://slack.com/api/conversations.list?' + params.toString(),
+      slackToken
+    )
 
     if (!channelData.ok) {
-      return NextResponse.json({ error: 'Slack rate limit exceeded. Please wait a minute and try again.' }, { status: 429 })
+      return NextResponse.json({
+        error: 'Failed to list channels: ' + channelData.error,
+      }, { status: 500 })
     }
 
-    // Only include channels where the bot is a member
-    const memberChannels = (channelData.channels || []).filter((ch: any) => ch.is_member)
-    channels = channels.concat(memberChannels.map((ch: any) => ({ id: ch.id, name: ch.name })))
-    channelCursor = channelData.response_metadata?.next_cursor || undefined
-
-    await sleep(1500)
-  } while (channelCursor)
+    channels = (channelData.channels || [])
+      .filter((ch: any) => ch.is_member)
+      .map((ch: any) => ({ id: ch.id, name: ch.name }))
+  }
 
   if (channels.length === 0) {
     return NextResponse.json({
-      error: 'The HeyWren bot is not a member of any channels. Invite it to channels first with /invite @HeyWren',
+      error: 'The HeyWren bot is not a member of any channels. Add it to channels in Slack first.',
     }, { status: 400 })
   }
 
@@ -121,72 +125,64 @@ export async function POST(request: NextRequest) {
   let totalCommitments = 0
   let processedChannels = 0
   const errors: string[] = []
+  const startTime = Date.now()
 
-  // Step 2: For each channel, fetch message history
   for (const channel of channels) {
+    // Safety: stop if we're approaching the 300s timeout (leave 30s buffer)
+    if (Date.now() - startTime > 250000) {
+      errors.push('Stopped early due to time limit. Processed ' + processedChannels + ' of ' + channels.length + ' channels.')
+      break
+    }
+
     processedChannels++
     let messageCursor: string | undefined
+    let channelMessageCount = 0
 
     try {
       do {
+        // Time check inside the loop too
+        if (Date.now() - startTime > 250000) break
+
         const historyParams = new URLSearchParams({
           channel: channel.id,
           oldest: oldestTimestamp.toString(),
-          limit: '100',
+          limit: '50',
           inclusive: 'true',
         })
         if (messageCursor) {
           historyParams.append('cursor', messageCursor)
         }
 
-        let historyData: any
-        let histRetries = 0
-        while (histRetries < 3) {
-          const historyRes = await fetch('https://slack.com/api/conversations.history?' + historyParams.toString(), {
-            headers: { Authorization: 'Bearer ' + slackToken },
-          })
-          historyData = await historyRes.json()
-
-          if (historyData.ok) break
-
-          if (historyData.error === 'ratelimited') {
-            const retryAfter = parseInt(historyRes.headers.get('Retry-After') || '5')
-            console.log('Rate limited on history for #' + channel.name + ', waiting ' + retryAfter + 's')
-            await sleep(retryAfter * 1000)
-            histRetries++
-            continue
-          }
-
-          console.error('Slack history error for #' + channel.name + ':', historyData.error)
-          errors.push('Channel #' + channel.name + ': ' + historyData.error)
-          break
-        }
+        const historyData = await slackFetch(
+          'https://slack.com/api/conversations.history?' + historyParams.toString(),
+          slackToken
+        )
 
         if (!historyData.ok) {
-          errors.push('Channel #' + channel.name + ': rate limited after retries')
+          errors.push('#' + channel.name + ': ' + historyData.error)
           break
         }
 
         const messages = (historyData.messages || []).filter(
-          (msg: any) => msg.type === 'message' && !msg.bot_id && !msg.subtype && msg.text
+          (msg: any) => msg.type === 'message' && !msg.bot_id && !msg.subtype && msg.text && msg.text.length >= 15
         )
 
-        // Step 3: Process each message
         for (const msg of messages) {
+          // Time check per message
+          if (Date.now() - startTime > 250000) break
+
           totalMessages++
+          channelMessageCount++
 
-          // Skip very short messages (unlikely to contain commitments)
-          if (msg.text.length < 15) continue
-
-          // Check if we already processed this message
+          // Skip already processed
           const { data: existing } = await supabase
             .from('slack_messages')
             .select('id')
             .eq('team_id', teamId)
             .eq('message_ts', msg.ts)
-            .single()
+            .maybeSingle()
 
-          if (existing) continue // Already processed
+          if (existing) continue
 
           // Store the message
           const { data: messageData, error: msgErr } = await supabase
@@ -208,7 +204,7 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // Detect commitments using Claude
+          // Detect commitments
           try {
             const commitments = await detectCommitments(msg.text)
 
@@ -226,9 +222,7 @@ export async function POST(request: NextRequest) {
                   due_date: commitment.dueDate || null,
                 })
 
-                if (!commitErr) {
-                  totalCommitments++
-                }
+                if (!commitErr) totalCommitments++
               }
             }
 
@@ -237,27 +231,28 @@ export async function POST(request: NextRequest) {
               .update({ processed: true, commitments_found: commitments?.length || 0 })
               .eq('id', messageData.id)
           } catch (aiErr) {
-            console.error('AI detection failed for message:', (aiErr as Error).message)
+            console.error('AI detection failed:', (aiErr as Error).message)
             await supabase
               .from('slack_messages')
               .update({ processed: true, commitments_found: 0 })
               .eq('id', messageData.id)
           }
 
-          // Rate limit — avoid hammering Claude API
-          await sleep(300)
+          // Small delay between Claude calls
+          await sleep(200)
         }
 
         messageCursor = historyData.response_metadata?.next_cursor || undefined
-
-        // Rate limit Slack API
-        await sleep(1500)
+        await sleep(1200)
       } while (messageCursor)
     } catch (channelErr) {
-      console.error('Error processing channel #' + channel.name + ':', channelErr)
-      errors.push('Channel #' + channel.name + ': ' + (channelErr as Error).message)
+      errors.push('#' + channel.name + ': ' + (channelErr as Error).message)
     }
+
+    console.log('Channel #' + channel.name + ': scanned ' + channelMessageCount + ' messages')
   }
+
+  const duration = Math.round((Date.now() - startTime) / 1000)
 
   return NextResponse.json({
     success: true,
@@ -266,6 +261,7 @@ export async function POST(request: NextRequest) {
       total_channels: channels.length,
       messages_scanned: totalMessages,
       commitments_detected: totalCommitments,
+      duration_seconds: duration,
       errors: errors.length > 0 ? errors : undefined,
     },
   })
