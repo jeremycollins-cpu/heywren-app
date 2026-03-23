@@ -15,8 +15,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Exchange code for token — redirect_uri MUST match what was used in the authorize step
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
+    // Hardcode redirect_uri to eliminate any env var ambiguity
+    const redirectUri = 'https://app.heywren.ai/api/integrations/slack/connect'
+
+    console.log('=== SLACK OAUTH DEBUG ===')
+    console.log('redirect_uri:', redirectUri)
+    console.log('SLACK_CLIENT_ID set:', !!process.env.SLACK_CLIENT_ID)
+    console.log('SLACK_CLIENT_SECRET set:', !!process.env.SLACK_CLIENT_SECRET)
+    console.log('NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
 
     const response = await fetch('https://slack.com/api/oauth.v2.access', {
       method: 'POST',
@@ -32,6 +38,9 @@ export async function GET(request: NextRequest) {
     })
 
     const data = await response.json()
+
+    console.log('Slack response ok:', data.ok)
+    console.log('Slack response error:', data.error)
 
     if (!data.ok) {
       return NextResponse.json(
