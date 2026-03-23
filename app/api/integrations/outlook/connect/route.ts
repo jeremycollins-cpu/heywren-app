@@ -58,12 +58,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const clientId = process.env.AZURE_CLIENT_ID
-    const clientSecret = process.env.AZURE_CLIENT_SECRET
+    const clientId = process.env.AZURE_AD_CLIENT_ID
+    const clientSecret = process.env.AZURE_AD_CLIENT_SECRET
     const redirectUri = 'https://app.heywren.ai/api/integrations/outlook/connect'
 
     if (!clientId || !clientSecret) {
-      console.error('Missing Azure credentials. AZURE_CLIENT_ID set:', !!clientId, 'AZURE_CLIENT_SECRET set:', !!clientSecret)
+      console.error('Missing Azure credentials. AZURE_AD_CLIENT_ID set:', !!clientId, 'AZURE_AD_CLIENT_SECRET set:', !!clientSecret)
       return NextResponse.json(
         { error: 'Server configuration error — missing Azure credentials' },
         { status: 500 }
