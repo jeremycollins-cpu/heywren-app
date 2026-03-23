@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
+
+// Use admin client since session may be lost after OAuth redirect
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')
-  const redirect = searchParams.get('redirect') || 'dashboard'
 
   if (!code) {
     return NextResponse.json(
@@ -14,15 +21,32 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  try {
-    // Hardcode redirect_uri to eliminate any env var ambiguity
-    const redirectUri = 'https://app.heywren.ai/api/integrations/slack/connect'
+  // Parse user info from state parameter
+  let userId: string | null = null
+  let teamId: string | null = null
+  let redirect = 'dashboard'
 
-    console.log('=== SLACK OAUTH DEBUG ===')
-    console.log('redirect_uri:', redirectUri)
-    console.log('SLACK_CLIENT_ID set:', !!process.env.SLACK_CLIENT_ID)
-    console.log('SLACK_CLIENT_SECRET set:', !!process.env.SLACK_CLIENT_SECRET)
-    console.log('NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
+  if (state) {
+    try {
+      const stateData = JSON.parse(atob(state))
+      userId = stateData.userId || null
+      teamId = stateData.teamId || null
+      redirect = stateData.redirect || 'dashboard'
+    } catch (e) {
+      console.error('Failed to parse state:', e)
+    }
+  }
+
+  if (!userId || !teamId) {
+    console.error('Missing userId or teamId in state')
+    return NextResponse.json(
+      { error: 'Missing user context. Please try connecting again.' },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const redirectUri = 'https://app.heywren.ai/api/integrations/slack/connect'
 
     const response = await fetch('https://slack.com/api/oauth.v2.access', {
       method: 'POST',
@@ -39,51 +63,27 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json()
 
-    console.log('Slack response ok:', data.ok)
-    console.log('Slack response error:', data.error)
-
     if (!data.ok) {
+      console.error('Slack token exchange failed:', data.error)
       return NextResponse.json(
         { error: data.error || 'Failed to get access token' },
         { status: 400 }
       )
     }
 
-    const supabase = await createClient()
-
-    // Get current user
-    const { data: authData } = await supabase.auth.getUser()
-    if (!authData?.user) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      )
-    }
-
-    // Get user's current team
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', authData.user.id)
-      .single()
-
-    if (!profile?.current_team_id) {
-      return NextResponse.json(
-        { error: 'No team found' },
-        { status: 400 }
-      )
-    }
+    // Use admin client to store integration (bypasses session requirement)
+    const supabase = getAdminClient()
 
     // Store the integration
     const { error } = await supabase.from('integrations').insert({
-      team_id: profile.current_team_id,
+      team_id: teamId,
       provider: 'slack',
       access_token: data.access_token,
       refresh_token: data.refresh_token || null,
       config: {
         bot_id: data.bot_user_id,
-        slack_team_id: data.team.id,
-        slack_team_name: data.team.name,
+        slack_team_id: data.team?.id,
+        slack_team_name: data.team?.name,
       },
     })
 
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Determine redirect URL based on where the connection was initiated
+    // Redirect back to integrations page
     let redirectUrl = '/integrations?status=success'
     if (redirect === 'onboarding') {
       redirectUrl = '/onboarding/integrations?slack=connected'
