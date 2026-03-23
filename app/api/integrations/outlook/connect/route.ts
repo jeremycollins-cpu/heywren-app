@@ -1,216 +1,343 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { detectCommitments } from '@/lib/ai/detect-commitments'
 
 function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!url || !key) {
-    throw new Error('Missing Supabase environment variables')
-  }
-
-  return createClient(url, key)
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
-  const state = searchParams.get('state')
-  const error = searchParams.get('error')
-  const errorDescription = searchParams.get('error_description')
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
-  // Parse state for userId, teamId, and redirect target
-  let userId: string | null = null
-  let teamId: string | null = null
-  let redirectTarget = 'dashboard'
+/**
+ * Refresh the Microsoft access token using the stored refresh_token.
+ * Updates the integrations table with the new token and expiry.
+ */
+async function refreshMicrosoftToken(
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<string | null> {
+  try {
+    const tokenRes = await fetch(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: process.env.AZURE_AD_CLIENT_ID!,
+          client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          scope: 'openid profile email Mail.Read Calendars.Read User.Read offline_access',
+        }),
+      }
+    )
 
-  if (state) {
-    try {
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      userId = stateData.userId || null
-      teamId = stateData.teamId || null
-      redirectTarget = stateData.redirect || 'dashboard'
-    } catch (e) {
-      console.error('Failed to parse state:', e)
+    const tokenData = await tokenRes.json()
+
+    if (!tokenData.access_token) {
+      console.error('Token refresh failed:', tokenData.error_description || tokenData.error)
+      return null
     }
+
+    // Update the stored tokens
+    const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+
+    await supabase
+      .from('integrations')
+      .update({
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || refreshToken, // Microsoft may return a new refresh token
+        config: {
+          token_expires_at: expiresAt,
+        },
+      })
+      .eq('id', integrationId)
+
+    console.log('Microsoft token refreshed, expires at', expiresAt)
+    return tokenData.access_token
+  } catch (err) {
+    console.error('Token refresh error:', (err as Error).message)
+    return null
+  }
+}
+
+/**
+ * Fetch from Microsoft Graph API with automatic token refresh on 401.
+ */
+async function graphFetch(
+  url: string,
+  token: string,
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<{ data: any; token: string }> {
+  let currentToken = token
+
+  const res = await fetch(url, {
+    headers: { Authorization: 'Bearer ' + currentToken },
+  })
+
+  // If token expired, refresh and retry once
+  if (res.status === 401) {
+    console.log('Microsoft token expired, refreshing...')
+    const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+    if (!newToken) {
+      return { data: { error: 'Token refresh failed. Please reconnect Outlook.' }, token: currentToken }
+    }
+    currentToken = newToken
+
+    const retryRes = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + currentToken },
+    })
+    const retryData = await retryRes.json()
+    return { data: retryData, token: currentToken }
   }
 
-  if (error) {
-    console.error('Microsoft OAuth error:', error, errorDescription)
-    const redirectUrl = redirectTarget === 'onboarding'
-      ? '/onboarding/integrations?outlook=error'
-      : '/integrations?status=error'
-    return NextResponse.redirect(new URL(redirectUrl, request.url))
-  }
+  const data = await res.json()
+  return { data, token: currentToken }
+}
 
-  if (!code) {
-    return NextResponse.json(
-      { error: 'Missing authorization code' },
-      { status: 400 }
-    )
-  }
+export async function POST(request: NextRequest) {
+  const supabase = getAdminClient()
 
-  if (!userId) {
-    return NextResponse.json(
-      { error: 'Missing user context. Please try connecting again.' },
-      { status: 400 }
-    )
-  }
+  let userId: string
+  let daysBack: number = 30
 
   try {
-    const clientId = process.env.AZURE_AD_CLIENT_ID
-    const clientSecret = process.env.AZURE_AD_CLIENT_SECRET
-    const redirectUri = 'https://app.heywren.ai/api/integrations/outlook/connect'
+    const body = await request.json()
+    userId = body.userId
+    daysBack = body.daysBack || 30
 
-    if (!clientId || !clientSecret) {
-      console.error('Missing Azure credentials. AZURE_AD_CLIENT_ID set:', !!clientId, 'AZURE_AD_CLIENT_SECRET set:', !!clientSecret)
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    }
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  // Get user's team
+  let teamId: string | null = null
+  const { data: members } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId)
+
+  if (members && members.length > 0) {
+    teamId = members[0].team_id
+  }
+
+  if (!teamId) {
+    return NextResponse.json({ error: 'No team found for user' }, { status: 400 })
+  }
+
+  // Get the Outlook integration with tokens
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('id, access_token, refresh_token, config')
+    .eq('team_id', teamId)
+    .eq('provider', 'outlook')
+    .single()
+
+  if (!integration || !integration.access_token) {
+    return NextResponse.json(
+      { error: 'Outlook not connected or missing access token. Please connect Outlook first.' },
+      { status: 400 }
+    )
+  }
+
+  let msToken = integration.access_token
+  const refreshToken = integration.refresh_token || ''
+  const integrationId = integration.id
+
+  // Check if token is expired and refresh proactively
+  const tokenExpiresAt = integration.config?.token_expires_at
+  if (tokenExpiresAt && new Date(tokenExpiresAt) < new Date()) {
+    console.log('Microsoft token expired, refreshing proactively...')
+    const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+    if (newToken) {
+      msToken = newToken
+    } else {
       return NextResponse.json(
-        { error: 'Server configuration error — missing Azure credentials' },
-        { status: 500 }
+        { error: 'Microsoft token expired and could not be refreshed. Please reconnect Outlook in Settings.' },
+        { status: 401 }
       )
     }
+  }
 
-    // Exchange code for tokens
-    const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-        scope: 'openid profile email Mail.Read Calendars.Read User.Read offline_access',
-      }).toString(),
-    })
+  const startTime = Date.now()
+  const oldestDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
 
-    const tokenData = await tokenResponse.json()
+  // Fetch emails using Microsoft Graph API
+  // We'll page through results, processing each batch
+  let totalEmails = 0
+  let totalCommitments = 0
+  let processedPages = 0
+  const errors: string[] = []
 
-    if (tokenData.error) {
-      console.error('Token exchange error:', tokenData.error, tokenData.error_description)
-      return NextResponse.json(
-        { error: tokenData.error_description || 'Failed to get access token' },
-        { status: 400 }
-      )
+  // Microsoft Graph: get messages from the last N days
+  // Filter: receivedDateTime >= oldest date, only get emails (not calendar invites etc.)
+  // Select only fields we need to reduce payload size
+  const baseFilter = encodeURIComponent(
+    `receivedDateTime ge ${oldestDate} and isDraft eq false`
+  )
+  const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead'
+  let nextLink: string | null =
+    `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
+
+  while (nextLink) {
+    // Time check: stop before 300s timeout (leave 30s buffer)
+    if (Date.now() - startTime > 250000) {
+      errors.push('Stopped early due to time limit. Processed ' + processedPages + ' pages of emails.')
+      break
     }
 
-    // Get user profile from Microsoft Graph
-    const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: {
-        Authorization: 'Bearer ' + tokenData.access_token,
-      },
-    })
+    const { data: pageData, token: updatedToken } = await graphFetch(
+      nextLink,
+      msToken,
+      supabase,
+      integrationId,
+      refreshToken
+    )
+    msToken = updatedToken
 
-    const profileData = await profileResponse.json()
-
-    // Use admin client — server session is lost after external OAuth redirect
-    const supabase = getAdminClient()
-
-    // Resolve teamId if not in state
-    if (!teamId) {
-      const { data: members } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', userId)
-
-      if (members && members.length > 0) {
-        teamId = members[0].team_id
-      }
+    if (pageData.error) {
+      const errMsg = pageData.error.message || pageData.error.code || JSON.stringify(pageData.error)
+      errors.push('Graph API error: ' + errMsg)
+      break
     }
 
-    if (!teamId) {
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', userId)
-          .single()
+    const emails = pageData.value || []
+    processedPages++
 
-        if (profile && profile.current_team_id) {
-          teamId = profile.current_team_id
-        }
-      } catch (e) {
-        // Column might not exist
-      }
-    }
+    console.log('Page ' + processedPages + ': fetched ' + emails.length + ' emails')
 
-    // Last resort: create a team
-    if (!teamId) {
-      const { data: newTeam, error: teamErr } = await supabase
-        .from('teams')
-        .insert([{
-          name: 'My Team',
-          slug: 'team-' + Date.now(),
-          owner_id: userId
-        }])
+    for (const email of emails) {
+      // Time check per email
+      if (Date.now() - startTime > 250000) break
+
+      totalEmails++
+
+      // Skip very short emails (likely auto-replies, read receipts)
+      const preview = email.bodyPreview || ''
+      if (preview.length < 20) continue
+
+      // Skip already processed
+      const { data: existing } = await supabase
+        .from('outlook_messages')
+        .select('id')
+        .eq('team_id', teamId)
+        .eq('message_id', email.id)
+        .maybeSingle()
+
+      if (existing) continue
+
+      // Build a text representation for AI analysis
+      const fromName = email.from?.emailAddress?.name || email.from?.emailAddress?.address || 'Unknown'
+      const fromEmail = email.from?.emailAddress?.address || ''
+      const toList = (email.toRecipients || [])
+        .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
+        .join(', ')
+      const subject = email.subject || '(no subject)'
+
+      const messageText = [
+        'From: ' + fromName + ' <' + fromEmail + '>',
+        'To: ' + toList,
+        'Subject: ' + subject,
+        'Date: ' + email.receivedDateTime,
+        '',
+        preview,
+      ].join('\n')
+
+      // Store the email
+      const { data: messageData, error: msgErr } = await supabase
+        .from('outlook_messages')
+        .insert({
+          team_id: teamId,
+          message_id: email.id,
+          conversation_id: email.conversationId || null,
+          from_name: fromName,
+          from_email: fromEmail,
+          to_recipients: toList,
+          subject: subject,
+          body_preview: preview,
+          received_at: email.receivedDateTime,
+          processed: false,
+        })
         .select()
         .single()
 
-      if (newTeam && !teamErr) {
-        teamId = newTeam.id
-
-        await supabase.from('team_members').insert([{
-          team_id: newTeam.id,
-          user_id: userId,
-          role: 'owner',
-        }])
-
-        try {
-          await supabase.from('profiles').update({
-            current_team_id: newTeam.id,
-          }).eq('id', userId)
-        } catch (e) {
-          // OK if column does not exist
+      if (msgErr) {
+        // If table doesn't exist yet, this will fail on the first insert
+        if (msgErr.message?.includes('outlook_messages')) {
+          errors.push('The outlook_messages table does not exist yet. Please run the migration SQL first.')
+          nextLink = null
+          break
         }
-      } else {
-        console.error('Team creation error:', JSON.stringify(teamErr))
+        console.error('Failed to store email:', msgErr.message)
+        continue
       }
+
+      // Detect commitments via AI
+      try {
+        const commitments = await detectCommitments(messageText)
+
+        if (commitments && commitments.length > 0) {
+          for (const commitment of commitments) {
+            const { error: commitErr } = await supabase.from('commitments').insert({
+              team_id: teamId,
+              creator_id: null,
+              title: commitment.title,
+              description: commitment.description,
+              status: 'pending',
+              priority_score: commitment.confidence,
+              source: 'outlook',
+              source_message_id: messageData.id,
+              due_date: commitment.dueDate || null,
+            })
+
+            if (!commitErr) totalCommitments++
+          }
+        }
+
+        await supabase
+          .from('outlook_messages')
+          .update({ processed: true, commitments_found: commitments?.length || 0 })
+          .eq('id', messageData.id)
+      } catch (aiErr) {
+        console.error('AI detection failed for email:', (aiErr as Error).message)
+        await supabase
+          .from('outlook_messages')
+          .update({ processed: true, commitments_found: 0 })
+          .eq('id', messageData.id)
+      }
+
+      // Small delay between Claude API calls
+      await sleep(200)
     }
 
-    if (!teamId) {
-      return NextResponse.json(
-        { error: 'Could not find or create a team.' },
-        { status: 400 }
-      )
-    }
+    // Get next page link (Microsoft Graph pagination)
+    nextLink = pageData['@odata.nextLink'] || null
 
-    // Upsert the integration
-    const { error: upsertErr } = await supabase.from('integrations').upsert({
-      team_id: teamId,
-      provider: 'outlook',
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token || null,
-      config: {
-        microsoft_user_id: profileData.id,
-        display_name: profileData.displayName,
-        email: profileData.mail || profileData.userPrincipalName,
-        token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
-        connected_by: userId,
-      },
-    }, { onConflict: 'team_id,provider' })
-
-    if (upsertErr) {
-      console.error('Integration upsert error:', JSON.stringify(upsertErr))
-      return NextResponse.json(
-        { error: 'Failed to store integration: ' + upsertErr.message },
-        { status: 500 }
-      )
-    }
-
-    // Redirect based on where the connection was initiated
-    let redirectUrl = '/integrations?status=success'
-    if (redirectTarget === 'onboarding') {
-      redirectUrl = '/onboarding/integrations?outlook=connected'
-    }
-
-    return NextResponse.redirect(new URL(redirectUrl, request.url))
-  } catch (err) {
-    console.error('Microsoft OAuth error:', err)
-    return NextResponse.json(
-      { error: 'Authentication failed' },
-      { status: 500 }
-    )
+    // Small delay between pages
+    if (nextLink) await sleep(500)
   }
+
+  const duration = Math.round((Date.now() - startTime) / 1000)
+
+  return NextResponse.json({
+    success: true,
+    summary: {
+      emails_scanned: totalEmails,
+      commitments_detected: totalCommitments,
+      pages_processed: processedPages,
+      duration_seconds: duration,
+      errors: errors.length > 0 ? errors : undefined,
+    },
+  })
 }
