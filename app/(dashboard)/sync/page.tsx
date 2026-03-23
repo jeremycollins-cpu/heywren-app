@@ -73,8 +73,8 @@ export default function SyncPage() {
           <div className="flex-1">
             <h2 className="font-semibold text-gray-900">Slack History Sync</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Scans your Slack channels from the last 30 days to find commitments, promises,
-              deadlines, and tasks that may need follow-up. Uses AI to identify what matters.
+              Automatically joins all public channels, scans messages and DMs from the last 30 days,
+              and uses AI to find commitments, promises, deadlines, and tasks that need follow-up.
             </p>
           </div>
         </div>
