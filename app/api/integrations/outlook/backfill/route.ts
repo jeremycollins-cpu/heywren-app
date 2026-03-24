@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
 
 // Process max 100 messages per request to stay within 300s timeout
@@ -17,6 +15,66 @@ function getAdminClient() {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Extract the authenticated user from the request cookies
+async function getAuthenticatedUser(request: NextRequest) {
+  let token: string | null = null
+
+  // Method 1: Look for Supabase auth token in cookies
+  for (const cookie of request.cookies.getAll()) {
+    if (cookie.name.includes('auth-token') && !cookie.name.includes('auth-token.')) {
+      try {
+        const parsed = JSON.parse(cookie.value)
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          token = parsed[0]
+        } else if (parsed.access_token) {
+          token = parsed.access_token
+        }
+      } catch {
+        token = cookie.value
+      }
+      break
+    }
+  }
+
+  if (!token) {
+    // Method 2: Check for chunked cookies (sb-XXX-auth-token.0, sb-XXX-auth-token.1, etc.)
+    const chunks: string[] = []
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.includes('auth-token.')) {
+        const chunkIndex = parseInt(cookie.name.split('.').pop() || '0')
+        chunks[chunkIndex] = cookie.value
+      }
+    }
+    if (chunks.length > 0) {
+      const combined = chunks.join('')
+      try {
+        const parsed = JSON.parse(combined)
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          token = parsed[0]
+        } else if (parsed.access_token) {
+          token = parsed.access_token
+        }
+      } catch {
+        token = combined
+      }
+    }
+  }
+
+  if (!token) return null
+
+  // Verify the token with Supabase
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
+
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return null
+
+  return user
 }
 
 async function refreshMicrosoftToken(
@@ -48,7 +106,7 @@ async function refreshMicrosoftToken(
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
 
-    // Preserve existing config fields and add token_expires_at
+    // Preserve existing config fields
     const { data: currentIntegration } = await supabase
       .from('integrations')
       .select('config')
@@ -106,34 +164,13 @@ async function graphFetch(
 export async function POST(request: NextRequest) {
   // ================================================================
   // STEP 1: Authenticate the user from their session cookie
-  // This prevents unauthorized access to the backfill endpoint
   // ================================================================
-  const cookieStore = await cookies()
-  const supabaseAuth = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Ignore — cookies can't be set in route handlers after streaming starts
-          }
-        },
-      },
-    }
-  )
-
-  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
-  if (authError || !user) {
-    console.error('Outlook backfill auth failed:', authError?.message || 'No user session')
-    return NextResponse.json({ error: 'Unauthorized. Please log in again.' }, { status: 401 })
+  const user = await getAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Unauthorized. Please log in again.' },
+      { status: 401 }
+    )
   }
 
   const userId = user.id
@@ -193,7 +230,6 @@ export async function POST(request: NextRequest) {
 
   // ================================================================
   // PHASE 1: Process previously stored but unprocessed messages
-  // This is FAST — no Graph API calls, just AI processing
   // ================================================================
   const { data: unprocessed, count: unprocessedCount } = await supabase
     .from('outlook_messages')
@@ -233,7 +269,6 @@ export async function POST(request: NextRequest) {
       batch.push({ id: msg.message_id, text: messageText, dbId: msg.id })
     }
 
-    // Process in chunks of 15
     for (let i = 0; i < batch.length; i += 15) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
@@ -276,7 +311,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If more unprocessed messages remain, return early
     const remainingUnprocessed = (unprocessedCount || 0) - processedMessages
     if (remainingUnprocessed > 0) {
       const aiStats = getDetectionStats()
@@ -301,7 +335,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ================================================================
-  // PHASE 2: Fetch NEW emails from Graph API (only if Phase 1 done)
+  // PHASE 2: Fetch NEW emails from Graph API
   // ================================================================
   if (Date.now() - startTime > TIME_BUDGET_MS) {
     const aiStats = getDetectionStats()
@@ -428,7 +462,6 @@ export async function POST(request: NextRequest) {
       batch.push({ id: email.id, text: messageText, dbId, email })
     }
 
-    // Process batch through AI
     if (batch.length > 0) {
       try {
         const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
