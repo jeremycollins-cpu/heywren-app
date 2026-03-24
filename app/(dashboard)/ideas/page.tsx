@@ -257,23 +257,23 @@ export default function IdeasPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2" style={{ letterSpacing: '-0.025em' }}>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2" style={{ letterSpacing: '-0.025em' }}>
           <Lightbulb className="w-8 h-8 text-indigo-600" />
           Feature Ideas
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">
+        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
           Share your ideas to help shape HeyWren's future. Vote on ideas you love.
         </p>
       </div>
 
       {/* Submit Form */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4" style={{ letterSpacing: '-0.025em' }}>
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" style={{ letterSpacing: '-0.025em' }}>
           Submit an Idea
         </h2>
         <form onSubmit={handleSubmitIdea} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Title
             </label>
             <input
@@ -281,13 +281,13 @@ export default function IdeasPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What's your idea?"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
               disabled={submitting}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Description
             </label>
             <textarea
@@ -295,20 +295,20 @@ export default function IdeasPage() {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Tell us more about your idea..."
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none dark:bg-surface-dark dark:text-white"
               disabled={submitting}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Category
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as typeof CATEGORIES[number])}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
                 disabled={submitting}
               >
                 {CATEGORIES.map(cat => (
@@ -338,7 +338,7 @@ export default function IdeasPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
         <div className="space-y-4">
           {/* Search */}
           <div className="relative">
@@ -348,7 +348,7 @@ export default function IdeasPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search ideas..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
             />
           </div>
 
@@ -356,7 +356,7 @@ export default function IdeasPage() {
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-600 font-medium">Filter:</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Filter:</span>
             </div>
 
             {/* Category filter */}
@@ -366,7 +366,7 @@ export default function IdeasPage() {
                 className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                   selectedCategory === null
                     ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
               >
                 All Categories
@@ -378,7 +378,7 @@ export default function IdeasPage() {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                     selectedCategory === cat
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {cat}
@@ -387,13 +387,13 @@ export default function IdeasPage() {
             </div>
 
             {/* Status filter */}
-            <div className="flex flex-wrap gap-2 border-l border-gray-200 pl-2">
+            <div className="flex flex-wrap gap-2 border-l border-gray-200 dark:border-gray-700 pl-2">
               <button
                 onClick={() => setSelectedStatus(null)}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                   selectedStatus === null
                     ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
               >
                 All Status
@@ -405,7 +405,7 @@ export default function IdeasPage() {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                     selectedStatus === status
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {status}
@@ -420,20 +420,20 @@ export default function IdeasPage() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 animate-pulse">
+            <div key={i} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 animate-pulse">
               <div className="flex gap-4">
                 <div className="flex flex-col items-center gap-1 px-3 py-2 flex-shrink-0">
-                  <div className="w-5 h-5 bg-gray-200 rounded" />
-                  <div className="w-6 h-3 bg-gray-200 rounded" />
+                  <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="w-6 h-3 bg-gray-200 dark:bg-gray-700 rounded" />
                 </div>
                 <div className="flex-1 space-y-3">
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
-                  <div className="h-3 bg-gray-200 rounded w-full" />
-                  <div className="h-3 bg-gray-200 rounded w-4/5" />
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3" />
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5" />
                   <div className="flex gap-2 mt-3">
-                    <div className="h-5 w-16 bg-gray-200 rounded-full" />
-                    <div className="h-5 w-20 bg-gray-200 rounded-full" />
-                    <div className="h-4 w-24 bg-gray-200 rounded" />
+                    <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                    <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                    <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
                   </div>
                 </div>
               </div>
@@ -441,9 +441,9 @@ export default function IdeasPage() {
           ))}
         </div>
       ) : filteredIdeas.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 bg-white border border-gray-200 rounded-xl">
-          <Lightbulb className="w-12 h-12 text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium">No ideas yet</p>
+        <div className="flex flex-col items-center justify-center py-12 bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl">
+          <Lightbulb className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+          <p className="text-gray-500 dark:text-gray-400 font-medium">No ideas yet</p>
           <p className="text-gray-400 text-sm">Be the first to share an idea!</p>
         </div>
       ) : (
@@ -455,7 +455,7 @@ export default function IdeasPage() {
             return (
               <div
                 key={idea.id}
-                className="bg-white border border-gray-200 rounded-xl p-5 hover:border-indigo-200 hover:shadow-md transition"
+                className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 hover:border-indigo-200 hover:shadow-md transition"
               >
                 <div className="flex gap-4">
                   {/* Vote Button */}
@@ -477,10 +477,10 @@ export default function IdeasPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 text-sm" style={{ letterSpacing: '-0.025em' }}>
+                        <h3 className="font-semibold text-gray-900 dark:text-white text-sm" style={{ letterSpacing: '-0.025em' }}>
                           {idea.title}
                         </h3>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
                           {idea.description}
                         </p>
                       </div>
@@ -499,8 +499,8 @@ export default function IdeasPage() {
                       </span>
 
                       {/* Author & Time */}
-                      <span className="text-xs text-gray-500">
-                        by <span className="font-medium text-gray-700">{idea.author_name}</span> {formatTimeAgo(idea.created_at)}
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        by <span className="font-medium text-gray-700 dark:text-gray-300">{idea.author_name}</span> {formatTimeAgo(idea.created_at)}
                       </span>
                     </div>
                   </div>

@@ -460,7 +460,7 @@ export default function HandoffPage() {
                                 >
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <p className="font-medium text-gray-900">
+                                      <p className="font-medium text-gray-900 dark:text-white">
                                         {commitment.title}
                                       </p>
                                       {isReassignedAway && (
@@ -493,7 +493,7 @@ export default function HandoffPage() {
                                       <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
                                     ) : (
                                       <select
-                                        className="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        className="text-xs border border-gray-300 dark:border-border-dark rounded-md px-2 py-1.5 bg-white dark:bg-surface-dark text-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                         value={commitment.assignee_id || ''}
                                         onChange={(e) => {
                                           if (e.target.value) {
@@ -520,11 +520,11 @@ export default function HandoffPage() {
                       </div>
 
                       {/* Handoff Checklist */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-blue-900 mb-2">
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">
                           Handoff Checklist
                         </h4>
-                        <div className="space-y-2 text-sm text-blue-800">
+                        <div className="space-y-2 text-sm text-blue-800 dark:text-blue-300">
                           {CHECKLIST_ITEMS.map((item, idx) => (
                             <label
                               key={idx}
@@ -559,12 +559,12 @@ export default function HandoffPage() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-        <h3 className="font-semibold text-green-900 mb-2">PTO Protocol Benefits</h3>
-        <p className="text-sm text-green-800 mb-3">
+      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+        <h3 className="font-semibold text-green-900 dark:text-green-200 mb-2">PTO Protocol Benefits</h3>
+        <p className="text-sm text-green-800 dark:text-green-300 mb-3">
           Ensure zero commitments slip through the cracks when team members take time off.
         </p>
-        <ul className="text-sm text-green-800 space-y-1">
+        <ul className="text-sm text-green-800 dark:text-green-300 space-y-1">
           <li>&#10003; Automatic backup assignment</li>
           <li>&#10003; Commitment handoff tracking</li>
           <li>&#10003; Stakeholder notifications</li>

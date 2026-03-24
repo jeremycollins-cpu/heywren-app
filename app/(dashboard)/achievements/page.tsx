@@ -267,9 +267,9 @@ export default function AchievementsPage() {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
+            {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
           </div>
         </div>
       </div>
@@ -284,8 +284,8 @@ export default function AchievementsPage() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Achievements</h1>
-        <p className="text-gray-500 text-sm mt-1">Milestones earned through consistent follow-through</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Achievements</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Milestones earned through consistent follow-through</p>
       </div>
 
       {error && (
@@ -297,8 +297,8 @@ export default function AchievementsPage() {
       {commitmentCount === 0 && !error && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-5xl mb-4">🏆</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No achievements yet</h3>
-          <p className="text-gray-500 max-w-md mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No achievements yet</h3>
+          <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
             Start tracking commitments to unlock achievements and earn XP. Every commitment you create, complete, or follow through on brings you closer to your next milestone.
           </p>
           <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
@@ -309,34 +309,34 @@ export default function AchievementsPage() {
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
           <div className="text-3xl font-bold text-indigo-600">{unlocked.length}</div>
-          <div className="text-sm text-gray-500">Unlocked</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Unlocked</div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
-          <div className="text-3xl font-bold text-gray-900">{streak}</div>
-          <div className="text-sm text-gray-500">Day streak</div>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">{streak}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Day streak</div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
           <div className="text-3xl font-bold text-green-600">{totalXP.toLocaleString()}</div>
-          <div className="text-sm text-gray-500">Total XP</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Total XP</div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
           <div className="text-2xl font-bold text-indigo-600">{level}</div>
-          <div className="text-sm text-gray-500">Current level</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Current level</div>
         </div>
       </div>
 
       {/* Unlocked */}
       {unlocked.length > 0 && (
         <>
-          <h2 className="text-lg font-bold text-gray-900">Unlocked</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Unlocked</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {unlocked.map(a => (
-              <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-5 text-center hover:border-indigo-300 transition-colors">
+              <div key={a.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 text-center hover:border-indigo-300 transition-colors">
                 <div className="text-3xl mb-2">{a.icon}</div>
-                <div className="font-bold text-gray-900">{a.name}</div>
-                <div className="text-xs text-gray-500 mb-2">{a.description}</div>
+                <div className="font-bold text-gray-900 dark:text-white">{a.name}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">{a.description}</div>
                 <div className="text-xs text-indigo-500 font-medium">{a.earnedDate}</div>
               </div>
             ))}
@@ -347,17 +347,17 @@ export default function AchievementsPage() {
       {/* In Progress */}
       {inProgress.length > 0 && (
         <>
-          <h2 className="text-lg font-bold text-gray-900">In Progress</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">In Progress</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {inProgress.map(a => {
               const percent = Math.round((a.current / a.target) * 100)
               return (
-                <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-5 text-center opacity-80">
+                <div key={a.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 text-center opacity-80">
                   <div className="text-3xl mb-2 grayscale-[30%]">{a.icon}</div>
-                  <div className="font-bold text-gray-900">{a.name}</div>
-                  <div className="text-xs text-gray-500 mb-3">{a.description}</div>
+                  <div className="font-bold text-gray-900 dark:text-white">{a.name}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">{a.description}</div>
                   {/* Progress bar */}
-                  <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-1">
                     <div
                       className="bg-indigo-500 h-1.5 rounded-full transition-all"
                       style={{ width: `${Math.min(percent, 100)}%` }}
@@ -374,10 +374,10 @@ export default function AchievementsPage() {
       {/* Locked */}
       {locked.length > 0 && (
         <>
-          <h2 className="text-lg font-bold text-gray-900 text-opacity-50">Locked</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white/50 text-opacity-50">Locked</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {locked.map(a => (
-              <div key={a.id} className="bg-gray-50 border border-gray-100 rounded-xl p-5 text-center opacity-40">
+              <div key={a.id} className="bg-gray-50 dark:bg-surface-dark border border-gray-100 dark:border-border-dark rounded-xl p-5 text-center opacity-40">
                 <div className="text-3xl mb-2">🔒</div>
                 <div className="font-bold text-gray-500">{a.name}</div>
                 <div className="text-xs text-gray-400">{a.description}</div>

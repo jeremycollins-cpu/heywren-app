@@ -92,33 +92,33 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
           Manage your profile, notifications, and privacy preferences
         </p>
       </div>
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 animate-pulse">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 animate-pulse">
           <div className="flex items-center gap-2 mb-6">
-            <div className="w-5 h-5 bg-gray-200 rounded" />
-            <div className="h-5 w-20 bg-gray-200 rounded" />
+            <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
           </div>
           <div className="space-y-6">
             <div>
-              <div className="h-4 w-24 bg-gray-200 rounded mb-2" />
-              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+              <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded-lg" />
             </div>
             <div>
-              <div className="h-4 w-16 bg-gray-200 rounded mb-2" />
-              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+              <div className="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded-lg" />
             </div>
             <div>
-              <div className="h-4 w-12 bg-gray-200 rounded mb-2" />
-              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+              <div className="h-4 w-12 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded-lg" />
             </div>
-            <div className="h-10 w-32 bg-gray-200 rounded-lg" />
+            <div className="h-10 w-32 bg-gray-200 dark:bg-gray-700 rounded-lg" />
           </div>
         </div>
       )}
@@ -133,40 +133,40 @@ export default function SettingsPage() {
 
       {/* Profile Settings */}
       {!loading && !error && (
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
           <SettingsIcon className="w-5 h-5" />
           Profile
         </h2>
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Full Name</label>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Full Name</label>
             <input
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Email</label>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Email</label>
             <input
               type="email"
               value={user?.email || ''}
               disabled
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:outline-none"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-gray-50 dark:bg-surface-dark text-gray-600 dark:text-gray-400 focus:outline-none"
             />
-            <p className="text-xs text-gray-500 mt-1">Contact support to change email</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Contact support to change email</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Role</label>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Role</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-surface-dark dark:text-white"
             >
               <option value="">Select a role</option>
               <option value="CEO">CEO</option>
@@ -189,8 +189,8 @@ export default function SettingsPage() {
       )}
 
       {/* Notification Settings */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
           <Bell className="w-5 h-5" />
           Notifications
         </h2>
@@ -218,10 +218,10 @@ export default function SettingsPage() {
               description: 'Sunday summary of the week',
             },
           ].map((setting) => (
-            <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+            <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
               <div>
-                <p className="font-medium text-gray-900">{setting.label}</p>
-                <p className="text-sm text-gray-600">{setting.description}</p>
+                <p className="font-medium text-gray-900 dark:text-white">{setting.label}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{setting.description}</p>
               </div>
               <input
                 type="checkbox"
@@ -240,39 +240,39 @@ export default function SettingsPage() {
       </div>
 
       {/* Privacy Settings */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
           <Lock className="w-5 h-5" />
           Privacy & Security
         </h2>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+          <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
             <div>
-              <p className="font-medium text-gray-900">Two-Factor Authentication</p>
-              <p className="text-sm text-gray-600">Add extra security to your account</p>
+              <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Add extra security to your account</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
               Enable
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+          <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
             <div>
-              <p className="font-medium text-gray-900">Change Password</p>
-              <p className="text-sm text-gray-600">Update your password</p>
+              <p className="font-medium text-gray-900 dark:text-white">Change Password</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Update your password</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
               Change
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+          <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
             <div>
-              <p className="font-medium text-gray-900">Data & Privacy</p>
-              <p className="text-sm text-gray-600">Download your data or delete account</p>
+              <p className="font-medium text-gray-900 dark:text-white">Data & Privacy</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Download your data or delete account</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
               Manage
             </button>
           </div>
@@ -280,32 +280,32 @@ export default function SettingsPage() {
       </div>
 
       {/* Team Settings */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
           <Users className="w-5 h-5" />
           Team
         </h2>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-900 mb-2">Team Name</label>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Team Name</label>
             <input
               type="text"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
             />
           </div>
 
           <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-4">Team Members</h3>
-            <p className="text-sm text-gray-600 mb-4">Team management coming soon. Invite users through Slack or email integrations.</p>
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-4">Team Members</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Team management coming soon. Invite users through Slack or email integrations.</p>
             <div className="space-y-3">
               {user && (
-                <div className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+                <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">{user?.user_metadata?.full_name || 'You'}</p>
-                    <p className="text-sm text-gray-600">{user?.email}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{user?.user_metadata?.full_name || 'You'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{user?.email}</p>
                   </div>
                   <span className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded-lg font-medium">Owner</span>
                 </div>
@@ -313,20 +313,20 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <button className="w-full px-4 py-2 border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition">
+          <button className="w-full px-4 py-2 border border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-500 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition">
             + Invite Team Member
           </button>
         </div>
       </div>
 
       {/* Connected Integrations */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
           <Mail className="w-5 h-5" />
           Connected Integrations
         </h2>
 
-        <p className="text-sm text-gray-600 mb-4">Manage your integrations from the Integrations page.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Manage your integrations from the Integrations page.</p>
         <a href="/integrations" className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
           Go to Integrations
         </a>
