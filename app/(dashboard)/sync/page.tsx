@@ -10,6 +10,9 @@ type SyncResult = {
   total_channels?: number
   messages_scanned?: number
   emails_scanned?: number
+  calendar_events_scanned?: number
+  calendar_events_new?: number
+  calendar_commitments?: number
   commitments_detected: number
   duration_seconds: number
   pages_processed?: number
@@ -78,7 +81,7 @@ export default function SyncPage() {
         return
       }
 
-      toast('Syncing Outlook emails... This may take a few minutes.', { icon: '📧' })
+      toast('Syncing Outlook emails & calendar... This may take a few minutes.', { icon: '📧' })
 
       const response = await fetch('/api/integrations/outlook/backfill', {
         method: 'POST',
@@ -197,10 +200,10 @@ export default function SyncPage() {
             <Mail className="w-6 h-6 text-white" />
           </div>
           <div className="flex-1">
-            <h2 className="font-semibold text-gray-900">Outlook Email Sync</h2>
+            <h2 className="font-semibold text-gray-900">Outlook Email & Calendar Sync</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Scans your inbox and sent emails from the last 30 days.
-              Uses AI to find commitments, promises, deadlines, and action items in email threads.
+              Scans your inbox emails from the last 30 days and calendar events (past 30 days + next 2 weeks).
+              Uses AI to find commitments, promises, deadlines, and action items from emails and meetings.
             </p>
           </div>
         </div>
@@ -235,18 +238,22 @@ export default function SyncPage() {
               <CheckCircle2 className="w-5 h-5 text-green-600" />
               <h3 className="font-semibold text-green-900 text-sm">Outlook Sync Complete</h3>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-2xl font-bold text-green-900">{outlookResult.pages_processed}</p>
-                <p className="text-xs text-green-700">Pages fetched</p>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
                 <p className="text-2xl font-bold text-green-900">{outlookResult.emails_scanned}</p>
                 <p className="text-xs text-green-700">Emails analyzed</p>
               </div>
               <div>
+                <p className="text-2xl font-bold text-green-900">{outlookResult.calendar_events_scanned || 0}</p>
+                <p className="text-xs text-green-700">Calendar events</p>
+              </div>
+              <div>
                 <p className="text-2xl font-bold text-green-900">{outlookResult.commitments_detected}</p>
                 <p className="text-xs text-green-700">Commitments found</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-900">{outlookResult.duration_seconds}s</p>
+                <p className="text-xs text-green-700">Duration</p>
               </div>
             </div>
             {outlookResult.errors && outlookResult.errors.length > 0 && (
