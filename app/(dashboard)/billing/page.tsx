@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { type PlanKey, type PlanDisplay, PLAN_DISPLAY } from '@/lib/plans'
+import { getStripe } from '@/lib/stripe/client'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'cancelling' | 'incomplete'
 
@@ -119,6 +120,24 @@ export default function BillingPage() {
     if (!billingInfo) return
     setActionLoading(newPlan)
     try {
+      // Trial users without a Stripe subscription need a fresh checkout session
+      if (!billingInfo.stripeCustomerId) {
+        const response = await fetch('/api/stripe/create-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: newPlan }),
+        })
+
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error)
+
+        const stripe = await getStripe()
+        if (!stripe) throw new Error('Failed to load Stripe')
+        await stripe.redirectToCheckout({ sessionId: result.sessionId })
+        return
+      }
+
+      // Existing Stripe customers — change plan in place
       const response = await fetch('/api/stripe/change-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +224,7 @@ export default function BillingPage() {
   const currentPlan = billingInfo?.plan || 'trial'
   const currentStatus = STATUS_CONFIG[billingInfo?.status || 'trialing']
   const isActivePaid = billingInfo?.status === 'active' || billingInfo?.status === 'trialing'
-  const canChangePlan = isActivePaid && billingInfo?.stripeCustomerId
+  const canChangePlan = isActivePaid
 
   const daysUntilTrialEnds = billingInfo?.trialEndsAt
     ? Math.ceil((new Date(billingInfo.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
