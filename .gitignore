@@ -20,5 +20,8 @@ npm-debug.log*
 # vercel
 .vercel
 
+# test coverage
+coverage/
+
 # misc
 .DS_Store
