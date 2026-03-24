@@ -85,13 +85,22 @@ export default function RelationshipsPage() {
         return
       }
 
+      // Get the current user's email to exclude from relationships
+      const userEmail = userData.user.email?.toLowerCase() || ''
+
       try {
-        const { data: emailData } = await supabase
+        let query = supabase
           .from('outlook_messages')
           .select('from_email, from_name, received_at')
           .eq('team_id', teamId)
           .order('received_at', { ascending: false })
           .limit(1000)
+
+        if (userEmail) {
+          query = query.neq('from_email', userEmail)
+        }
+
+        const { data: emailData } = await query
 
         if (emailData) {
           const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
