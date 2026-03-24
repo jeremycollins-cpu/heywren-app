@@ -11,6 +11,18 @@ export interface MissedEmailClassification {
   questionSummary: string | null
   category: 'question' | 'request' | 'decision' | 'follow_up' | 'introduction'
   confidence: number
+  isVip?: boolean
+}
+
+// User preferences that influence classification
+export interface UserEmailPreferences {
+  vipContacts: Array<{ name?: string; email?: string; domain?: string }>
+  blockedSenders: Array<{ email?: string; domain?: string }>
+  enabledCategories: string[]
+  minUrgency: string
+  // Past feedback: domains/emails frequently marked invalid
+  feedbackBlockedDomains: Set<string>
+  feedbackBlockedEmails: Set<string>
 }
 
 // ============================================================
@@ -121,12 +133,57 @@ const QUESTION_PATTERNS = [
   /\bwanted to check\b/i,
 ]
 
-interface EmailInput {
+export interface EmailInput {
   fromEmail: string
   fromName: string
   subject: string
   bodyPreview: string
   receivedAt: string
+}
+
+// ============================================================
+// User preference checks — VIP / blocked / feedback
+// ============================================================
+
+function extractDomain(email: string): string {
+  return (email.split('@')[1] || '').toLowerCase()
+}
+
+function isVipSender(email: EmailInput, prefs?: UserEmailPreferences): boolean {
+  if (!prefs) return false
+  const senderEmail = email.fromEmail.toLowerCase()
+  const senderDomain = extractDomain(email.fromEmail)
+
+  return prefs.vipContacts.some(vip => {
+    if (vip.email && senderEmail === vip.email.toLowerCase()) return true
+    if (vip.domain && senderDomain === vip.domain.toLowerCase()) return true
+    return false
+  })
+}
+
+function isBlockedSender(email: EmailInput, prefs?: UserEmailPreferences): boolean {
+  if (!prefs) return false
+  const senderEmail = email.fromEmail.toLowerCase()
+  const senderDomain = extractDomain(email.fromEmail)
+
+  // Check explicit blocks
+  const explicitlyBlocked = prefs.blockedSenders.some(blocked => {
+    if (blocked.email && senderEmail === blocked.email.toLowerCase()) return true
+    if (blocked.domain && senderDomain === blocked.domain.toLowerCase()) return true
+    return false
+  })
+  if (explicitlyBlocked) return true
+
+  // Check feedback-derived blocks (3+ invalid marks on a domain)
+  if (prefs.feedbackBlockedDomains.has(senderDomain)) return true
+  if (prefs.feedbackBlockedEmails.has(senderEmail)) return true
+
+  return false
+}
+
+function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
+  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+  return (order[urgency] ?? 3) <= (order[minUrgency] ?? 3)
 }
 
 /**
@@ -286,37 +343,89 @@ export function getClassificationStats() {
 // MAIN EXPORT: 3-tier pipeline
 // ============================================================
 export async function classifyMissedEmail(
-  email: EmailInput
+  email: EmailInput,
+  prefs?: UserEmailPreferences
 ): Promise<MissedEmailClassification | null> {
   _stats.total_scanned++
 
-  // TIER 1a: Is this clearly automated/sales?
-  if (isLikelyAutomated(email)) {
+  // TIER 0: User preference overrides
+  // Blocked senders are always filtered out
+  if (isBlockedSender(email, prefs)) {
     _stats.tier1_automated++
     return null
   }
 
-  // TIER 1b: Does it even look like it needs a response?
-  if (!likelyNeedsResponse(email)) {
-    _stats.tier1_no_question++
-    return null
+  // VIP senders skip automated/question filters — go straight to AI analysis
+  const vip = isVipSender(email, prefs)
+
+  if (!vip) {
+    // TIER 1a: Is this clearly automated/sales?
+    if (isLikelyAutomated(email)) {
+      _stats.tier1_automated++
+      return null
+    }
+
+    // TIER 1b: Does it even look like it needs a response?
+    if (!likelyNeedsResponse(email)) {
+      _stats.tier1_no_question++
+      return null
+    }
   }
 
   try {
-    // TIER 2: Haiku yes/no triage
-    const needsResponse = await haikuTriage(email)
-    if (!needsResponse) {
-      _stats.tier2_filtered++
-      return null
+    if (!vip) {
+      // TIER 2: Haiku yes/no triage (skip for VIPs)
+      const needsResponse = await haikuTriage(email)
+      if (!needsResponse) {
+        _stats.tier2_filtered++
+        return null
+      }
     }
 
     // TIER 3: Sonnet full analysis
     _stats.tier3_analyzed++
     const result = await sonnetAnalyze(email)
 
-    if (result.needsResponse && result.confidence >= 0.6) {
+    // VIPs always pass through if Sonnet says it needs response (lower threshold)
+    const confidenceThreshold = vip ? 0.3 : 0.6
+    if (result.needsResponse && result.confidence >= confidenceThreshold) {
+      // Boost VIP urgency
+      if (vip && result.urgency !== 'critical') {
+        const boost: Record<string, 'critical' | 'high' | 'medium'> = {
+          high: 'critical',
+          medium: 'high',
+          low: 'medium',
+        }
+        result.urgency = boost[result.urgency] || result.urgency
+      }
+
+      // Check urgency threshold
+      if (prefs && !meetsUrgencyThreshold(result.urgency, prefs.minUrgency)) {
+        return null
+      }
+
+      // Check category is enabled
+      if (prefs && !prefs.enabledCategories.includes(result.category)) {
+        return null
+      }
+
       _stats.needs_response++
+      result.isVip = vip
       return result
+    }
+
+    // Even if Sonnet says no, VIPs with any question-like content get surfaced
+    if (vip && likelyNeedsResponse(email)) {
+      _stats.needs_response++
+      return {
+        needsResponse: true,
+        urgency: 'medium',
+        reason: 'VIP contact — surfaced by default',
+        questionSummary: null,
+        category: 'question',
+        confidence: 0.5,
+        isVip: true,
+      }
     }
 
     return null
@@ -332,33 +441,48 @@ export async function classifyMissedEmail(
 // Groups Tier 3 analysis into a single Sonnet call
 // ============================================================
 export async function classifyMissedEmailBatch(
-  emails: Array<{ id: string } & EmailInput>
+  emails: Array<{ id: string } & EmailInput>,
+  prefs?: UserEmailPreferences
 ): Promise<Map<string, MissedEmailClassification>> {
   const results = new Map<string, MissedEmailClassification>()
 
-  // Tier 1: Pre-filter
-  const candidates: typeof emails = []
+  // Tier 0 + 1: Pre-filter with user preferences
+  const candidates: Array<{ id: string; vip: boolean } & EmailInput> = []
   for (const email of emails) {
     _stats.total_scanned++
 
-    if (isLikelyAutomated(email)) {
+    // Blocked senders always filtered
+    if (isBlockedSender(email, prefs)) {
       _stats.tier1_automated++
       continue
     }
 
-    if (!likelyNeedsResponse(email)) {
-      _stats.tier1_no_question++
-      continue
+    const vip = isVipSender(email, prefs)
+
+    if (!vip) {
+      if (isLikelyAutomated(email)) {
+        _stats.tier1_automated++
+        continue
+      }
+
+      if (!likelyNeedsResponse(email)) {
+        _stats.tier1_no_question++
+        continue
+      }
     }
 
-    candidates.push(email)
+    candidates.push({ ...email, vip })
   }
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage each candidate
+  // Tier 2: Haiku triage each candidate (VIPs skip this)
   const triaged: typeof candidates = []
   for (const email of candidates) {
+    if (email.vip) {
+      triaged.push(email)
+      continue
+    }
     const needs = await haikuTriage(email)
     if (needs) {
       triaged.push(email)
@@ -434,9 +558,35 @@ ALWAYS mark needsResponse: false for:
       triaged.forEach((email, i) => {
         const key = String(i + 1)
         const classification = batchResults[key]
-        if (classification?.needsResponse && (classification.confidence || 0) >= 0.6) {
+        if (!classification) return
+
+        const confidenceThreshold = email.vip ? 0.3 : 0.6
+        if (classification.needsResponse && (classification.confidence || 0) >= confidenceThreshold) {
+          // Boost VIP urgency
+          if (email.vip && classification.urgency !== 'critical') {
+            const boost: Record<string, string> = { high: 'critical', medium: 'high', low: 'medium' }
+            classification.urgency = boost[classification.urgency] || classification.urgency
+          }
+
+          // Check preference filters
+          if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
+          if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+
+          classification.isVip = email.vip
           _stats.needs_response++
           results.set(email.id, classification)
+        } else if (email.vip && likelyNeedsResponse(email)) {
+          // VIPs with questions always surface
+          _stats.needs_response++
+          results.set(email.id, {
+            needsResponse: true,
+            urgency: 'medium',
+            reason: 'VIP contact — surfaced by default',
+            questionSummary: null,
+            category: 'question',
+            confidence: 0.5,
+            isVip: true,
+          })
         }
       })
     }

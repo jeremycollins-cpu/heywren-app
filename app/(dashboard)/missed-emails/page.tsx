@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
-  MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp
+  MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
+  ThumbsUp, ThumbsDown, Star, Settings
 } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -22,6 +24,7 @@ interface MissedEmail {
   confidence: number
   status: string
   waiting_days: number
+  is_vip?: boolean
 }
 
 const urgencyConfig = {
@@ -66,6 +69,33 @@ export default function MissedEmailsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [scanning, setScanning] = useState(false)
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
+
+  async function submitFeedback(email: MissedEmail, feedback: 'valid' | 'invalid') {
+    try {
+      const res = await fetch('/api/missed-email-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          missed_email_id: email.id,
+          from_email: email.from_email,
+          feedback,
+        }),
+      })
+      if (res.ok) {
+        setFeedbackGiven(prev => ({ ...prev, [email.id]: feedback }))
+        if (feedback === 'invalid') {
+          // Remove from list after brief delay so user sees the feedback registered
+          setTimeout(() => {
+            setEmails(prev => prev.filter(e => e.id !== email.id))
+          }, 800)
+        }
+        toast.success(feedback === 'valid' ? 'Thanks! This helps improve detection.' : 'Got it — this type will be filtered better.')
+      }
+    } catch {
+      toast.error('Failed to submit feedback')
+    }
+  }
 
   async function loadEmails() {
     try {
@@ -191,14 +221,23 @@ export default function MissedEmailsPage() {
             Emails waiting for your response that may have slipped through the cracks. Sales and automated emails are filtered out.
           </p>
         </div>
-        <button
-          onClick={triggerScan}
-          disabled={scanning}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
-        >
-          <RefreshCw aria-hidden="true" className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
-          {scanning ? 'Scanning...' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/settings#missed-emails"
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+          >
+            <Settings aria-hidden="true" className="w-4 h-4" />
+            Configure
+          </Link>
+          <button
+            onClick={triggerScan}
+            disabled={scanning}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+          >
+            <RefreshCw aria-hidden="true" className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
+            {scanning ? 'Scanning...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -316,6 +355,12 @@ export default function MissedEmailsPage() {
                         <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${config.color}`}>
                           {config.label}
                         </span>
+                        {email.is_vip && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            <Star aria-hidden="true" className="w-3 h-3" />
+                            VIP
+                          </span>
+                        )}
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                           {categoryLabels[email.category] || email.category}
                         </span>
@@ -383,29 +428,64 @@ export default function MissedEmailsPage() {
                     )}
 
                     {/* Actions */}
-                    <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                      >
-                        <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
-                        Mark as Replied
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); snooze(email.id) }}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
-                      >
-                        <Clock aria-hidden="true" className="w-4 h-4" />
-                        Snooze 1 Day
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); dismiss(email.id) }}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
-                        aria-label="Dismiss email"
-                      >
-                        <X aria-hidden="true" className="w-4 h-4" />
-                        Dismiss
-                      </button>
+                    <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                        >
+                          <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
+                          Mark as Replied
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); snooze(email.id) }}
+                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                        >
+                          <Clock aria-hidden="true" className="w-4 h-4" />
+                          Snooze 1 Day
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); dismiss(email.id) }}
+                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                          aria-label="Dismiss email"
+                        >
+                          <X aria-hidden="true" className="w-4 h-4" />
+                          Dismiss
+                        </button>
+                      </div>
+
+                      {/* Feedback buttons */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Was this helpful?</span>
+                        {feedbackGiven[email.id] ? (
+                          <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                            feedbackGiven[email.id] === 'valid'
+                              ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                          }`}>
+                            {feedbackGiven[email.id] === 'valid' ? 'Helpful' : 'Not helpful'}
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); submitFeedback(email, 'valid') }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition"
+                              aria-label="Mark as valid — this email does need a response"
+                              aria-pressed={feedbackGiven[email.id] === 'valid'}
+                            >
+                              <ThumbsUp aria-hidden="true" className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); submitFeedback(email, 'invalid') }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
+                              aria-label="Mark as invalid — this email should not have been flagged"
+                              aria-pressed={feedbackGiven[email.id] === 'invalid'}
+                            >
+                              <ThumbsDown aria-hidden="true" className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
