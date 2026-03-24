@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 
 interface Commitment {
   id: string
@@ -41,55 +42,69 @@ export default function WeeklyPage() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [integrationCount, setIntegrationCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      // ── SECURITY: Get user's team_id first ──
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
+        // ── SECURITY: Get user's team_id first ──
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
+        const { data, error: commitmentsError } = await supabase
+          .from('commitments')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+
+        if (commitmentsError) throw commitmentsError
+
+        const { data: intData, error: intError } = await supabase
+          .from('integrations')
+          .select('provider')
+          .eq('team_id', teamId)
+
+        if (intError) throw intError
+
+        const sevenDaysAgo = new Date()
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const { data: calData, error: calError } = await supabase
+          .from('outlook_calendar_events')
+          .select('id, subject, start_time, end_time, organizer_name, commitments_found, processed')
+          .eq('team_id', teamId)
+          .gte('start_time', sevenDaysAgo.toISOString())
+          .eq('is_cancelled', false)
+          .order('start_time', { ascending: false })
+
+        if (calError) throw calError
+
+        if (data) setCommitments(data)
+        if (calData) setCalendarEvents(calData)
+        if (intData) setIntegrationCount(intData.length)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load weekly review'
+        setError(message)
+        toast.error(message)
+      } finally {
         setLoading(false)
-        return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      const teamId = profile?.current_team_id
-      if (!teamId) {
-        setLoading(false)
-        return
-      }
-
-      const { data } = await supabase
-        .from('commitments')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      const { data: intData } = await supabase
-        .from('integrations')
-        .select('provider')
-        .eq('team_id', teamId)
-
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      const { data: calData } = await supabase
-        .from('outlook_calendar_events')
-        .select('id, subject, start_time, end_time, organizer_name, commitments_found, processed')
-        .eq('team_id', teamId)
-        .gte('start_time', sevenDaysAgo.toISOString())
-        .eq('is_cancelled', false)
-        .order('start_time', { ascending: false })
-
-      if (data) setCommitments(data)
-      if (calData) setCalendarEvents(calData)
-      if (intData) setIntegrationCount(intData.length)
-      setLoading(false)
     }
     load()
   }, [])
@@ -131,6 +146,12 @@ export default function WeeklyPage() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+          {error}
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Weekly Review</h1>
         <p className="text-gray-500 text-sm mt-1">Your personal pulse check — what got done, what moved forward, where to focus next</p>
@@ -138,7 +159,7 @@ export default function WeeklyPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           {
             icon: '⚡',
@@ -260,7 +281,7 @@ export default function WeeklyPage() {
         {commitments.length === 0 ? (
           <p className="text-gray-500 text-sm">No commitments tracked yet. Source breakdown will appear as data flows in.</p>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center gap-3 bg-purple-50 rounded-lg p-3">
               <div className="w-8 h-8 bg-purple-500 rounded flex items-center justify-center text-white text-sm font-bold">#</div>
               <div>

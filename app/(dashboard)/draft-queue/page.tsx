@@ -27,6 +27,7 @@ interface Draft {
 export default function DraftQueuePage() {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState<string | null>(null)
@@ -41,7 +42,9 @@ export default function DraftQueuePage() {
         setDrafts(data.drafts.filter((d: Draft) => d.status === 'ready' || d.status === 'edited'))
       }
     } catch (err) {
-      console.error('Failed to load drafts:', err)
+      const message = err instanceof Error ? err.message : 'Failed to load drafts'
+      setError(message)
+      toast.error(message)
     }
     setLoading(false)
   }
@@ -147,7 +150,7 @@ export default function DraftQueuePage() {
       <div className="p-8">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
           </div>
         </div>
@@ -160,6 +163,12 @@ export default function DraftQueuePage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm font-medium">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Draft Queue</h1>

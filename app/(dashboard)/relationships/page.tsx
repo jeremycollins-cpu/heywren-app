@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Contact {
   name: string
@@ -84,55 +85,60 @@ export default function RelationshipsPage() {
         return
       }
 
-      const { data: emailData } = await supabase
-        .from('outlook_messages')
-        .select('from_email, from_name, received_at')
-        .eq('team_id', teamId)
-        .order('received_at', { ascending: false })
-        .limit(1000)
+      try {
+        const { data: emailData } = await supabase
+          .from('outlook_messages')
+          .select('from_email, from_name, received_at')
+          .eq('team_id', teamId)
+          .order('received_at', { ascending: false })
+          .limit(1000)
 
-      if (emailData) {
-        const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
+        if (emailData) {
+          const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
 
-        emailData.forEach((msg: any) => {
-          const email = (msg.from_email || '').toLowerCase()
-          if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
+          emailData.forEach((msg: any) => {
+            const email = (msg.from_email || '').toLowerCase()
+            if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
 
-          if (!contactMap[email]) {
-            contactMap[email] = {
-              name: msg.from_name || email.split('@')[0],
-              email,
-              count: 0,
-              lastDate: msg.received_at,
-              dates: []
+            if (!contactMap[email]) {
+              contactMap[email] = {
+                name: msg.from_name || email.split('@')[0],
+                email,
+                count: 0,
+                lastDate: msg.received_at,
+                dates: []
+              }
             }
-          }
-          contactMap[email].count++
-          contactMap[email].dates.push(msg.received_at)
-          if (msg.received_at > contactMap[email].lastDate) {
-            contactMap[email].lastDate = msg.received_at
-          }
-        })
-
-        const sorted = Object.values(contactMap)
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 20)
-          .map(c => {
-            const dsc = daysSince(c.lastDate)
-            const score = calculateHealthScore(c.count, dsc)
-            return {
-              name: c.name,
-              email: c.email,
-              interactions: c.count,
-              lastActive: c.lastDate,
-              daysSinceContact: dsc,
-              healthScore: score,
-              trend: getTrend(dsc, c.count),
-              role: inferRole(c.email, c.name, c.count),
+            contactMap[email].count++
+            contactMap[email].dates.push(msg.received_at)
+            if (msg.received_at > contactMap[email].lastDate) {
+              contactMap[email].lastDate = msg.received_at
             }
           })
 
-        setContacts(sorted)
+          const sorted = Object.values(contactMap)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 20)
+            .map(c => {
+              const dsc = daysSince(c.lastDate)
+              const score = calculateHealthScore(c.count, dsc)
+              return {
+                name: c.name,
+                email: c.email,
+                interactions: c.count,
+                lastActive: c.lastDate,
+                daysSinceContact: dsc,
+                healthScore: score,
+                trend: getTrend(dsc, c.count),
+                role: inferRole(c.email, c.name, c.count),
+              }
+            })
+
+          setContacts(sorted)
+        }
+      } catch (err) {
+        console.error('Error fetching relationship data:', err)
+        toast.error('Failed to load relationship data')
       }
       setLoading(false)
     }
@@ -147,6 +153,27 @@ export default function RelationshipsPage() {
           <div className="grid grid-cols-2 gap-4">
             {[1,2,3,4].map(i => <div key={i} className="h-40 bg-gray-100 rounded"></div>)}
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (contacts.length === 0) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Relationship Health</h1>
+          <p className="text-gray-500 text-sm mt-1">How strong are your key relationships — based on interaction patterns and follow-through</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <div className="text-4xl mb-4">👥</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">No relationship data yet</h2>
+          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+            Connect your Outlook account and sync your email history. Wren will analyze your interaction patterns to show relationship health scores.
+          </p>
+          <a href="/integrations" className="inline-flex px-5 py-2.5 text-white font-semibold rounded-lg text-sm transition" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+            Connect Outlook
+          </a>
         </div>
       </div>
     )

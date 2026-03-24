@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Achievement {
   id: string
@@ -51,9 +52,12 @@ export default function AchievementsPage() {
   const [totalXP, setTotalXP] = useState(0)
   const [streak, setStreak] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [commitmentCount, setCommitmentCount] = useState(0)
 
   useEffect(() => {
     async function load() {
+      try {
       const supabase = createClient()
       const { data: commitments } = await supabase
         .from('commitments')
@@ -61,6 +65,7 @@ export default function AchievementsPage() {
         .order('created_at', { ascending: false })
 
       if (!commitments) { setLoading(false); return }
+      setCommitmentCount(commitments.length)
 
       const total = commitments.length
       const completed = commitments.filter(c => c.status === 'completed').length
@@ -248,6 +253,12 @@ export default function AchievementsPage() {
 
       setAchievements(achList)
       setLoading(false)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load achievements'
+        setError(message)
+        toast.error(message)
+        setLoading(false)
+      }
     }
     load()
   }, [])
@@ -257,7 +268,7 @@ export default function AchievementsPage() {
       <div className="p-8">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
           </div>
         </div>
@@ -277,8 +288,27 @@ export default function AchievementsPage() {
         <p className="text-gray-500 text-sm mt-1">Milestones earned through consistent follow-through</p>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+          <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
+
+      {commitmentCount === 0 && !error && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="text-5xl mb-4">🏆</div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No achievements yet</h3>
+          <p className="text-gray-500 max-w-md mb-6">
+            Start tracking commitments to unlock achievements and earn XP. Every commitment you create, complete, or follow through on brings you closer to your next milestone.
+          </p>
+          <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+            Start Tracking Commitments
+          </a>
+        </div>
+      )}
+
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
           <div className="text-3xl font-bold text-indigo-600">{unlocked.length}</div>
           <div className="text-sm text-gray-500">Unlocked</div>
@@ -301,7 +331,7 @@ export default function AchievementsPage() {
       {unlocked.length > 0 && (
         <>
           <h2 className="text-lg font-bold text-gray-900">Unlocked</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {unlocked.map(a => (
               <div key={a.id} className="bg-white border border-gray-200 rounded-xl p-5 text-center hover:border-indigo-300 transition-colors">
                 <div className="text-3xl mb-2">{a.icon}</div>
@@ -318,7 +348,7 @@ export default function AchievementsPage() {
       {inProgress.length > 0 && (
         <>
           <h2 className="text-lg font-bold text-gray-900">In Progress</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {inProgress.map(a => {
               const percent = Math.round((a.current / a.target) * 100)
               return (
@@ -345,7 +375,7 @@ export default function AchievementsPage() {
       {locked.length > 0 && (
         <>
           <h2 className="text-lg font-bold text-gray-900 text-opacity-50">Locked</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {locked.map(a => (
               <div key={a.id} className="bg-gray-50 border border-gray-100 rounded-xl p-5 text-center opacity-40">
                 <div className="text-3xl mb-2">🔒</div>

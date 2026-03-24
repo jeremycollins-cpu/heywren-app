@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -130,54 +131,70 @@ export default function DashboardPage() {
   const [mentions, setMentions] = useState<SlackMention[]>([])
   const [integrationCount, setIntegrationCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadData() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      // ── SECURITY: Get user's team_id first ──
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
+        // ── SECURITY: Get user's team_id first ──
+        const { data: userData, error: authError } = await supabase.auth.getUser()
+        if (authError) throw authError
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        if (profileError) throw profileError
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
+        // ── All queries scoped to team_id ──
+        const { data: commitData, error: commitError } = await supabase
+          .from('commitments')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+
+        if (commitError) throw commitError
+
+        const { data: mentionData, error: mentionError } = await supabase
+          .from('slack_messages')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+          .limit(10)
+
+        if (mentionError) throw mentionError
+
+        const { data: intData, error: intError } = await supabase
+          .from('integrations')
+          .select('provider')
+          .eq('team_id', teamId)
+
+        if (intError) throw intError
+
+        if (commitData) setCommitments(commitData)
+        if (mentionData) setMentions(mentionData)
+        if (intData) setIntegrationCount(intData.length)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load dashboard data'
+        setError(message)
+        toast.error(message)
+      } finally {
         setLoading(false)
-        return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      const teamId = profile?.current_team_id
-      if (!teamId) {
-        setLoading(false)
-        return
-      }
-
-      // ── All queries scoped to team_id ──
-      const { data: commitData } = await supabase
-        .from('commitments')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      const { data: mentionData } = await supabase
-        .from('slack_messages')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-      const { data: intData } = await supabase
-        .from('integrations')
-        .select('provider')
-        .eq('team_id', teamId)
-
-      if (commitData) setCommitments(commitData)
-      if (mentionData) setMentions(mentionData)
-      if (intData) setIntegrationCount(intData.length)
-
-      setLoading(false)
     }
     loadData()
   }, [])
@@ -188,12 +205,64 @@ export default function DashboardPage() {
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 rounded w-1/3"></div>
           <div className="h-40 bg-gray-100 rounded"></div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
           </div>
         </div>
       </div>
     )
+  }
+
+  // ── Nudge Action Handlers ──
+  async function handleNudgeDone(commitmentId: string) {
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase
+        .from('commitments')
+        .update({ status: 'completed' })
+        .eq('id', commitmentId)
+      if (updateError) throw updateError
+      setCommitments(prev => prev.filter(c => c.id !== commitmentId))
+      toast.success('Marked as done!')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update commitment'
+      toast.error(message)
+    }
+  }
+
+  async function handleNudgeSnooze(commitmentId: string) {
+    try {
+      const supabase = createClient()
+      const now = new Date().toISOString()
+      const { error: updateError } = await supabase
+        .from('commitments')
+        .update({ updated_at: now })
+        .eq('id', commitmentId)
+      if (updateError) throw updateError
+      setCommitments(prev =>
+        prev.map(c => c.id === commitmentId ? { ...c, updated_at: now } : c)
+      )
+      toast.success('Snoozed — timer reset')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to snooze commitment'
+      toast.error(message)
+    }
+  }
+
+  async function handleNudgeDismiss(commitmentId: string) {
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase
+        .from('commitments')
+        .update({ status: 'dismissed' })
+        .eq('id', commitmentId)
+      if (updateError) throw updateError
+      setCommitments(prev => prev.filter(c => c.id !== commitmentId))
+      toast.success('Dismissed')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to dismiss commitment'
+      toast.error(message)
+    }
   }
 
   // ── Computed Values (all from real data) ──
@@ -274,6 +343,22 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+      {/* ── Error Banner ── */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-red-700">
+            <span>⚠</span>
+            <span className="text-sm font-medium">{error}</span>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-600 text-sm font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
@@ -304,7 +389,7 @@ export default function DashboardPage() {
           {/* Follow-through % ring */}
           <div className="flex items-center gap-3">
             <div className="relative w-14 h-14">
-              <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+              <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56" aria-label={`Follow-through rate: ${followThrough}%`}>
                 <circle cx="28" cy="28" r="24" fill="none" stroke="#e5e7eb" strokeWidth="4" />
                 <circle
                   cx="28" cy="28" r="24" fill="none"
@@ -352,7 +437,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Active Items', value: activeItems, color: '#6366f1', barPercent: Math.min(activeItems / 20 * 100, 100) },
           { label: 'Urgent', value: urgentCount, color: '#f59e0b', barPercent: Math.min(urgentCount / 10 * 100, 100) },
@@ -385,7 +470,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Work Pattern Stats ── */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             value: `${integrationCount}`,
@@ -545,9 +630,9 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-500 mb-3">{c.description}</p>
                   )}
                   <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Done</button>
-                    <button className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600">Snooze</button>
-                    <button className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">Dismiss</button>
+                    <button onClick={() => handleNudgeDone(c.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Done</button>
+                    <button onClick={() => handleNudgeSnooze(c.id)} className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600">Snooze</button>
+                    <button onClick={() => handleNudgeDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">Dismiss</button>
                     <Link
                       href="/commitments"
                       className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"

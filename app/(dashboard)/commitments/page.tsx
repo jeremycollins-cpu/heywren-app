@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Commitment {
   id: string
@@ -99,39 +100,47 @@ function buildTimeline(c: Commitment): Array<{ date: string; source: string; tex
 export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'mentions'>('active')
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      // ── SECURITY: Get user's team_id first ──
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
+        // ── SECURITY: Get user's team_id first ──
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
+        const { data } = await supabase
+          .from('commitments')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+
+        if (data) setCommitments(data)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load commitments'
+        setError(message)
+        toast.error(message)
+      } finally {
         setLoading(false)
-        return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      const teamId = profile?.current_team_id
-      if (!teamId) {
-        setLoading(false)
-        return
-      }
-
-      const { data } = await supabase
-        .from('commitments')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      if (data) setCommitments(data)
-      setLoading(false)
     }
     load()
   }, [])
@@ -165,6 +174,12 @@ export default function CommitmentsPage() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm font-medium">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Commitment Tracing</h1>
         <p className="text-gray-500 text-sm mt-1">Every promise tracked from origin to resolution across your connected tools</p>

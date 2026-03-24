@@ -110,11 +110,13 @@ export default function HandoffPage() {
   const [handoffs, setHandoffs] = useState<PTOHandoff[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [expandedHandoff, setExpandedHandoff] = useState<string | null>(null)
   const [checklists, setChecklists] = useState<Record<string, boolean[]>>({})
   const [reassigning, setReassigning] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
+    try {
     const supabase = createClient()
 
     // ── SECURITY: Get user's team_id first ──
@@ -256,6 +258,12 @@ export default function HandoffPage() {
     setChecklists(initialChecklists)
 
     setLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load handoff data'
+      setError(message)
+      toast.error(message)
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -332,6 +340,12 @@ export default function HandoffPage() {
           When someone goes OOO, HeyWren surfaces every open commitment and ensures clean transfers
         </p>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+          <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
 
       {/* Handoff Items */}
       <div className="space-y-3">

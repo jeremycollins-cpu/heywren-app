@@ -3,10 +3,16 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Settings as SettingsIcon, Bell, Lock, Users, Mail } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [fullName, setFullName] = useState('')
+  const [role, setRole] = useState('')
+  const [teamName, setTeamName] = useState('')
+  const [saving, setSaving] = useState(false)
   const [notifications, setNotifications] = useState({
     slack: true,
     email: true,
@@ -20,10 +26,45 @@ export default function SettingsPage() {
       try {
         const {
           data: { user },
+          error: userError,
         } = await supabase.auth.getUser()
+
+        if (userError) throw userError
+        if (!user) throw new Error('No user found')
+
         setUser(user)
+        setFullName(user.user_metadata?.full_name || '')
+
+        // Fetch profile to get role and current_team_id
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, current_team_id')
+          .eq('id', user.id)
+          .single()
+
+        if (profileError) {
+          console.error('Error fetching profile:', profileError)
+        } else {
+          setRole(profile.role || '')
+
+          // Fetch team name
+          if (profile.current_team_id) {
+            const { data: team, error: teamError } = await supabase
+              .from('teams')
+              .select('name')
+              .eq('id', profile.current_team_id)
+              .single()
+
+            if (teamError) {
+              console.error('Error fetching team:', teamError)
+            } else {
+              setTeamName(team.name || '')
+            }
+          }
+        }
       } catch (err) {
         console.error('Error fetching user:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load user data')
       } finally {
         setLoading(false)
       }
@@ -31,6 +72,22 @@ export default function SettingsPage() {
 
     fetchUser()
   }, [supabase])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { full_name: fullName, role },
+      })
+      if (error) throw error
+      toast.success('Settings saved successfully')
+    } catch (err) {
+      console.error('Error saving settings:', err)
+      toast.error('Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -41,7 +98,41 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      {/* Loading Skeleton */}
+      {loading && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 animate-pulse">
+          <div className="flex items-center gap-2 mb-6">
+            <div className="w-5 h-5 bg-gray-200 rounded" />
+            <div className="h-5 w-20 bg-gray-200 rounded" />
+          </div>
+          <div className="space-y-6">
+            <div>
+              <div className="h-4 w-24 bg-gray-200 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+            </div>
+            <div>
+              <div className="h-4 w-16 bg-gray-200 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+            </div>
+            <div>
+              <div className="h-4 w-12 bg-gray-200 rounded mb-2" />
+              <div className="h-10 w-full bg-gray-200 rounded-lg" />
+            </div>
+            <div className="h-10 w-32 bg-gray-200 rounded-lg" />
+          </div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && !loading && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          <p className="font-medium">Error loading settings</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+      )}
+
       {/* Profile Settings */}
+      {!loading && !error && (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
           <SettingsIcon className="w-5 h-5" />
@@ -53,7 +144,8 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Full Name</label>
             <input
               type="text"
-              defaultValue={user?.user_metadata?.full_name || ''}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -62,7 +154,7 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Email</label>
             <input
               type="email"
-              defaultValue={user?.email || ''}
+              value={user?.email || ''}
               disabled
               className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:outline-none"
             />
@@ -71,20 +163,30 @@ export default function SettingsPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">Role</label>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-              <option>CEO</option>
-              <option>VP Sales</option>
-              <option>VP Product</option>
-              <option>VP Engineering</option>
-              <option>Manager</option>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            >
+              <option value="">Select a role</option>
+              <option value="CEO">CEO</option>
+              <option value="VP Sales">VP Sales</option>
+              <option value="VP Product">VP Product</option>
+              <option value="VP Engineering">VP Engineering</option>
+              <option value="Manager">Manager</option>
             </select>
           </div>
 
-          <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-            Save Changes
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
+      )}
 
       {/* Notification Settings */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -189,7 +291,8 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-900 mb-2">Team Name</label>
             <input
               type="text"
-              defaultValue="My Company"
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>

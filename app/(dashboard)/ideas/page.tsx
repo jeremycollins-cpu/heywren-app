@@ -418,8 +418,27 @@ export default function IdeasPage() {
 
       {/* Ideas List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-gray-500">Loading ideas...</p>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 animate-pulse">
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center gap-1 px-3 py-2 flex-shrink-0">
+                  <div className="w-5 h-5 bg-gray-200 rounded" />
+                  <div className="w-6 h-3 bg-gray-200 rounded" />
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-2/3" />
+                  <div className="h-3 bg-gray-200 rounded w-full" />
+                  <div className="h-3 bg-gray-200 rounded w-4/5" />
+                  <div className="flex gap-2 mt-3">
+                    <div className="h-5 w-16 bg-gray-200 rounded-full" />
+                    <div className="h-5 w-20 bg-gray-200 rounded-full" />
+                    <div className="h-4 w-24 bg-gray-200 rounded" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : filteredIdeas.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 bg-white border border-gray-200 rounded-xl">

@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare } from 'lucide-react'
 
 // ── Types ──
@@ -191,10 +192,12 @@ function parseAttendees(raw: any): Attendee[] {
 export default function BriefingsPage() {
   const [briefings, setBriefings] = useState<Briefing[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [expandedBriefing, setExpandedBriefing] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
+      try {
       const supabase = createClient()
 
       // ── SECURITY: Get user's team_id first ──
@@ -316,6 +319,12 @@ export default function BriefingsPage() {
 
       setBriefings(briefingList)
       setLoading(false)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load briefings'
+        setError(message)
+        toast.error(message)
+        setLoading(false)
+      }
     }
 
     load()
@@ -343,6 +352,12 @@ export default function BriefingsPage() {
           Context cards for every upcoming meeting — open commitments, relationships, and talking points
         </p>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+          <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
 
       {/* Upcoming Briefings */}
       <div className="space-y-3">
