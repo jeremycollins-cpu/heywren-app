@@ -382,7 +382,7 @@ export default function HandoffPage() {
             return (
               <div
                 key={handoff.personEmail}
-                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition"
+                className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 hover:shadow-md transition"
               >
                 {/* Header - clickable */}
                 <div
@@ -399,8 +399,8 @@ export default function HandoffPage() {
                         </span>
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-900">{handoff.personName}</h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-600 mt-0.5">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{handoff.personName}</h3>
+                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                           <Calendar className="w-4 h-4" />
                           {formatDateRange(handoff.startDate, handoff.endDate)}
                         </div>
@@ -416,7 +416,7 @@ export default function HandoffPage() {
                           <AlertCircle className="w-5 h-5 text-yellow-600" />
                         )}
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                         {handoff.commitments.length} commitment
                         {handoff.commitments.length !== 1 ? 's' : ''}
                       </div>
@@ -432,7 +432,7 @@ export default function HandoffPage() {
                 {/* Expanded content */}
                 {isExpanded && (
                   <>
-                    <hr className="my-4 border-gray-100" />
+                    <hr className="my-4 border-gray-100 dark:border-gray-700" />
                     <div className="space-y-4">
                       {/* Open Commitments */}
                       <div>
