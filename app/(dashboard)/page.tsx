@@ -1,6 +1,7 @@
 // app/(dashboard)/page.tsx
-// Dashboard v4 — SECURITY FIX: All queries filtered by team_id
-// Changes from v3: Added getTeamId() helper, all .from() queries now include .eq('team_id', teamId)
+// Dashboard v5 — ALL REAL DATA, zero mock/placeholder content
+// Changes from v4: Removed fake leaderboard, fake personalBest, fake contact %, simulated streaks
+// Empty states designed for clean UX when data is sparse
 
 'use client'
 
@@ -31,14 +32,6 @@ interface SlackMention {
   commitments_found: number
 }
 
-interface RelationshipContact {
-  name: string
-  email: string
-  interactions: number
-  lastActive: string
-  followThrough: number
-}
-
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
 function daysSince(dateStr: string): number {
@@ -48,10 +41,7 @@ function daysSince(dateStr: string): number {
 }
 
 function isThisWeek(dateStr: string): boolean {
-  const d = new Date(dateStr)
-  const now = new Date()
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-  return d >= weekAgo
+  return daysSince(dateStr) <= 7
 }
 
 function getStreakDays(commitments: Commitment[]): number {
@@ -138,8 +128,7 @@ function getAvgScore(commitments: Commitment[]): number {
 export default function DashboardPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [mentions, setMentions] = useState<SlackMention[]>([])
-  const [contacts, setContacts] = useState<RelationshipContact[]>([])
-  const [hasIntegrations, setHasIntegrations] = useState(false)
+  const [integrationCount, setIntegrationCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -165,7 +154,7 @@ export default function DashboardPage() {
         return
       }
 
-      // ── All queries now scoped to team_id ──
+      // ── All queries scoped to team_id ──
       const { data: commitData } = await supabase
         .from('commitments')
         .select('*')
@@ -184,43 +173,9 @@ export default function DashboardPage() {
         .select('provider')
         .eq('team_id', teamId)
 
-      const { data: emailData } = await supabase
-        .from('outlook_messages')
-        .select('from_email, from_name, received_at')
-        .eq('team_id', teamId)
-        .order('received_at', { ascending: false })
-        .limit(500)
-
       if (commitData) setCommitments(commitData)
       if (mentionData) setMentions(mentionData)
-      if (intData && intData.length > 0) setHasIntegrations(true)
-
-      // Aggregate contacts
-      if (emailData) {
-        const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string }> = {}
-        emailData.forEach((msg: any) => {
-          const email = (msg.from_email || '').toLowerCase()
-          if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon')) return
-          if (!contactMap[email]) {
-            contactMap[email] = { name: msg.from_name || email.split('@')[0], email, count: 0, lastDate: msg.received_at }
-          }
-          contactMap[email].count++
-          if (msg.received_at > contactMap[email].lastDate) {
-            contactMap[email].lastDate = msg.received_at
-          }
-        })
-        const sorted = Object.values(contactMap)
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 5)
-          .map(c => ({
-            name: c.name,
-            email: c.email,
-            interactions: c.count,
-            lastActive: c.lastDate,
-            followThrough: Math.round(50 + Math.random() * 30),
-          }))
-        setContacts(sorted)
-      }
+      if (intData) setIntegrationCount(intData.length)
 
       setLoading(false)
     }
@@ -241,7 +196,7 @@ export default function DashboardPage() {
     )
   }
 
-  // ── Computed Values ──
+  // ── Computed Values (all from real data) ──
   const openCommitments = commitments.filter(c => c.status === 'open')
   const completedCommitments = commitments.filter(c => c.status === 'completed')
   const streak = getStreakDays(commitments)
@@ -256,9 +211,8 @@ export default function DashboardPage() {
 
   const slackCount = commitments.filter(c => c.source === 'slack').length
   const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
-  const personalBest = Math.max(followThrough, 82)
 
-  // Anomalies
+  // Anomalies (computed from real data)
   const anomalies: { type: string; message: string }[] = []
   if (urgentCount > 2) {
     anomalies.push({
@@ -272,14 +226,14 @@ export default function DashboardPage() {
       message: `${openCommitments.length} open commitments but none completed. Consider closing resolved items.`
     })
   }
-  if (slackCount > 0 && outlookCount === 0) {
+  if (slackCount > 0 && outlookCount === 0 && integrationCount < 2) {
     anomalies.push({
       type: 'Single source',
       message: 'All commitments are from Slack. Connect Outlook to get a complete picture.'
     })
   }
 
-  // Forecast
+  // Forecast (computed from real data)
   const completionRate = commitments.length > 0 ? completedCommitments.length / commitments.length : 0
   const daysToClean = completionRate > 0 ? Math.ceil(openCommitments.length / (completionRate * 7)) * 7 : null
   const staleItems = openCommitments.filter(c => daysSince(c.created_at) > 7).length
@@ -288,6 +242,35 @@ export default function DashboardPage() {
   const recentMentions = mentions
     .filter(m => m.message_text?.includes('<@') || m.commitments_found > 0)
     .slice(0, 3)
+
+  // ── Empty state if no data at all ──
+  if (commitments.length === 0 && mentions.length === 0 && integrationCount === 0) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Welcome to HeyWren</h1>
+          <p className="text-gray-500 text-sm mt-1">Let&apos;s get you set up</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+          <div className="text-4xl mb-4">🐦</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Connect your first tool</h2>
+          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+            Wren watches your Slack messages and Outlook emails to automatically detect commitments and track follow-through. Connect a tool to get started.
+          </p>
+          <Link
+            href="/integrations"
+            className="inline-flex px-5 py-2.5 text-white font-semibold rounded-lg text-sm transition"
+            style={{
+              background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+              boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
+            }}
+          >
+            Connect Slack or Outlook
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
@@ -300,8 +283,8 @@ export default function DashboardPage() {
           </span>
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          {hasIntegrations
-            ? `${[slackCount > 0 && 'Slack', outlookCount > 0 && 'Outlook'].filter(Boolean).length + (hasIntegrations ? 1 : 0)} connected tools watching for commitments`
+          {integrationCount > 0
+            ? `${integrationCount} connected tool${integrationCount > 1 ? 's' : ''} watching for commitments`
             : 'Connect your tools to start tracking commitments'}
         </p>
       </div>
@@ -309,6 +292,7 @@ export default function DashboardPage() {
       {/* ── Hero Stats Bar ── */}
       <div className="bg-white border border-gray-200 rounded-xl p-6">
         <div className="flex items-center gap-8 flex-wrap">
+          {/* Streak */}
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔥</span>
             <div>
@@ -317,6 +301,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Follow-through % ring */}
           <div className="flex items-center gap-3">
             <div className="relative w-14 h-14">
               <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
@@ -335,10 +320,11 @@ export default function DashboardPage() {
             </div>
             <div>
               <div className="text-sm font-semibold text-gray-900">Follow-through</div>
-              <div className="text-xs text-gray-500">This week</div>
+              <div className="text-xs text-gray-500">{commitments.length} total commitments</div>
             </div>
           </div>
 
+          {/* 7-day trend */}
           <div className="flex items-center gap-3">
             <div className="flex items-end gap-0.5 h-8">
               {trend.map((val, i) => (
@@ -355,6 +341,7 @@ export default function DashboardPage() {
             <div className="text-xs text-gray-500">7-day trend</div>
           </div>
 
+          {/* Level badge */}
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
               {level}
@@ -362,19 +349,6 @@ export default function DashboardPage() {
             <span className="text-sm text-gray-500">{xp.toLocaleString()} XP</span>
           </div>
         </div>
-
-        <div className="mt-4 text-sm text-gray-500">
-          Personal best: <span className="font-semibold text-green-600">{personalBest}%</span> follow-through — {followThrough >= personalBest ? 'you matched it!' : 'keep pushing!'}
-        </div>
-
-        {commitments.length >= 25 && (
-          <div className="mt-2 flex items-center gap-2 text-sm">
-            <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">
-              ⚡ Commitment Tracker
-            </span>
-            <span className="text-gray-400">Earned recently · +200 XP</span>
-          </div>
-        )}
       </div>
 
       {/* ── Stat Cards ── */}
@@ -414,22 +388,22 @@ export default function DashboardPage() {
       <div className="grid grid-cols-4 gap-4">
         {[
           {
-            value: `${slackCount + outlookCount}`,
-            label: 'Sources tracked',
-            status: slackCount > 0 && outlookCount > 0 ? 'Healthy' : 'Limited',
-            statusColor: slackCount > 0 && outlookCount > 0 ? 'text-green-600 bg-green-50' : 'text-yellow-600 bg-yellow-50'
+            value: `${integrationCount}`,
+            label: 'Sources connected',
+            status: integrationCount >= 2 ? 'Healthy' : integrationCount === 1 ? 'Limited' : 'None',
+            statusColor: integrationCount >= 2 ? 'text-green-600 bg-green-50' : integrationCount === 1 ? 'text-yellow-600 bg-yellow-50' : 'text-red-600 bg-red-50'
           },
           {
             value: `${commitments.filter(c => isThisWeek(c.created_at)).length}`,
             label: 'New this week',
-            status: 'Normal',
-            statusColor: 'text-blue-600 bg-blue-50'
+            status: commitments.filter(c => isThisWeek(c.created_at)).length > 0 ? 'Active' : 'Quiet',
+            statusColor: commitments.filter(c => isThisWeek(c.created_at)).length > 0 ? 'text-blue-600 bg-blue-50' : 'text-gray-600 bg-gray-50'
           },
           {
             value: `${completedCommitments.length}`,
             label: 'Completed',
-            status: completedCommitments.length === 0 ? 'Low' : 'Good',
-            statusColor: completedCommitments.length === 0 ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
+            status: completedCommitments.length === 0 && commitments.length > 0 ? 'Needs attention' : completedCommitments.length > 0 ? 'Good' : '—',
+            statusColor: completedCommitments.length === 0 && commitments.length > 0 ? 'text-red-600 bg-red-50' : completedCommitments.length > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-50'
           },
           {
             value: `${staleItems}`,
@@ -452,42 +426,48 @@ export default function DashboardPage() {
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <h2 className="text-lg font-bold text-gray-900 mb-4">Wren&apos;s Forecast</h2>
         <div className="space-y-3">
-          {daysToClean ? (
-            <div className="flex items-start gap-3">
-              <span className="text-green-500 mt-0.5">✓</span>
-              <span className="text-gray-700">
-                At current pace, backlog clears by{' '}
-                <span className="font-bold">
-                  {new Date(Date.now() + daysToClean * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                </span>
-              </span>
-            </div>
+          {commitments.length === 0 ? (
+            <p className="text-gray-500 text-sm">Forecasts will appear once Wren has tracked enough commitments to identify patterns.</p>
           ) : (
-            <div className="flex items-start gap-3">
-              <span className="text-yellow-500 mt-0.5">⚠</span>
-              <span className="text-gray-700">
-                No completions yet — start closing items to build your forecast
-              </span>
-            </div>
-          )}
+            <>
+              {daysToClean ? (
+                <div className="flex items-start gap-3">
+                  <span className="text-green-500 mt-0.5">✓</span>
+                  <span className="text-gray-700">
+                    At current pace, backlog clears by{' '}
+                    <span className="font-bold">
+                      {new Date(Date.now() + daysToClean * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                    </span>
+                  </span>
+                </div>
+              ) : openCommitments.length > 0 ? (
+                <div className="flex items-start gap-3">
+                  <span className="text-yellow-500 mt-0.5">⚠</span>
+                  <span className="text-gray-700">
+                    No completions yet — start closing items to build your forecast
+                  </span>
+                </div>
+              ) : null}
 
-          {staleItems > 0 && (
-            <div className="flex items-start gap-3">
-              <span className="text-red-500 mt-0.5">⚠</span>
-              <span className="text-gray-700">
-                <span className="text-red-600 font-semibold">{staleItems} item{staleItems > 1 ? 's' : ''} stale for 7+ days</span>{' '}
-                — review and close or update
-              </span>
-            </div>
-          )}
+              {staleItems > 0 && (
+                <div className="flex items-start gap-3">
+                  <span className="text-red-500 mt-0.5">⚠</span>
+                  <span className="text-gray-700">
+                    <span className="text-red-600 font-semibold">{staleItems} item{staleItems > 1 ? 's' : ''} stale for 7+ days</span>{' '}
+                    — review and close or update
+                  </span>
+                </div>
+              )}
 
-          {openCommitments.length > 0 && (
-            <div className="flex items-start gap-3">
-              <span className="text-gray-400 mt-0.5">📋</span>
-              <span className="text-gray-700">
-                {openCommitments.length} open commitments need follow-through this week
-              </span>
-            </div>
+              {openCommitments.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <span className="text-gray-400 mt-0.5">📋</span>
+                  <span className="text-gray-700">
+                    {openCommitments.length} open commitment{openCommitments.length !== 1 ? 's' : ''} need follow-through this week
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -500,7 +480,7 @@ export default function DashboardPage() {
             <h2 className="text-lg font-bold text-gray-900">Recent Mentions</h2>
           </div>
           <span className="text-sm text-gray-400">
-            {mentions.filter(m => isThisWeek(m.created_at)).length} captured this week
+            {mentions.filter(m => isThisWeek(m.created_at)).length} this week
           </span>
         </div>
 
@@ -537,52 +517,20 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Weekly Leaderboard ── */}
-      {contacts.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            <span className="mr-2">🏆</span>Weekly Leaderboard
-          </h2>
-          <div className="space-y-3">
-            {contacts.map((contact, i) => {
-              const initials = contact.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-              const colors = ['bg-indigo-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-cyan-500']
-              return (
-                <div key={contact.email} className="flex items-center gap-4">
-                  <span className="text-lg font-bold text-gray-400 w-6 text-right">{i + 1}</span>
-                  <div className={`w-9 h-9 ${colors[i % colors.length]} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
-                    {initials}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900">
-                      {contact.name}
-                      {i === 0 && <span className="text-xs text-gray-400 ml-1">(You)</span>}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      🔥 {Math.max(1, streak - i)}-day streak · {contact.interactions > contacts[0].interactions ? '+' : ''}{Math.round((contact.interactions / Math.max(contacts[0].interactions, 1)) * 10 - 5)}% vs last week
-                    </div>
-                  </div>
-                  <div className="text-xl font-bold text-gray-900">{contact.followThrough}%</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* ── Nudge Cards ── */}
-      {openCommitments.length > 0 && (
+      {openCommitments.filter(c => daysSince(c.created_at) > 3).length > 0 && (
         <div className="space-y-4">
+          <h2 className="text-lg font-bold text-gray-900">Needs Follow-through</h2>
           {openCommitments
             .filter(c => daysSince(c.created_at) > 3)
             .slice(0, 3)
-            .map((c, i) => {
+            .map(c => {
               const age = daysSince(c.created_at)
               const urgency = age > 7 ? 'URGENT' : age > 5 ? 'GENTLE' : 'DIGEST'
               const score = Math.max(100 - age * 5, 30)
               const borderColor = urgency === 'URGENT' ? 'border-l-red-500' : urgency === 'GENTLE' ? 'border-l-indigo-500' : 'border-l-gray-400'
               const badgeColor = urgency === 'URGENT' ? 'bg-red-100 text-red-700' : urgency === 'GENTLE' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700'
-              const sourceBadge = c.source === 'slack' ? 'SLACK' : c.source === 'outlook' || c.source === 'email' ? 'MICROSOFT 365' : 'MANUAL'
+              const sourceBadge = c.source === 'slack' ? 'SLACK' : c.source === 'outlook' || c.source === 'email' ? 'OUTLOOK' : 'MANUAL'
 
               return (
                 <div key={c.id} className={`bg-white border border-gray-200 border-l-4 ${borderColor} rounded-xl p-5`}>
@@ -590,13 +538,12 @@ export default function DashboardPage() {
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${badgeColor}`}>{urgency}</span>
                     <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">Score: {score}</span>
                     <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{sourceBadge}</span>
+                    <span className="text-xs text-gray-400">{age} days open</span>
                   </div>
-                  <div className="font-bold text-gray-900 mb-1">
-                    [{urgency === 'URGENT' ? 'Strategic follow-through' : urgency === 'GENTLE' ? 'Follow-up needed' : 'Check-in'}] {c.title}
-                  </div>
-                  <p className="text-sm text-gray-500 mb-3">
-                    {c.description || `This commitment has been open for ${age} days. Consider following up or closing it.`}
-                  </p>
+                  <div className="font-bold text-gray-900 mb-1">{c.title}</div>
+                  {c.description && (
+                    <p className="text-sm text-gray-500 mb-3">{c.description}</p>
+                  )}
                   <div className="flex items-center gap-2">
                     <button className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Done</button>
                     <button className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600">Snooze</button>
@@ -605,7 +552,7 @@ export default function DashboardPage() {
                       href="/commitments"
                       className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
                     >
-                      Open Source
+                      View Trace
                     </Link>
                   </div>
                 </div>
