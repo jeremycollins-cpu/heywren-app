@@ -100,19 +100,23 @@ export default function RelationshipsPage() {
             const email = (msg.from_email || '').toLowerCase()
             if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
 
+            const receivedAt = msg.received_at || new Date().toISOString()
+
             if (!contactMap[email]) {
               contactMap[email] = {
                 name: msg.from_name || email.split('@')[0],
                 email,
                 count: 0,
-                lastDate: msg.received_at,
+                lastDate: receivedAt,
                 dates: []
               }
             }
             contactMap[email].count++
-            contactMap[email].dates.push(msg.received_at)
-            if (msg.received_at > contactMap[email].lastDate) {
-              contactMap[email].lastDate = msg.received_at
+            if (receivedAt) {
+              contactMap[email].dates.push(receivedAt)
+              if (receivedAt > contactMap[email].lastDate) {
+                contactMap[email].lastDate = receivedAt
+              }
             }
           })
 
