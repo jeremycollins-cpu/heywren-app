@@ -17,79 +17,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// Extract the authenticated user from the request cookies
-async function getAuthenticatedUser(request: NextRequest) {
-  // Read the Supabase auth token from cookies
-  const accessToken =
-    request.cookies.get('sb-access-token')?.value ||
-    request.cookies.get('sb-' + new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split('.')[0] + '-auth-token')?.value
-
-  // Try to find the token in various cookie formats Supabase uses
-  let token: string | null = null
-
-  // Method 1: Look for the access token directly
-  for (const cookie of request.cookies.getAll()) {
-    if (cookie.name.includes('auth-token')) {
-      try {
-        // Supabase stores the session as a JSON array: [access_token, refresh_token, ...]
-        // or as a base64 encoded JSON object
-        const parsed = JSON.parse(cookie.value)
-        if (Array.isArray(parsed) && parsed.length >= 1) {
-          token = parsed[0]
-        } else if (parsed.access_token) {
-          token = parsed.access_token
-        }
-      } catch {
-        // Not JSON, might be the raw token
-        token = cookie.value
-      }
-      break
-    }
-  }
-
-  if (!token) {
-    // Method 2: Check for chunked cookies (sb-XXX-auth-token.0, sb-XXX-auth-token.1, etc.)
-    const chunks: string[] = []
-    for (const cookie of request.cookies.getAll()) {
-      if (cookie.name.includes('auth-token.')) {
-        const chunkIndex = parseInt(cookie.name.split('.').pop() || '0')
-        chunks[chunkIndex] = cookie.value
-      }
-    }
-    if (chunks.length > 0) {
-      const combined = chunks.join('')
-      try {
-        const parsed = JSON.parse(combined)
-        if (Array.isArray(parsed) && parsed.length >= 1) {
-          token = parsed[0]
-        } else if (parsed.access_token) {
-          token = parsed.access_token
-        }
-      } catch {
-        token = combined
-      }
-    }
-  }
-
-  if (!token) {
-    return null
-  }
-
-  // Verify the token with Supabase
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  )
-
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user) {
-    return null
-  }
-
-  return user
-}
-
 async function slackGet(url: string, token: string, maxRetries: number = 2): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(url, {
@@ -125,34 +52,24 @@ async function slackPost(url: string, token: string, body: any): Promise<any> {
 }
 
 export async function POST(request: NextRequest) {
-  // ================================================================
-  // STEP 1: Authenticate the user from their session cookie
-  // ================================================================
-  const user = await getAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized. Please log in again.' },
-      { status: 401 }
-    )
-  }
-
-  const userId = user.id
-
-  // ================================================================
-  // STEP 2: Use service role key for all data operations (bypasses RLS)
-  // ================================================================
   const supabase = getAdminClient()
   const startTime = Date.now()
 
+  let userId: string
   let daysBack: number = 30
   let channelId: string | null = null
 
   try {
     const body = await request.json()
+    userId = body.userId
     daysBack = body.daysBack || 30
     channelId = body.channelId || null
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    }
   } catch (e) {
-    // Use defaults — body is optional
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
   // Get user's team
@@ -179,7 +96,7 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (!integration || !integration.access_token) {
-    return NextResponse.json({ error: 'Slack not connected. Please connect Slack first.' }, { status: 400 })
+    return NextResponse.json({ error: 'Slack not connected or missing access token' }, { status: 400 })
   }
 
   const slackToken = integration.access_token
@@ -188,12 +105,13 @@ export async function POST(request: NextRequest) {
   const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
   if (!authTest.ok) {
     return NextResponse.json({
-      error: 'Slack token expired or invalid: ' + authTest.error + '. Please reconnect Slack in Settings.',
+      error: 'Slack token invalid: ' + authTest.error + '. Please reconnect Slack.',
     }, { status: 401 })
   }
 
   // ================================================================
   // PHASE 1: Re-process previously stored but unprocessed messages
+  // This is the FAST path — no Slack API calls needed, just AI
   // ================================================================
   const { data: unprocessed, count: unprocessedCount } = await supabase
     .from('slack_messages')
@@ -213,6 +131,7 @@ export async function POST(request: NextRequest) {
       if (msg.message_text && msg.message_text.length >= 15) {
         batch.push({ id: msg.message_ts, text: msg.message_text, dbId: msg.id })
       } else {
+        // Mark short messages as processed with 0 commitments
         await supabase
           .from('slack_messages')
           .update({ processed: true, commitments_found: 0 })
@@ -221,6 +140,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Process in chunks of 15 (for batch AI)
     for (let i = 0; i < batch.length; i += 15) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
@@ -263,6 +183,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // If we still have unprocessed messages, return early and tell the user to sync again
     const remainingUnprocessed = (unprocessedCount || 0) - processedMessages
     if (remainingUnprocessed > 0) {
       const aiStats = getDetectionStats()
@@ -382,6 +303,7 @@ export async function POST(request: NextRequest) {
       break
     }
 
+    // Skip if we've hit the message limit for this run
     if (totalNewMessages >= MAX_MESSAGES_PER_RUN) {
       errors.push('Reached ' + MAX_MESSAGES_PER_RUN + ' new messages. Click sync again to continue.')
       break
@@ -461,6 +383,7 @@ export async function POST(request: NextRequest) {
           batch.push({ id: msg.ts, text: msg.text, dbId })
         }
 
+        // Process batch through AI
         if (batch.length > 0) {
           try {
             const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
