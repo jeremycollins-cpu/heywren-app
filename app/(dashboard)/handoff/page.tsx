@@ -436,11 +436,11 @@ export default function HandoffPage() {
                     <div className="space-y-4">
                       {/* Open Commitments */}
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
                           Open Commitments to Handoff
                         </h4>
                         {handoff.commitments.length === 0 ? (
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
                             No open commitments found for this person.
                           </p>
                         ) : (
@@ -456,7 +456,7 @@ export default function HandoffPage() {
                               return (
                                 <div
                                   key={commitment.id}
-                                  className="flex items-start gap-3 text-sm bg-gray-50 rounded-lg p-3"
+                                  className="flex items-start gap-3 text-sm bg-gray-50 dark:bg-surface-dark rounded-lg p-3"
                                 >
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
