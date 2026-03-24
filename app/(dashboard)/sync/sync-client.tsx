@@ -16,7 +16,7 @@ type SyncResult = {
   errors?: string[]
 }
 
-export default function SyncPage() {
+export default function SyncClient() {
   const [syncingSlack, setSyncingSlack] = useState(false)
   const [syncingOutlook, setSyncingOutlook] = useState(false)
   const [slackResult, setSlackResult] = useState<SyncResult | null>(null)
@@ -42,8 +42,8 @@ export default function SyncPage() {
       const response = await fetch('/api/integrations/slack/backfill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          userId: userData.user.id,
           daysBack: 30,
         }),
       })
@@ -83,8 +83,8 @@ export default function SyncPage() {
       const response = await fetch('/api/integrations/outlook/backfill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          userId: userData.user.id,
           daysBack: 30,
         }),
       })
@@ -197,10 +197,10 @@ export default function SyncPage() {
             <Mail className="w-6 h-6 text-white" />
           </div>
           <div className="flex-1">
-            <h2 className="font-semibold text-gray-900">Outlook Email Sync</h2>
+            <h2 className="font-semibold text-gray-900">Outlook Email & Calendar Sync</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Scans your inbox and sent emails from the last 30 days.
-              Uses AI to find commitments, promises, deadlines, and action items in email threads.
+              Scans your inbox emails from the last 30 days.
+              Uses AI to find commitments, promises, deadlines, and action items from emails.
             </p>
           </div>
         </div>
