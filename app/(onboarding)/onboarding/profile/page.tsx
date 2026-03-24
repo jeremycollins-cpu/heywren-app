@@ -152,9 +152,7 @@ export default function ProfileSetupPage() {
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 text-indigo-600">
           <Briefcase className="w-6 h-6" />
         </div>
-        <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
-          Step 1 of 4
-        </div>
+        {/* Step indicator is shown in the layout header */}
         <h2 className="text-3xl font-bold text-gray-900">Let&apos;s set up your workspace</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
           Tell us a bit about yourself so Wren can tailor follow-through to your role and team.
