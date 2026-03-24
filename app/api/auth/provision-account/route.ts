@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
         id: userId,
         full_name: fullName,
         email: userEmail,
-        role: flow === 'created' ? 'super_admin' : 'member',
+        role: flow === 'created' ? 'admin' : 'user',
         current_team_id: teamId,
       }, {
         onConflict: 'id',
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
         .update({
           full_name: fullName,
           email: userEmail,
-          role: flow === 'created' ? 'super_admin' : 'member',
+          role: flow === 'created' ? 'admin' : 'user',
           current_team_id: teamId,
         })
         .eq('id', userId)

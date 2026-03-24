@@ -95,24 +95,29 @@ export default function ProfileSetupPage() {
         throw new Error('Not authenticated')
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName,
-          job_title: jobTitle,
-          company: companyName,
-          team_size: teamSize,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', authData.user.id)
+      // Use the API route for the update — it runs with admin privileges
+      // and avoids RLS or missing-column issues on the client.
+      const response = await fetch('/api/onboarding/update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          jobTitle,
+          companyName,
+          teamSize,
+        }),
+      })
 
-      if (error) throw error
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update profile')
+      }
 
       toast.success('Profile updated!')
       router.push('/onboarding/integrations')
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating profile:', err)
-      toast.error('Failed to update profile. Please try again.')
+      toast.error(err.message || 'Failed to update profile. Please try again.')
     } finally {
       setLoading(false)
     }

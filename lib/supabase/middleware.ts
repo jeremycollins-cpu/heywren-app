@@ -52,11 +52,17 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Check if user has completed onboarding
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('onboarding_completed')
     .eq('id', session.user.id)
     .single()
+
+  // If the query errored (e.g. column doesn't exist because migration 009 isn't applied),
+  // skip the onboarding check rather than trapping the user in a redirect loop.
+  if (profileError) {
+    return response
+  }
 
   // If profile doesn't exist yet or onboarding not completed, redirect to onboarding
   if (!profile || !profile.onboarding_completed) {
