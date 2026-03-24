@@ -258,7 +258,7 @@ export default function IdeasPage() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2" style={{ letterSpacing: '-0.025em' }}>
-          <Lightbulb className="w-8 h-8 text-indigo-600" />
+          <Lightbulb aria-hidden="true" className="w-8 h-8 text-indigo-600" />
           Feature Ideas
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
@@ -273,39 +273,44 @@ export default function IdeasPage() {
         </h2>
         <form onSubmit={handleSubmitIdea} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="idea-title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Title
             </label>
             <input
+              id="idea-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What's your idea?"
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
               disabled={submitting}
+              aria-required="true"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="idea-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Description
             </label>
             <textarea
+              id="idea-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Tell us more about your idea..."
               rows={4}
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none dark:bg-surface-dark dark:text-white"
               disabled={submitting}
+              aria-required="true"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="idea-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Category
               </label>
               <select
+                id="idea-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as typeof CATEGORIES[number])}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
@@ -329,7 +334,7 @@ export default function IdeasPage() {
                   boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
                 }}
               >
-                <Send className="w-4 h-4" />
+                <Send aria-hidden="true" className="w-4 h-4" />
                 {submitting ? 'Submitting...' : 'Submit'}
               </button>
             </div>

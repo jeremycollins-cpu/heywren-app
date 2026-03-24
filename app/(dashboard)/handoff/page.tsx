@@ -322,7 +322,7 @@ export default function HandoffPage() {
             When someone goes OOO, HeyWren surfaces every open commitment and ensures clean transfers
           </p>
         </div>
-        <div className="animate-pulse space-y-4">
+        <div role="status" aria-live="polite" aria-busy="true" aria-label="Loading handoff data" className="animate-pulse space-y-4">
           {[1, 2].map((i) => (
             <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-lg" />
           ))}
@@ -342,7 +342,7 @@ export default function HandoffPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
           <span className="font-medium">Error:</span> {error}
         </div>
       )}
@@ -387,6 +387,10 @@ export default function HandoffPage() {
                 {/* Header - clickable */}
                 <div
                   className="flex items-start justify-between cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedHandoff(isExpanded ? null : handoff.personEmail) } }}
                   onClick={() =>
                     setExpandedHandoff(isExpanded ? null : handoff.personEmail)
                   }
@@ -401,7 +405,7 @@ export default function HandoffPage() {
                       <div>
                         <h3 className="font-semibold text-gray-900 dark:text-white">{handoff.personName}</h3>
                         <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                          <Calendar className="w-4 h-4" />
+                          <Calendar aria-hidden="true" className="w-4 h-4" />
                           {formatDateRange(handoff.startDate, handoff.endDate)}
                         </div>
                       </div>
@@ -422,6 +426,7 @@ export default function HandoffPage() {
                       </div>
                     </div>
                     <ChevronDown
+                      aria-hidden="true"
                       className={`w-5 h-5 text-gray-400 transition-transform ${
                         isExpanded ? 'rotate-180' : ''
                       }`}
@@ -493,6 +498,7 @@ export default function HandoffPage() {
                                       <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
                                     ) : (
                                       <select
+                                        aria-label={`Reassign ${commitment.title}`}
                                         className="text-xs border border-gray-300 dark:border-border-dark rounded-md px-2 py-1.5 bg-white dark:bg-surface-dark text-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                         value={commitment.assignee_id || ''}
                                         onChange={(e) => {

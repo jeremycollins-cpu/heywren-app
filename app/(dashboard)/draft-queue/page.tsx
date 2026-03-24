@@ -147,7 +147,7 @@ export default function DraftQueuePage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading drafts">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -164,7 +164,7 @@ export default function DraftQueuePage() {
   return (
     <div className="space-y-6">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+        <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
           <span className="text-sm font-medium">{error}</span>
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
         </div>
@@ -181,7 +181,7 @@ export default function DraftQueuePage() {
           disabled={generating}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
+          <RefreshCw aria-hidden="true" className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
           {generating ? 'Generating...' : 'Generate Drafts'}
         </button>
       </div>
@@ -248,14 +248,14 @@ export default function DraftQueuePage() {
                       onClick={() => saveEdit(draft.id)}
                       className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
                     >
-                      <Check className="w-4 h-4" />
+                      <Check aria-hidden="true" className="w-4 h-4" />
                       Save
                     </button>
                     <button
                       onClick={() => setEditingDraft(null)}
                       className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
                     >
-                      <X className="w-4 h-4" />
+                      <X aria-hidden="true" className="w-4 h-4" />
                       Cancel
                     </button>
                   </div>
@@ -265,6 +265,10 @@ export default function DraftQueuePage() {
                 <>
                   <div
                     className="cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={selectedDraft === draft.id}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDraft(selectedDraft === draft.id ? null : draft.id) } }}
                     onClick={() => setSelectedDraft(selectedDraft === draft.id ? null : draft.id)}
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -310,21 +314,22 @@ export default function DraftQueuePage() {
                           onClick={() => sendDraft(draft.id)}
                           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
                         >
-                          <Send className="w-4 h-4" />
+                          <Send aria-hidden="true" className="w-4 h-4" />
                           Mark as Sent
                         </button>
                         <button
                           onClick={() => startEditing(draft)}
                           className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                         >
-                          <Edit className="w-4 h-4" />
+                          <Edit aria-hidden="true" className="w-4 h-4" />
                           Edit
                         </button>
                         <button
                           onClick={() => dismissDraft(draft.id)}
                           className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition"
+                          aria-label="Dismiss draft"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 aria-hidden="true" className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
