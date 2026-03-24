@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { WrenFullLogo } from '@/components/logo'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -50,6 +50,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     { href: '/weekly', label: 'Weekly', icon: Calendar },
     { href: '/playbooks', label: 'Playbooks', icon: FileText },
     { href: '/draft-queue', label: 'Draft Queue', icon: Edit },
+    { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning },
     { href: '/briefings', label: 'Briefings', icon: Briefcase },
     { href: '/handoff', label: 'Handoff', icon: Hand },
     { href: '/achievements', label: 'Achievements', icon: Trophy },
