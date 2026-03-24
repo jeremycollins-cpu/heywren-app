@@ -11,6 +11,13 @@ function getAdminClient() {
 }
 
 export async function POST(request: NextRequest) {
+  // Origin validation to prevent CSRF
+  const origin = request.headers.get('origin')
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
+  if (origin && allowedOrigin && origin !== allowedOrigin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   // Authenticate user
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -52,7 +59,8 @@ export async function POST(request: NextRequest) {
     .limit(50)
 
   if (existingCommitmentIds.length > 0) {
-    query = query.not('id', 'in', '(' + existingCommitmentIds.join(',') + ')')
+    const escaped = existingCommitmentIds.map((id: string) => `"${id.replace(/"/g, '')}"`).join(',')
+    query = query.not('id', 'in', `(${escaped})`)
   }
 
   const { data: commitments, error: commitError } = await query

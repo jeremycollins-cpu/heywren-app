@@ -1,58 +1,57 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronRight, ChevronLeft, X, CheckCircle2 } from 'lucide-react'
+import { ChevronRight, ChevronLeft, X, CheckCircle2, LayoutDashboard, Radio, ShieldCheck, Zap, Sparkles } from 'lucide-react'
 
 interface WalkthroughStep {
   id: string
   title: string
   description: string
+  actionHint: string
   sidebarItemId: string
-  icon: string
+  icon: React.ReactNode
 }
 
 const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
     id: 'dashboard',
-    title: 'Dashboard Overview',
-    description: 'Get a bird\'s eye view of all your commitments, achievements, and progress at a glance.',
+    title: 'Your Command Center',
+    description: 'Your dashboard shows your follow-through score, active commitments, and anomalies at a glance. Everything you need to stay on top of your promises lives here.',
+    actionHint: 'Your score starts building as Wren scans your messages.',
     sidebarItemId: 'dashboard',
-    icon: '📊',
-  },
-  {
-    id: 'commitments',
-    title: 'Track Commitments',
-    description: 'Create, track, and manage all your commitments in one place. Set reminders and follow up consistently.',
-    sidebarItemId: 'commitments',
-    icon: '✓',
+    icon: <LayoutDashboard className="w-6 h-6" />,
   },
   {
     id: 'integrations',
-    title: 'Connect Integrations',
-    description: 'Link Slack, Outlook, and other tools to automatically detect and track commitments made across your platforms.',
+    title: 'Wren is Watching',
+    description: 'Wren connects to your Slack and email to automatically detect commitments. No copy-pasting, no manual entry — just connect and go.',
+    actionHint: 'Your first results will appear within minutes of connecting.',
     sidebarItemId: 'integrations',
-    icon: '⚡',
+    icon: <Radio className="w-6 h-6" />,
+  },
+  {
+    id: 'commitments',
+    title: 'Never Drop the Ball',
+    description: 'Every promise you make, question you receive, and follow-up you owe gets tracked automatically. Missed emails and forgotten threads surface here so nothing slips through the cracks.',
+    actionHint: 'Your first commitments will appear here once Wren scans your messages.',
+    sidebarItemId: 'commitments',
+    icon: <ShieldCheck className="w-6 h-6" />,
   },
   {
     id: 'draft-queue',
-    title: 'Draft Queue',
-    description: 'Review and refine your draft messages before sending them. Perfect for crafting thoughtful responses.',
+    title: 'Stay Ahead',
+    description: 'Before each meeting, Wren prepares talking points from your open commitments. When follow-ups are due, draft responses are ready to review and send.',
+    actionHint: 'Check your draft queue before your next meeting for prepared talking points.',
     sidebarItemId: 'draft-queue',
-    icon: '✎',
+    icon: <Zap className="w-6 h-6" />,
   },
   {
-    id: 'weekly',
-    title: 'Weekly Review',
-    description: 'Conduct your weekly review to reflect on progress, celebrate wins, and plan for the week ahead.',
-    sidebarItemId: 'weekly',
-    icon: '📅',
-  },
-  {
-    id: 'achievements',
-    title: 'Track Achievements',
-    description: 'See all your completed commitments and milestones. Build momentum by celebrating your progress.',
-    sidebarItemId: 'achievements',
-    icon: '🏆',
+    id: 'complete',
+    title: "You're All Set!",
+    description: 'Wren gets smarter over time as it learns your communication patterns. Rate alerts as helpful or not helpful to train your personal AI follow-through assistant.',
+    actionHint: 'The more you use Wren, the better it gets at knowing what matters to you.',
+    sidebarItemId: 'dashboard',
+    icon: <Sparkles className="w-6 h-6" />,
   },
 ]
 
@@ -105,6 +104,8 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
 
   if (!isVisible) return null
 
+  const isLastStep = currentStep === WALKTHROUGH_STEPS.length - 1
+
   return (
     <>
       {/* Backdrop */}
@@ -138,7 +139,7 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
 
       {/* Tooltip Card */}
       <div
-        className="fixed z-50 bg-white rounded-2xl shadow-2xl p-6 max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-300"
+        className="fixed z-50 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-300"
         style={{
           bottom: '40px',
           right: '40px',
@@ -147,21 +148,31 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
         {/* Close button */}
         <button
           onClick={handleSkip}
-          className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition"
+          className="absolute top-4 right-4 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
+          aria-label="Skip walkthrough"
         >
-          <X className="w-4 h-4 text-gray-500" />
+          <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
         </button>
 
         {/* Icon */}
-        <div className="text-4xl mb-4">{step.icon}</div>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 text-indigo-600 dark:text-indigo-400" style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #ede9fe 100%)' }}>
+          {step.icon}
+        </div>
 
         {/* Content */}
-        <h3 className="text-lg font-bold text-gray-900 mb-2" style={{ letterSpacing: '-0.025em' }}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2" style={{ letterSpacing: '-0.025em' }}>
           {step.title}
         </h3>
-        <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
           {step.description}
         </p>
+
+        {/* Action Hint */}
+        <div className="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 rounded-lg px-3 py-2 mb-6">
+          <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
+            {step.actionHint}
+          </p>
+        </div>
 
         {/* Progress indicator */}
         <div className="flex items-center gap-2 mb-6">
@@ -173,11 +184,11 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
                   ? 'bg-gradient-to-r from-indigo-600 to-violet-600 w-6'
                   : idx < currentStep
                     ? 'bg-indigo-600 w-4'
-                    : 'bg-gray-200 w-4'
+                    : 'bg-gray-200 dark:bg-gray-700 w-4'
               }`}
             />
           ))}
-          <span className="text-xs text-gray-500 ml-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
             {currentStep + 1} of {WALKTHROUGH_STEPS.length}
           </span>
         </div>
@@ -187,7 +198,7 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
           {currentStep > 0 && (
             <button
               onClick={handlePrev}
-              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition font-medium text-sm"
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition font-medium text-sm"
             >
               <ChevronLeft className="w-4 h-4" />
               Back
@@ -197,14 +208,18 @@ export default function Walkthrough({ open, onClose }: WalkthroughProps) {
             onClick={handleNext}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-white rounded-lg transition font-medium text-sm"
             style={{
-              background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-              boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
+              background: isLastStep
+                ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+              boxShadow: isLastStep
+                ? '0 4px 16px rgba(22, 163, 74, 0.3)'
+                : '0 4px 16px rgba(79, 70, 229, 0.2)',
             }}
           >
-            {currentStep === WALKTHROUGH_STEPS.length - 1 ? (
+            {isLastStep ? (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                Complete
+                Let&apos;s Go!
               </>
             ) : (
               <>
@@ -241,7 +256,7 @@ export function resetWalkthrough() {
 }
 
 // Helper to mark as completed
-export function completeWalkthrough() {
+export function completeWalkthroughStorage() {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, 'true')
   }

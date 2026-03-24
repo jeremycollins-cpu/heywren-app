@@ -16,25 +16,32 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
     <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-6 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-300 flex-shrink-0" />
-          <p className="text-sm font-medium">
-            <span className="font-semibold">Setup incomplete:</span> Connect Slack or Outlook to start capturing commitments automatically.
-          </p>
+          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle aria-hidden="true" className="w-4 h-4 text-amber-300" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">
+              Wren needs a data source to find your commitments
+            </p>
+            <p className="text-xs text-indigo-200">
+              Connect Slack or Outlook and your first results will appear within minutes.
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <button
             onClick={() => router.push('/integrations')}
             className="flex items-center gap-1.5 bg-white text-indigo-700 px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-indigo-50 transition"
           >
-            Complete Setup
-            <ArrowRight className="w-4 h-4" />
+            Connect Now
+            <ArrowRight aria-hidden="true" className="w-4 h-4" />
           </button>
           <button
             onClick={onDismiss}
             className="text-indigo-200 hover:text-white transition"
-            aria-label="Dismiss"
+            aria-label="Dismiss banner"
           >
-            <X className="w-4 h-4" />
+            <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -107,7 +114,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: '#fafbfc', fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+    <div className="flex flex-col h-screen bg-surface-secondary dark:bg-surface-dark font-sans transition-colors duration-300">
       {/* Onboarding banner */}
       {showOnboardingBanner && !bannerDismissed && (
         <OnboardingBanner onDismiss={handleDismissBanner} />
@@ -121,7 +128,7 @@ export default function DashboardLayout({
         />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-          <main className="flex-1 overflow-auto">
+          <main id="main-content" className="flex-1 overflow-auto">
             <div className="max-w-7xl mx-auto px-6 py-8">
               {children}
             </div>

@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Commitment {
   id: string
@@ -37,20 +38,20 @@ function getCommitmentScore(c: Commitment): number {
 }
 
 function getCommitmentStatus(c: Commitment): { label: string; color: string; bgColor: string } {
-  if (c.status === 'completed') return { label: 'COMPLETED', color: 'text-green-700', bgColor: 'bg-green-100' }
-  if (c.status === 'overdue') return { label: 'OVERDUE', color: 'text-red-700', bgColor: 'bg-red-100' }
+  if (c.status === 'completed') return { label: 'COMPLETED', color: 'text-green-700 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30' }
+  if (c.status === 'overdue') return { label: 'OVERDUE', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-900/30' }
   const age = daysSince(c.created_at)
-  if (age > 7) return { label: 'AT RISK', color: 'text-red-700', bgColor: 'bg-red-100' }
-  if (age > 3) return { label: 'STALLED', color: 'text-yellow-700', bgColor: 'bg-yellow-100' }
-  return { label: 'ACTIVE', color: 'text-green-700', bgColor: 'bg-green-100' }
+  if (age > 7) return { label: 'AT RISK', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-900/30' }
+  if (age > 3) return { label: 'STALLED', color: 'text-yellow-700 dark:text-yellow-400', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' }
+  return { label: 'ACTIVE', color: 'text-green-700 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30' }
 }
 
 function getSourceBadge(source: string | null): { label: string; color: string } {
   switch (source) {
-    case 'slack': return { label: 'Slack', color: 'bg-purple-100 text-purple-700' }
-    case 'outlook': case 'email': return { label: 'Email', color: 'bg-blue-100 text-blue-700' }
-    case 'meeting': return { label: 'Meeting', color: 'bg-orange-100 text-orange-700' }
-    default: return { label: 'Manual', color: 'bg-gray-100 text-gray-700' }
+    case 'slack': return { label: 'Slack', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' }
+    case 'outlook': case 'email': return { label: 'Email', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' }
+    case 'meeting': return { label: 'Meeting', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' }
+    default: return { label: 'Manual', color: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400' }
   }
 }
 
@@ -99,39 +100,47 @@ function buildTimeline(c: Commitment): Array<{ date: string; source: string; tex
 export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'mentions'>('active')
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      // ── SECURITY: Get user's team_id first ──
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
+        // ── SECURITY: Get user's team_id first ──
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
+        const { data } = await supabase
+          .from('commitments')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+
+        if (data) setCommitments(data)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load commitments'
+        setError(message)
+        toast.error(message)
+      } finally {
         setLoading(false)
-        return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      const teamId = profile?.current_team_id
-      if (!teamId) {
-        setLoading(false)
-        return
-      }
-
-      const { data } = await supabase
-        .from('commitments')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      if (data) setCommitments(data)
-      setLoading(false)
     }
     load()
   }, [])
@@ -144,10 +153,10 @@ export default function CommitmentsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading commitments">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          {[1,2,3].map(i => <div key={i} className="h-48 bg-gray-100 rounded"></div>)}
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          {[1,2,3].map(i => <div key={i} className="h-48 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
         </div>
       </div>
     )
@@ -165,13 +174,19 @@ export default function CommitmentsPage() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+      {error && (
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm font-medium">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
+        </div>
+      )}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Commitment Tracing</h1>
-        <p className="text-gray-500 text-sm mt-1">Every promise tracked from origin to resolution across your connected tools</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Every promise tracked from origin to resolution across your connected tools</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-6 border-b border-gray-200">
+      <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
         {[
           { key: 'active' as const, label: 'Active', count: openCommitments.length },
           { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
@@ -179,11 +194,13 @@ export default function CommitmentsPage() {
         ].map(tab => (
           <button
             key={tab.key}
+            role="tab"
+            aria-selected={activeTab === tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.key
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
             {tab.label} ({tab.count})
@@ -193,14 +210,14 @@ export default function CommitmentsPage() {
 
       {/* Commitment Trace Cards */}
       {displayedCommitments.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
           <div className="text-3xl mb-3">
             {activeTab === 'active' ? '✅' : activeTab === 'completed' ? '📋' : '💬'}
           </div>
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-white">
             {activeTab === 'active' ? 'No active commitments' : activeTab === 'completed' ? 'No completed commitments yet' : 'No @HeyWren mentions yet'}
           </p>
-          <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
             {activeTab === 'active'
               ? 'Commitments will appear here as Wren detects them from your connected Slack and Outlook.'
               : activeTab === 'completed'
@@ -215,17 +232,17 @@ export default function CommitmentsPage() {
             const status = getCommitmentStatus(c)
             const timeline = buildTimeline(c)
             const age = daysSince(c.created_at)
-            const scoreColor = score >= 70 ? 'bg-green-100 text-green-700 border-green-300' : score >= 50 ? 'bg-yellow-100 text-yellow-700 border-yellow-300' : 'bg-red-100 text-red-700 border-red-300'
+            const scoreColor = score >= 70 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700' : score >= 50 ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700'
 
             return (
-              <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-6">
+              <div key={c.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-1">
-                  <h3 className="text-lg font-bold text-gray-900">{c.title}</h3>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{c.title}</h3>
                   {c.status !== 'completed' && (
                     <button
                       onClick={() => updateStatus(c.id, 'completed')}
-                      className="text-xs px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 font-medium"
+                      className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium"
                     >
                       Mark Complete
                     </button>
@@ -245,7 +262,7 @@ export default function CommitmentsPage() {
 
                 {/* Description if exists */}
                 {c.description && (
-                  <p className="text-sm text-gray-500 mb-4">{c.description}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{c.description}</p>
                 )}
 
                 {/* Timeline (real events only) */}
@@ -253,28 +270,28 @@ export default function CommitmentsPage() {
                   {timeline.map((event, i) => (
                     <div key={i} className="flex items-start gap-3 relative">
                       {i < timeline.length - 1 && (
-                        <div className="absolute left-[7px] top-4 bottom-0 w-0.5 bg-gray-200" />
+                        <div className="absolute left-[7px] top-4 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
                       )}
                       <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex-shrink-0 z-10 ${
                         event.isCurrent
                           ? 'bg-indigo-500 border-indigo-500'
-                          : 'bg-white border-gray-300'
+                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
                       }`} />
                       <div className="pb-4">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-400">{event.date}</span>
                           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                            event.source === 'Slack' ? 'bg-purple-100 text-purple-700' :
-                            event.source === 'Email' ? 'bg-blue-100 text-blue-700' :
-                            event.source === 'Meeting' ? 'bg-orange-100 text-orange-700' :
-                            event.source === 'Resolved' ? 'bg-green-100 text-green-700' :
-                            event.source === 'Now' ? 'bg-indigo-100 text-indigo-700' :
-                            'bg-gray-100 text-gray-600'
+                            event.source === 'Slack' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' :
+                            event.source === 'Email' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                            event.source === 'Meeting' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' :
+                            event.source === 'Resolved' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                            event.source === 'Now' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400' :
+                            'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
                           }`}>
                             {event.source}
                           </span>
                         </div>
-                        <div className="text-sm text-gray-700 mt-0.5">{event.text}</div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{event.text}</div>
                       </div>
                     </div>
                   ))}

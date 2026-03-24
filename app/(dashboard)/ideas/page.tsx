@@ -43,6 +43,7 @@ export default function IdeasPage() {
   const [filteredIdeas, setFilteredIdeas] = useState<FeatureRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [teamId, setTeamId] = useState<string | null>(null)
 
   // Form state
   const [title, setTitle] = useState('')
@@ -55,25 +56,37 @@ export default function IdeasPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
 
-  // Fetch user
+  // Fetch user and their current team
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser()
       if (data?.user) {
         setUserId(data.user.id)
+        // Get user's current team
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', data.user.id)
+          .single()
+        if (profile?.current_team_id) {
+          setTeamId(profile.current_team_id)
+        }
       }
     }
     fetchUser()
-  }, [supabase])
+  }, [])
 
   // Fetch ideas
   useEffect(() => {
     const fetchIdeas = async () => {
+      if (!teamId) return
+
       try {
         setLoading(true)
         const { data: requests, error } = await supabase
           .from('feature_requests')
           .select('*')
+          .eq('team_id', teamId)
           .order('vote_count', { ascending: false })
           .order('created_at', { ascending: false })
 
@@ -108,7 +121,7 @@ export default function IdeasPage() {
     }
 
     fetchIdeas()
-  }, [supabase, userId])
+  }, [userId, teamId])
 
   const applyFilters = (allIdeas: FeatureRequest[]) => {
     let filtered = allIdeas
@@ -136,7 +149,7 @@ export default function IdeasPage() {
 
   useEffect(() => {
     applyFilters(ideas)
-  }, [searchQuery, selectedCategory, selectedStatus])
+  }, [searchQuery, selectedCategory, selectedStatus, ideas])
 
   const handleSubmitIdea = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -166,6 +179,7 @@ export default function IdeasPage() {
           category,
           author_id: userId,
           author_name: authorName,
+          team_id: teamId,
         })
         .select()
         .single()
@@ -257,58 +271,63 @@ export default function IdeasPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2" style={{ letterSpacing: '-0.025em' }}>
-          <Lightbulb className="w-8 h-8 text-indigo-600" />
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2" style={{ letterSpacing: '-0.025em' }}>
+          <Lightbulb aria-hidden="true" className="w-8 h-8 text-indigo-600" />
           Feature Ideas
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Share your ideas to help shape HeyWren's future. Vote on ideas you love.
+        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
+          Share your ideas to help shape HeyWren&apos;s future. Vote on ideas you love.
         </p>
       </div>
 
       {/* Submit Form */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4" style={{ letterSpacing: '-0.025em' }}>
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" style={{ letterSpacing: '-0.025em' }}>
           Submit an Idea
         </h2>
         <form onSubmit={handleSubmitIdea} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="idea-title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Title
             </label>
             <input
+              id="idea-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What's your idea?"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
               disabled={submitting}
+              aria-required="true"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="idea-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Description
             </label>
             <textarea
+              id="idea-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Tell us more about your idea..."
               rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none dark:bg-surface-dark dark:text-white"
               disabled={submitting}
+              aria-required="true"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="idea-category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Category
               </label>
               <select
+                id="idea-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as typeof CATEGORIES[number])}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
                 disabled={submitting}
               >
                 {CATEGORIES.map(cat => (
@@ -329,7 +348,7 @@ export default function IdeasPage() {
                   boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
                 }}
               >
-                <Send className="w-4 h-4" />
+                <Send aria-hidden="true" className="w-4 h-4" />
                 {submitting ? 'Submitting...' : 'Submit'}
               </button>
             </div>
@@ -338,25 +357,26 @@ export default function IdeasPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
         <div className="space-y-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search ideas..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              aria-label="Search ideas"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
             />
           </div>
 
           {/* Category & Status Filters */}
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-600 font-medium">Filter:</span>
+              <Filter aria-hidden="true" className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Filter:</span>
             </div>
 
             {/* Category filter */}
@@ -366,7 +386,7 @@ export default function IdeasPage() {
                 className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                   selectedCategory === null
                     ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
               >
                 All Categories
@@ -378,7 +398,7 @@ export default function IdeasPage() {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                     selectedCategory === cat
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {cat}
@@ -387,13 +407,13 @@ export default function IdeasPage() {
             </div>
 
             {/* Status filter */}
-            <div className="flex flex-wrap gap-2 border-l border-gray-200 pl-2">
+            <div className="flex flex-wrap gap-2 border-l border-gray-200 dark:border-gray-700 pl-2">
               <button
                 onClick={() => setSelectedStatus(null)}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                   selectedStatus === null
                     ? 'bg-indigo-100 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
               >
                 All Status
@@ -405,7 +425,7 @@ export default function IdeasPage() {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                     selectedStatus === status
                       ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {status}
@@ -418,13 +438,32 @@ export default function IdeasPage() {
 
       {/* Ideas List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-gray-500">Loading ideas...</p>
+        <div className="space-y-3" role="status" aria-live="polite" aria-busy="true" aria-label="Loading ideas">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 animate-pulse">
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center gap-1 px-3 py-2 flex-shrink-0">
+                  <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="w-6 h-3 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3" />
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5" />
+                  <div className="flex gap-2 mt-3">
+                    <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                    <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                    <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : filteredIdeas.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 bg-white border border-gray-200 rounded-xl">
-          <Lightbulb className="w-12 h-12 text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium">No ideas yet</p>
+        <div className="flex flex-col items-center justify-center py-12 bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl">
+          <Lightbulb className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+          <p className="text-gray-500 dark:text-gray-400 font-medium">No ideas yet</p>
           <p className="text-gray-400 text-sm">Be the first to share an idea!</p>
         </div>
       ) : (
@@ -436,12 +475,14 @@ export default function IdeasPage() {
             return (
               <div
                 key={idea.id}
-                className="bg-white border border-gray-200 rounded-xl p-5 hover:border-indigo-200 hover:shadow-md transition"
+                className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 hover:border-indigo-200 hover:shadow-md transition"
               >
                 <div className="flex gap-4">
                   {/* Vote Button */}
                   <button
                     onClick={() => handleVote(idea.id, idea.user_has_voted || false)}
+                    aria-label={idea.user_has_voted ? `Remove vote from ${idea.title}` : `Vote for ${idea.title}`}
+                    aria-pressed={idea.user_has_voted || false}
                     className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition flex-shrink-0 ${
                       idea.user_has_voted
                         ? 'bg-red-100 text-red-600'
@@ -458,10 +499,10 @@ export default function IdeasPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 text-sm" style={{ letterSpacing: '-0.025em' }}>
+                        <h3 className="font-semibold text-gray-900 dark:text-white text-sm" style={{ letterSpacing: '-0.025em' }}>
                           {idea.title}
                         </h3>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
                           {idea.description}
                         </p>
                       </div>
@@ -480,8 +521,8 @@ export default function IdeasPage() {
                       </span>
 
                       {/* Author & Time */}
-                      <span className="text-xs text-gray-500">
-                        by <span className="font-medium text-gray-700">{idea.author_name}</span> {formatTimeAgo(idea.created_at)}
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        by <span className="font-medium text-gray-700 dark:text-gray-300">{idea.author_name}</span> {formatTimeAgo(idea.created_at)}
                       </span>
                     </div>
                   </div>

@@ -150,7 +150,7 @@ export default function PlanPage() {
       {joiningTeamName && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
           <p className="text-emerald-700 text-sm">
-            <span className="font-semibold">{joiningTeamName}</span> is already on HeyWren — you'll be added to their team after checkout
+            <span className="font-semibold">{joiningTeamName}</span> is already on HeyWren — you&apos;ll be added to their team after checkout
           </p>
         </div>
       )}
@@ -212,7 +212,7 @@ export default function PlanPage() {
 
       <div className="text-center space-y-4">
         <p className="text-gray-600">
-          Can't decide? <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">Start for free</Link>
+          Can&apos;t decide? <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">Start for free</Link>
         </p>
       </div>
     </div>

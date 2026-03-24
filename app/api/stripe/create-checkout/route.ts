@@ -20,6 +20,13 @@ const PRICE_IDS: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
+    // Origin validation to prevent CSRF
+    const origin = request.headers.get('origin')
+    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
+    if (origin && allowedOrigin && origin !== allowedOrigin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { plan, joiningTeamId } = (await request.json()) as CheckoutRequest
 
     if (!plan || !['basic', 'pro', 'team'].includes(plan)) {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, ArrowRight } from 'lucide-react'
+import { CheckCircle2, ArrowRight, Search, Brain, Bell, Clock, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
 export default function OnboardingCompletePage() {
@@ -75,7 +75,7 @@ export default function OnboardingCompletePage() {
       <div className="text-center space-y-4">
         <div className="flex justify-center">
           <div className="relative w-20 h-20">
-            <div className="absolute inset-0 bg-gradient-to-r from-indigo-100 to-violet-100 rounded-full animate-pulse" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-100 to-emerald-100 rounded-full animate-pulse" />
             <div className="absolute inset-2 bg-white rounded-full flex items-center justify-center">
               <CheckCircle2 className="w-12 h-12 text-green-500" />
             </div>
@@ -83,10 +83,69 @@ export default function OnboardingCompletePage() {
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-4xl font-bold text-gray-900">You're all set!</h2>
+          <h2 className="text-4xl font-bold text-gray-900">You&apos;re all set!</h2>
           <p className="text-lg text-gray-600">
-            Your workspace is ready. HeyWren is now monitoring for commitments.
+            Wren is now working in the background to find your commitments.
           </p>
+        </div>
+      </div>
+
+      {/* What Wren is Doing Right Now */}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-indigo-600" aria-hidden="true" />
+          <h3 className="font-semibold text-gray-900">What Wren is doing right now</h3>
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+              <Search className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-900">Scanning your recent messages</p>
+              <p className="text-xs text-gray-500">Looking through Slack conversations and emails for commitments</p>
+            </div>
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+              <Brain className="w-4 h-4 text-violet-600" aria-hidden="true" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-900">Building your profile</p>
+              <p className="text-xs text-gray-500">Learning your communication patterns and commitments style</p>
+            </div>
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Bell className="w-4 h-4 text-amber-600" aria-hidden="true" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-900">Setting up smart alerts</p>
+              <p className="text-xs text-gray-500">Configuring nudges so you never miss a follow-up</p>
+            </div>
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 rounded-xl p-5">
+        <div className="flex items-center gap-3">
+          <Clock className="w-5 h-5 text-indigo-600 flex-shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-semibold text-indigo-900">Within the next hour, Wren will surface your first commitments</p>
+            <p className="text-sm text-indigo-700 mt-1">
+              Head to your dashboard now — results will appear as Wren processes your messages. The more integrations you connect, the more complete your picture will be.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -124,46 +183,22 @@ export default function OnboardingCompletePage() {
         </div>
       </div>
 
-      {/* What Happens Next */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6 space-y-4">
-        <h3 className="font-semibold text-indigo-900">What happens next?</h3>
-        <ul className="space-y-3">
-          <li className="flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-indigo-900">AI Monitoring</p>
-              <p className="text-sm text-indigo-800">HeyWren will scan your conversations for commitments</p>
-            </div>
-          </li>
-          <li className="flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-indigo-900">Smart Detection</p>
-              <p className="text-sm text-indigo-800">Commitments appear on your dashboard in real-time</p>
-            </div>
-          </li>
-          <li className="flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-indigo-900">Intelligent Nudges</p>
-              <p className="text-sm text-indigo-800">Get reminders before deadlines miss in Slack or email</p>
-            </div>
-          </li>
-        </ul>
-      </div>
-
       {/* CTA Button */}
       <Link
         href="/"
-        className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-all flex items-center justify-center gap-2"
+        className="w-full py-4 px-4 text-white font-semibold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 text-base"
+        style={{
+          background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+          boxShadow: '0 8px 24px rgba(79, 70, 229, 0.3)',
+        }}
       >
-        Go to Dashboard
-        <ArrowRight className="w-4 h-4" />
+        Go to Your Dashboard
+        <ArrowRight className="w-5 h-5" />
       </Link>
 
       {/* Additional Resources */}
       <div className="text-center space-y-4">
-        <p className="text-sm text-gray-600">Questions? Need help?</p>
+        <p className="text-sm text-gray-600">Need to adjust anything?</p>
         <div className="flex flex-col gap-2 text-sm">
           <Link
             href="/integrations"

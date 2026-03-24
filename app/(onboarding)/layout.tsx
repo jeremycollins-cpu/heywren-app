@@ -5,13 +5,22 @@ import { createClient } from '@/lib/supabase/client'
 import { WrenFullLogo } from '@/components/logo'
 import Link from 'next/link'
 
+const TOTAL_STEPS = 4
+
+const STEP_MAP: Record<string, number> = {
+  profile: 1,
+  integrations: 2,
+  channels: 3,
+  invite: 3,
+  complete: 4,
+}
+
 interface OnboardingLayoutProps {
   children: React.ReactNode
 }
 
 export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
   const [currentStep, setCurrentStep] = useState(0)
-  const [totalSteps, setTotalSteps] = useState(5)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const supabase = createClient()
 
@@ -31,18 +40,19 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
   // Extract step number from pathname
   useEffect(() => {
     const path = window.location.pathname
-    if (path.includes('profile')) setCurrentStep(1)
-    else if (path.includes('integrations')) setCurrentStep(2)
-    else if (path.includes('channels')) setCurrentStep(3)
-    else if (path.includes('invite')) setCurrentStep(4)
-    else if (path.includes('complete')) setCurrentStep(5)
+    for (const [key, step] of Object.entries(STEP_MAP)) {
+      if (path.includes(key)) {
+        setCurrentStep(step)
+        break
+      }
+    }
   }, [])
 
   if (!isAuthenticated) {
     return null
   }
 
-  const progressPercentage = (currentStep / totalSteps) * 100
+  const progressPercentage = (currentStep / TOTAL_STEPS) * 100
 
   return (
     <div className="min-h-screen" style={{ background: '#fafbfc', fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
@@ -59,9 +69,15 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
             <WrenFullLogo width={100} />
           </Link>
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="font-semibold text-gray-900">{currentStep}</span>
-            <span className="text-gray-300">/</span>
-            <span>{totalSteps}</span>
+            {currentStep > 0 && currentStep <= TOTAL_STEPS ? (
+              <>
+                <span className="font-semibold text-gray-900">Step {currentStep}</span>
+                <span className="text-gray-300">of</span>
+                <span>{TOTAL_STEPS}</span>
+              </>
+            ) : (
+              <span className="font-semibold text-gray-900">Getting Started</span>
+            )}
           </div>
         </div>
       </div>

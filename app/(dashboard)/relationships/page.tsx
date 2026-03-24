@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Contact {
   name: string
@@ -37,10 +38,10 @@ function calculateHealthScore(interactions: number, daysSinceLastContact: number
 }
 
 function getScoreColor(score: number): { ring: string; text: string; bg: string } {
-  if (score >= 75) return { ring: '#22c55e', text: 'text-green-600', bg: 'bg-green-50' }
-  if (score >= 50) return { ring: '#6366f1', text: 'text-indigo-600', bg: 'bg-indigo-50' }
-  if (score >= 35) return { ring: '#f59e0b', text: 'text-yellow-600', bg: 'bg-yellow-50' }
-  return { ring: '#ef4444', text: 'text-red-600', bg: 'bg-red-50' }
+  if (score >= 75) return { ring: '#22c55e', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' }
+  if (score >= 50) return { ring: '#6366f1', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' }
+  if (score >= 35) return { ring: '#f59e0b', text: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20' }
+  return { ring: '#ef4444', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' }
 }
 
 function getTrend(daysSinceLastContact: number, interactions: number): 'up' | 'down' | 'stable' {
@@ -84,55 +85,64 @@ export default function RelationshipsPage() {
         return
       }
 
-      const { data: emailData } = await supabase
-        .from('outlook_messages')
-        .select('from_email, from_name, received_at')
-        .eq('team_id', teamId)
-        .order('received_at', { ascending: false })
-        .limit(1000)
+      try {
+        const { data: emailData } = await supabase
+          .from('outlook_messages')
+          .select('from_email, from_name, received_at')
+          .eq('team_id', teamId)
+          .order('received_at', { ascending: false })
+          .limit(1000)
 
-      if (emailData) {
-        const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
+        if (emailData) {
+          const contactMap: Record<string, { name: string; email: string; count: number; lastDate: string; dates: string[] }> = {}
 
-        emailData.forEach((msg: any) => {
-          const email = (msg.from_email || '').toLowerCase()
-          if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
+          emailData.forEach((msg: any) => {
+            const email = (msg.from_email || '').toLowerCase()
+            if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
 
-          if (!contactMap[email]) {
-            contactMap[email] = {
-              name: msg.from_name || email.split('@')[0],
-              email,
-              count: 0,
-              lastDate: msg.received_at,
-              dates: []
+            const receivedAt = msg.received_at || new Date().toISOString()
+
+            if (!contactMap[email]) {
+              contactMap[email] = {
+                name: msg.from_name || email.split('@')[0],
+                email,
+                count: 0,
+                lastDate: receivedAt,
+                dates: []
+              }
             }
-          }
-          contactMap[email].count++
-          contactMap[email].dates.push(msg.received_at)
-          if (msg.received_at > contactMap[email].lastDate) {
-            contactMap[email].lastDate = msg.received_at
-          }
-        })
-
-        const sorted = Object.values(contactMap)
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 20)
-          .map(c => {
-            const dsc = daysSince(c.lastDate)
-            const score = calculateHealthScore(c.count, dsc)
-            return {
-              name: c.name,
-              email: c.email,
-              interactions: c.count,
-              lastActive: c.lastDate,
-              daysSinceContact: dsc,
-              healthScore: score,
-              trend: getTrend(dsc, c.count),
-              role: inferRole(c.email, c.name, c.count),
+            contactMap[email].count++
+            if (receivedAt) {
+              contactMap[email].dates.push(receivedAt)
+              if (receivedAt > contactMap[email].lastDate) {
+                contactMap[email].lastDate = receivedAt
+              }
             }
           })
 
-        setContacts(sorted)
+          const sorted = Object.values(contactMap)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 20)
+            .map(c => {
+              const dsc = daysSince(c.lastDate)
+              const score = calculateHealthScore(c.count, dsc)
+              return {
+                name: c.name,
+                email: c.email,
+                interactions: c.count,
+                lastActive: c.lastDate,
+                daysSinceContact: dsc,
+                healthScore: score,
+                trend: getTrend(dsc, c.count),
+                role: inferRole(c.email, c.name, c.count),
+              }
+            })
+
+          setContacts(sorted)
+        }
+      } catch (err) {
+        console.error('Error fetching relationship data:', err)
+        toast.error('Failed to load relationship data')
       }
       setLoading(false)
     }
@@ -141,12 +151,33 @@ export default function RelationshipsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading relationships">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-2 gap-4">
-            {[1,2,3,4].map(i => <div key={i} className="h-40 bg-gray-100 rounded"></div>)}
+            {[1,2,3,4].map(i => <div key={i} className="h-40 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (contacts.length === 0) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Relationship Health</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">How strong are your key relationships — based on interaction patterns and follow-through</p>
+        </div>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-8 text-center">
+          <div className="text-4xl mb-4">👥</div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No relationship data yet</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm max-w-md mx-auto mb-6">
+            Connect your Outlook account and sync your email history. Wren will analyze your interaction patterns to show relationship health scores.
+          </p>
+          <a href="/integrations" className="inline-flex px-5 py-2.5 text-white font-semibold rounded-lg text-sm transition" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+            Connect Outlook
+          </a>
         </div>
       </div>
     )
@@ -158,15 +189,15 @@ export default function RelationshipsPage() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Relationship Health</h1>
-        <p className="text-gray-500 text-sm mt-1">How strong are your key relationships — based on interaction patterns and follow-through</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Relationship Health</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">How strong are your key relationships — based on interaction patterns and follow-through</p>
       </div>
 
       {/* Alert banner */}
       {needsAttention.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
-          <span className="text-yellow-600 text-lg">⚠</span>
-          <div className="text-sm text-yellow-800">
+        <div role="alert" className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-yellow-600 text-lg" aria-hidden="true">⚠</span>
+          <div className="text-sm text-yellow-800 dark:text-yellow-200">
             <span className="font-semibold">{needsAttention.length} relationship{needsAttention.length > 1 ? 's' : ''} need{needsAttention.length === 1 ? 's' : ''} attention:</span>{' '}
             {needsAttention.slice(0, 2).map(c => c.name).join(', ')}
             {needsAttention.length > 2 ? ` and ${needsAttention.length - 2} more` : ''}
@@ -185,22 +216,22 @@ export default function RelationshipsPage() {
           const lastContactText = contact.daysSinceContact === 0 ? 'Today' : contact.daysSinceContact === 1 ? '1 day ago' : `${contact.daysSinceContact} days ago`
 
           return (
-            <div key={contact.email} className="bg-white border border-gray-200 rounded-xl p-5">
+            <div key={contact.email} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
                     {initials}
                   </div>
                   <div>
-                    <div className="font-semibold text-gray-900">{contact.name}</div>
-                    <div className="text-xs text-gray-500">{contact.role}</div>
+                    <div className="font-semibold text-gray-900 dark:text-white">{contact.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{contact.role}</div>
                   </div>
                 </div>
 
                 {/* Health Score Ring */}
                 <div className="relative w-12 h-12">
-                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
-                    <circle cx="24" cy="24" r="20" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48" role="img" aria-label={`Health score: ${contact.healthScore}`}>
+                    <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="3" className="text-gray-200 dark:text-gray-700" />
                     <circle
                       cx="24" cy="24" r="20" fill="none"
                       stroke={scoreColor.ring}
@@ -222,14 +253,14 @@ export default function RelationshipsPage() {
               </div>
 
               {/* Stats row */}
-              <div className="flex justify-between mt-4 pt-3 border-t border-gray-100">
+              <div className="flex justify-between mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                 <div>
                   <div className="text-xs text-gray-400">Last 1:1</div>
-                  <div className="text-sm font-semibold text-gray-900">{lastContactText}</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">{lastContactText}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-gray-400">This week</div>
-                  <div className="text-sm font-semibold text-gray-900">{contact.interactions} interactions</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">{contact.interactions} interactions</div>
                 </div>
               </div>
             </div>

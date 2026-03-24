@@ -20,7 +20,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       </head>
-      <body style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+      <body className="font-sans antialiased bg-surface-secondary text-gray-900 dark:bg-surface-dark dark:text-white">
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-medium">
+          Skip to main content
+        </a>
         {children}
         <Toaster
           position="top-right"
@@ -28,6 +31,14 @@ export default function RootLayout({
             style: {
               fontFamily: 'Inter, -apple-system, system-ui, sans-serif',
               fontSize: '14px',
+              borderRadius: '12px',
+              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.08)',
+            },
+            success: {
+              iconTheme: {
+                primary: '#4f46e5',
+                secondary: '#ffffff',
+              },
             },
           }}
         />

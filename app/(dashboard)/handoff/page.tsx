@@ -110,11 +110,13 @@ export default function HandoffPage() {
   const [handoffs, setHandoffs] = useState<PTOHandoff[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [expandedHandoff, setExpandedHandoff] = useState<string | null>(null)
   const [checklists, setChecklists] = useState<Record<string, boolean[]>>({})
   const [reassigning, setReassigning] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
+    try {
     const supabase = createClient()
 
     // ── SECURITY: Get user's team_id first ──
@@ -256,6 +258,12 @@ export default function HandoffPage() {
     setChecklists(initialChecklists)
 
     setLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load handoff data'
+      setError(message)
+      toast.error(message)
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -314,9 +322,9 @@ export default function HandoffPage() {
             When someone goes OOO, HeyWren surfaces every open commitment and ensures clean transfers
           </p>
         </div>
-        <div className="animate-pulse space-y-4">
+        <div role="status" aria-live="polite" aria-busy="true" aria-label="Loading handoff data" className="animate-pulse space-y-4">
           {[1, 2].map((i) => (
-            <div key={i} className="h-32 bg-gray-100 rounded-lg" />
+            <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-lg" />
           ))}
         </div>
       </div>
@@ -327,21 +335,27 @@ export default function HandoffPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">PTO Handoff Protocol</h1>
-        <p className="text-gray-600 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">PTO Handoff Protocol</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
           When someone goes OOO, HeyWren surfaces every open commitment and ensures clean transfers
         </p>
       </div>
+
+      {error && (
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+          <span className="font-medium">Error:</span> {error}
+        </div>
+      )}
 
       {/* Handoff Items */}
       <div className="space-y-3">
         {handoffs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-4">
               <Hand className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No PTO handoffs scheduled</h3>
-            <p className="text-gray-500 max-w-md mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No PTO handoffs scheduled</h3>
+            <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
               When you schedule time off in your calendar, HeyWren will automatically surface all open
               commitments and help you delegate to the right team members. Plan your next PTO and ensure
               zero commitments slip through.
@@ -368,11 +382,15 @@ export default function HandoffPage() {
             return (
               <div
                 key={handoff.personEmail}
-                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition"
+                className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 hover:shadow-md transition"
               >
                 {/* Header - clickable */}
                 <div
                   className="flex items-start justify-between cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedHandoff(isExpanded ? null : handoff.personEmail) } }}
                   onClick={() =>
                     setExpandedHandoff(isExpanded ? null : handoff.personEmail)
                   }
@@ -385,9 +403,9 @@ export default function HandoffPage() {
                         </span>
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-900">{handoff.personName}</h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-600 mt-0.5">
-                          <Calendar className="w-4 h-4" />
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{handoff.personName}</h3>
+                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                          <Calendar aria-hidden="true" className="w-4 h-4" />
                           {formatDateRange(handoff.startDate, handoff.endDate)}
                         </div>
                       </div>
@@ -402,12 +420,13 @@ export default function HandoffPage() {
                           <AlertCircle className="w-5 h-5 text-yellow-600" />
                         )}
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                         {handoff.commitments.length} commitment
                         {handoff.commitments.length !== 1 ? 's' : ''}
                       </div>
                     </div>
                     <ChevronDown
+                      aria-hidden="true"
                       className={`w-5 h-5 text-gray-400 transition-transform ${
                         isExpanded ? 'rotate-180' : ''
                       }`}
@@ -418,15 +437,15 @@ export default function HandoffPage() {
                 {/* Expanded content */}
                 {isExpanded && (
                   <>
-                    <hr className="my-4 border-gray-100" />
+                    <hr className="my-4 border-gray-100 dark:border-gray-700" />
                     <div className="space-y-4">
                       {/* Open Commitments */}
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
                           Open Commitments to Handoff
                         </h4>
                         {handoff.commitments.length === 0 ? (
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
                             No open commitments found for this person.
                           </p>
                         ) : (
@@ -442,11 +461,11 @@ export default function HandoffPage() {
                               return (
                                 <div
                                   key={commitment.id}
-                                  className="flex items-start gap-3 text-sm bg-gray-50 rounded-lg p-3"
+                                  className="flex items-start gap-3 text-sm bg-gray-50 dark:bg-surface-dark rounded-lg p-3"
                                 >
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <p className="font-medium text-gray-900">
+                                      <p className="font-medium text-gray-900 dark:text-white">
                                         {commitment.title}
                                       </p>
                                       {isReassignedAway && (
@@ -479,7 +498,8 @@ export default function HandoffPage() {
                                       <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
                                     ) : (
                                       <select
-                                        className="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        aria-label={`Reassign ${commitment.title}`}
+                                        className="text-xs border border-gray-300 dark:border-border-dark rounded-md px-2 py-1.5 bg-white dark:bg-surface-dark text-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                         value={commitment.assignee_id || ''}
                                         onChange={(e) => {
                                           if (e.target.value) {
@@ -506,11 +526,11 @@ export default function HandoffPage() {
                       </div>
 
                       {/* Handoff Checklist */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-blue-900 mb-2">
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">
                           Handoff Checklist
                         </h4>
-                        <div className="space-y-2 text-sm text-blue-800">
+                        <div className="space-y-2 text-sm text-blue-800 dark:text-blue-300">
                           {CHECKLIST_ITEMS.map((item, idx) => (
                             <label
                               key={idx}
@@ -545,12 +565,12 @@ export default function HandoffPage() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-        <h3 className="font-semibold text-green-900 mb-2">PTO Protocol Benefits</h3>
-        <p className="text-sm text-green-800 mb-3">
+      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+        <h3 className="font-semibold text-green-900 dark:text-green-200 mb-2">PTO Protocol Benefits</h3>
+        <p className="text-sm text-green-800 dark:text-green-300 mb-3">
           Ensure zero commitments slip through the cracks when team members take time off.
         </p>
-        <ul className="text-sm text-green-800 space-y-1">
+        <ul className="text-sm text-green-800 dark:text-green-300 space-y-1">
           <li>&#10003; Automatic backup assignment</li>
           <li>&#10003; Commitment handoff tracking</li>
           <li>&#10003; Stakeholder notifications</li>

@@ -134,16 +134,35 @@ export default function ChannelsSetupPage() {
           </div>
           <h2 className="text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
           <p className="text-gray-600 max-w-lg mx-auto">
-            You'll need Slack connected to select channels. Go back and connect Slack first.
+            Slack isn&apos;t connected yet. You can go back to connect it, or skip this step and configure channels later from settings.
           </p>
         </div>
 
-        <button
-          onClick={() => router.back()}
-          className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-all"
-        >
-          Go Back to Integrations
-        </button>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+          <p className="font-medium mb-1">No Slack connection detected</p>
+          <p>Channel selection requires a Slack integration. You can always configure monitored channels later in your integration settings.</p>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => router.back()}
+            className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all"
+          >
+            Go Back to Connect Slack
+          </button>
+          <button
+            onClick={() => router.push('/onboarding/invite')}
+            className="flex-1 py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-all flex items-center justify-center gap-2"
+          >
+            Skip This Step
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+          <p className="font-medium text-gray-700 mb-1">No worries</p>
+          <p>Wren still works with email and calendar data. You can connect Slack and choose channels anytime from Settings.</p>
+        </div>
       </div>
     )
   }
@@ -160,7 +179,7 @@ export default function ChannelsSetupPage() {
         </div>
         <h2 className="text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
-          HeyWren will listen for commitments in these channels. You can change this anytime.
+          Wren will listen for commitments in these channels. Pick the ones where your team makes decisions and promises. You can always change this later.
         </p>
       </div>
 
@@ -168,7 +187,7 @@ export default function ChannelsSetupPage() {
       <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between">
         <div>
           <p className="font-medium text-gray-900">Monitor all public channels</p>
-          <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they're created</p>
+          <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they&apos;re created</p>
         </div>
         <button
           onClick={() => {

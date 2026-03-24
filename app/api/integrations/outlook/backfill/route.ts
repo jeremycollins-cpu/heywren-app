@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 // Process max 100 messages per request to stay within 300s timeout
@@ -91,19 +92,22 @@ async function graphFetch(
 }
 
 export async function POST(request: NextRequest) {
+  // Authenticate the user via session instead of trusting client-supplied userId
+  const serverSupabase = await createServerClient()
+  const { data: { user: authUser }, error: authError } = await serverSupabase.auth.getUser()
+  if (authError || !authUser) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const supabase = getAdminClient()
   const startTime = Date.now()
 
-  let userId: string
+  const userId: string = authUser.id
   let daysBack: number = 30
 
   try {
     const body = await request.json()
-    userId = body.userId
     daysBack = body.daysBack || 30
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
-    }
   } catch (e) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }

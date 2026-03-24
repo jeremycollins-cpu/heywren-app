@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 interface Commitment {
   id: string
@@ -149,57 +150,67 @@ function generateInsights(commitments: Commitment[]): Insight[] {
 }
 
 const priorityConfig = {
-  CRITICAL: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
-  HIGH: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
-  MEDIUM: { border: 'border-l-yellow-500', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500' },
-  GROWTH: { border: 'border-l-green-500', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  CRITICAL: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400', dot: 'bg-red-500' },
+  HIGH: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400', dot: 'bg-orange-500' },
+  MEDIUM: { border: 'border-l-yellow-500', badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400', dot: 'bg-yellow-500' },
+  GROWTH: { border: 'border-l-green-500', badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400', dot: 'bg-green-500' },
 }
 
 export default function CoachPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      // ── SECURITY: Get user's team_id first ──
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
+        // ── SECURITY: Get user's team_id first ──
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
+        const { data, error: fetchError } = await supabase
+          .from('commitments')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+
+        if (fetchError) throw fetchError
+
+        if (data) setCommitments(data)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load coaching insights'
+        setError(message)
+        toast.error(message)
+      } finally {
         setLoading(false)
-        return
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      const teamId = profile?.current_team_id
-      if (!teamId) {
-        setLoading(false)
-        return
-      }
-
-      const { data } = await supabase
-        .from('commitments')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      if (data) setCommitments(data)
-      setLoading(false)
     }
     load()
   }, [])
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading coaching insights">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          {[1,2,3].map(i => <div key={i} className="h-32 bg-gray-100 rounded"></div>)}
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          {[1,2,3].map(i => <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
         </div>
       </div>
     )
@@ -219,23 +230,29 @@ export default function CoachPage() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+      {error && (
+        <div role="alert" className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg px-4 py-3 text-sm">
+          {error}
+        </div>
+      )}
+
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Executive Coach</h1>
-        <p className="text-gray-500 text-sm mt-1">Personalized for CEO at your organization</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Executive Coach</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Personalized for CEO at your organization</p>
       </div>
 
       {/* Coach Header Card */}
-      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-6">
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950 dark:to-purple-950 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-3">
           <span className="text-3xl">🧠</span>
           <div>
-            <div className="font-bold text-gray-900 text-lg">Executive Coach</div>
-            <div className="text-sm text-gray-500">
+            <div className="font-bold text-gray-900 dark:text-white text-lg">Executive Coach</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Watching for: {watchingFor.join(' · ')}
             </div>
           </div>
         </div>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-gray-600 dark:text-gray-300">
           Wren analyzes every message, email, meeting, and task across your connected tools to surface coaching insights specific to your role. Insights update weekly based on real behavioral patterns.
         </p>
       </div>
@@ -245,21 +262,21 @@ export default function CoachPage() {
         {insights.map((insight, i) => {
           const config = priorityConfig[insight.priority]
           return (
-            <div key={i} className={`bg-white border border-gray-200 border-l-4 ${config.border} rounded-xl p-6`}>
+            <article key={i} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-6`}>
               <div className="mb-3">
                 <span className={`px-2 py-0.5 rounded text-xs font-bold ${config.badge}`}>
                   {insight.priority}
                 </span>
               </div>
-              <h3 className="font-bold text-gray-900 text-lg mb-2">{insight.title}</h3>
-              <p className="text-sm text-gray-600 mb-4">{insight.description}</p>
-              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+              <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2">{insight.title}</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{insight.description}</p>
+              <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3">
                 <span className="text-sm">
-                  <span className="font-semibold text-indigo-700">Action:</span>{' '}
-                  <span className="text-indigo-600">{insight.action}</span>
+                  <span className="font-semibold text-indigo-700 dark:text-indigo-400">Action:</span>{' '}
+                  <span className="text-indigo-600 dark:text-indigo-300">{insight.action}</span>
                 </span>
               </div>
-            </div>
+            </article>
           )
         })}
       </div>

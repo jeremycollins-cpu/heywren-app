@@ -102,7 +102,7 @@ export default function BillingPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading billing information...</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading billing information...</p>
       </div>
     )
   }
@@ -116,22 +116,22 @@ export default function BillingPage() {
 
   const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     trialing: {
-      color: 'bg-blue-50 text-blue-800 border-blue-200',
+      color: 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
       icon: <AlertCircle className="w-5 h-5" />,
       label: 'Trial Active',
     },
     active: {
-      color: 'bg-green-50 text-green-800 border-green-200',
+      color: 'bg-green-50 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
       icon: <CheckCircle2 className="w-5 h-5" />,
       label: 'Active',
     },
     past_due: {
-      color: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+      color: 'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800',
       icon: <AlertCircle className="w-5 h-5" />,
       label: 'Past Due',
     },
     cancelled: {
-      color: 'bg-red-50 text-red-800 border-red-200',
+      color: 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
       icon: <AlertCircle className="w-5 h-5" />,
       label: 'Cancelled',
     },
@@ -149,15 +149,15 @@ export default function BillingPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Billing & Subscription</h1>
-        <p className="text-gray-600 mt-1">Manage your plan and billing information</p>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Billing & Subscription</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">Manage your plan and billing information</p>
       </div>
 
       {/* Current Plan */}
-      <div className="card">
+      <div className="card dark:bg-surface-dark-secondary dark:border-border-dark">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{currentPlan.displayName} Plan</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{currentPlan.displayName} Plan</h2>
             <p className="text-4xl font-bold text-indigo-600 mt-2">{currentPlan.price}</p>
           </div>
           <div className={`px-4 py-2 rounded-lg border flex items-center gap-2 ${currentStatus.color}`}>
@@ -167,25 +167,25 @@ export default function BillingPage() {
         </div>
 
         {daysUntilTrialEnds !== null && daysUntilTrialEnds > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <p className="text-blue-900">
-              Your trial ends in <strong>{daysUntilTrialEnds} days</strong>. You'll be charged when your trial ends.
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+            <p className="text-blue-900 dark:text-blue-200">
+              Your trial ends in <strong>{daysUntilTrialEnds} days</strong>. You&apos;ll be charged when your trial ends.
             </p>
           </div>
         )}
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <div>
-            <h3 className="font-medium text-gray-900 mb-2">Included features</h3>
-            <ul className="space-y-2 text-sm text-gray-600">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-2">Included features</h3>
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
               <li>✓ Up to {billingInfo?.maxUsers || 5} team members</li>
               <li>✓ Slack integration</li>
               <li>✓ Email support</li>
             </ul>
           </div>
           <div>
-            <h3 className="font-medium text-gray-900 mb-2">Team info</h3>
-            <div className="text-sm text-gray-600 space-y-1">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-2">Team info</h3>
+            <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
               <p>Current members: Calculating...</p>
               <p>Max members: {billingInfo?.maxUsers || 5}</p>
             </div>
@@ -203,10 +203,10 @@ export default function BillingPage() {
       </div>
 
       {/* Billing History */}
-      <div className="card">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Billing History</h2>
+      <div className="card dark:bg-surface-dark-secondary dark:border-border-dark">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Billing History</h2>
         <div className="text-center py-12">
-          <p className="text-gray-500">No invoices yet. They'll appear here once you're on a paid plan.</p>
+          <p className="text-gray-500 dark:text-gray-400">No invoices yet. They&apos;ll appear here once you&apos;re on a paid plan.</p>
         </div>
       </div>
     </div>

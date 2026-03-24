@@ -10,6 +10,7 @@ import { dailyDigest } from '@/inngest/functions/daily-digest'
 import { sendNudges } from '@/inngest/functions/send-nudges'
 import { syncOutlook } from '@/inngest/functions/sync-outlook'
 import { generateDrafts } from '@/inngest/functions/generate-drafts'
+import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -20,5 +21,6 @@ export const { GET, POST, PUT } = serve({
     sendNudges,           // 9 AM weekdays — commitment reminders
     syncOutlook,          // 6 AM PT daily — sync Outlook emails & calendar
     generateDrafts,       // 7 AM PT daily — AI follow-up draft generation
+    scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
   ],
 })

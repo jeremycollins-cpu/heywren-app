@@ -136,9 +136,9 @@ export default function ProfileSetupPage() {
         <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
           Step 1 of 4
         </div>
-        <h2 className="text-3xl font-bold text-gray-900">Let's set up your workspace</h2>
+        <h2 className="text-3xl font-bold text-gray-900">Let&apos;s set up your workspace</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
-          Tell us a bit about yourself so we can tailor HeyWren to your team
+          Tell us a bit about yourself so Wren can tailor follow-through to your role and team.
         </p>
       </div>
 
@@ -146,9 +146,10 @@ export default function ProfileSetupPage() {
       <form onSubmit={handleContinue} className="space-y-6">
         {/* Full Name */}
         <div>
-          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
             Full Name
           </label>
+          <p className="text-xs text-gray-500 mb-2">So teammates know who made each commitment</p>
           <input
             id="fullName"
             type="text"
@@ -162,9 +163,10 @@ export default function ProfileSetupPage() {
 
         {/* Job Title */}
         <div>
-          <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
             Job Title / Role
           </label>
+          <p className="text-xs text-gray-500 mb-2">Wren prioritizes commitments relevant to your role</p>
           <select
             id="jobTitle"
             value={jobTitle}
@@ -183,9 +185,10 @@ export default function ProfileSetupPage() {
 
         {/* Company Name */}
         <div>
-          <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">
             Company Name
           </label>
+          <p className="text-xs text-gray-500 mb-2">To match you with your team</p>
           <input
             id="companyName"
             type="text"
@@ -199,9 +202,10 @@ export default function ProfileSetupPage() {
 
         {/* Team Size */}
         <div>
-          <label htmlFor="teamSize" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="teamSize" className="block text-sm font-medium text-gray-700 mb-1">
             Team Size
           </label>
+          <p className="text-xs text-gray-500 mb-2">Helps Wren calibrate the right level of nudging</p>
           <select
             id="teamSize"
             value={teamSize}
@@ -236,7 +240,7 @@ export default function ProfileSetupPage() {
       {/* Info Box */}
       <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
         <p className="font-medium mb-1">Why we ask this</p>
-        <p>We use this information to configure HeyWren's AI coaching and features for your team's size and structure.</p>
+        <p>Wren uses your profile to prioritize the right commitments, calibrate nudge frequency for your team size, and personalize follow-through coaching to your role.</p>
       </div>
     </div>
   )

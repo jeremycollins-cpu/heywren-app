@@ -27,6 +27,7 @@ interface Draft {
 export default function DraftQueuePage() {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState<string | null>(null)
@@ -41,7 +42,9 @@ export default function DraftQueuePage() {
         setDrafts(data.drafts.filter((d: Draft) => d.status === 'ready' || d.status === 'edited'))
       }
     } catch (err) {
-      console.error('Failed to load drafts:', err)
+      const message = err instanceof Error ? err.message : 'Failed to load drafts'
+      setError(message)
+      toast.error(message)
     }
     setLoading(false)
   }
@@ -144,11 +147,11 @@ export default function DraftQueuePage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading drafts">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="grid grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
           </div>
         </div>
       </div>
@@ -160,10 +163,16 @@ export default function DraftQueuePage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm font-medium">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Draft Queue</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Draft Queue</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             HeyWren pre-writes follow-ups based on open commitments. Review, edit, and send when ready.
           </p>
         </div>
@@ -172,23 +181,23 @@ export default function DraftQueuePage() {
           disabled={generating}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
+          <RefreshCw aria-hidden="true" className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
           {generating ? 'Generating...' : 'Generate Drafts'}
         </button>
       </div>
 
       {/* Queue Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Total Drafts</p>
-          <p className="text-3xl font-bold text-gray-900">{drafts.length}</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Drafts</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white">{drafts.length}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Ready to Send</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Ready to Send</p>
           <p className="text-3xl font-bold text-green-600">{readyCount}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Edited</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Edited</p>
           <p className="text-3xl font-bold text-indigo-600">{editedCount}</p>
         </div>
       </div>
@@ -197,12 +206,12 @@ export default function DraftQueuePage() {
       <div className="space-y-3">
         {drafts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-4">
               <MessageSquare className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No drafts yet</h3>
-            <p className="text-gray-500 max-w-md mb-6">
-              Click "Generate Drafts" to have HeyWren create follow-up messages for your open commitments.
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No drafts yet</h3>
+            <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
+              Click &quot;Generate Drafts&quot; to have HeyWren create follow-up messages for your open commitments.
               Drafts are also generated automatically every morning at 7 AM PT.
             </p>
             <button
@@ -217,7 +226,7 @@ export default function DraftQueuePage() {
           drafts.map((draft) => (
             <div
               key={draft.id}
-              className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition"
+              className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 hover:shadow-md transition"
             >
               {editingDraft === draft.id ? (
                 /* Edit Mode */
@@ -226,27 +235,27 @@ export default function DraftQueuePage() {
                     type="text"
                     value={editSubject}
                     onChange={(e) => setEditSubject(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg text-sm font-semibold dark:bg-surface-dark dark:text-white"
                   />
                   <textarea
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg text-sm dark:bg-surface-dark dark:text-white"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={() => saveEdit(draft.id)}
                       className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
                     >
-                      <Check className="w-4 h-4" />
+                      <Check aria-hidden="true" className="w-4 h-4" />
                       Save
                     </button>
                     <button
                       onClick={() => setEditingDraft(null)}
-                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm"
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
                     >
-                      <X className="w-4 h-4" />
+                      <X aria-hidden="true" className="w-4 h-4" />
                       Cancel
                     </button>
                   </div>
@@ -256,6 +265,10 @@ export default function DraftQueuePage() {
                 <>
                   <div
                     className="cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={selectedDraft === draft.id}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDraft(selectedDraft === draft.id ? null : draft.id) } }}
                     onClick={() => setSelectedDraft(selectedDraft === draft.id ? null : draft.id)}
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -269,17 +282,17 @@ export default function DraftQueuePage() {
                               Edited
                             </span>
                           )}
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
                             {new Date(draft.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        <h3 className="font-semibold text-gray-900 line-clamp-1">{draft.subject}</h3>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">{draft.body}</p>
+                        <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-1">{draft.subject}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{draft.body}</p>
                       </div>
                       {draft.recipient_name && (
                         <div className="text-right ml-4 flex-shrink-0">
-                          <div className="text-xs text-gray-500">To</div>
-                          <div className="text-sm font-medium text-gray-700">{draft.recipient_name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">To</div>
+                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{draft.recipient_name}</div>
                         </div>
                       )}
                     </div>
@@ -292,8 +305,8 @@ export default function DraftQueuePage() {
                   </div>
 
                   {selectedDraft === draft.id && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm text-gray-700 whitespace-pre-wrap">
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                      <div className="bg-gray-50 dark:bg-surface-dark rounded-lg p-4 mb-4 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                         {draft.body}
                       </div>
                       <div className="flex gap-2">
@@ -301,21 +314,22 @@ export default function DraftQueuePage() {
                           onClick={() => sendDraft(draft.id)}
                           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
                         >
-                          <Send className="w-4 h-4" />
+                          <Send aria-hidden="true" className="w-4 h-4" />
                           Mark as Sent
                         </button>
                         <button
                           onClick={() => startEditing(draft)}
-                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                         >
-                          <Edit className="w-4 h-4" />
+                          <Edit aria-hidden="true" className="w-4 h-4" />
                           Edit
                         </button>
                         <button
                           onClick={() => dismissDraft(draft.id)}
                           className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition"
+                          aria-label="Dismiss draft"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 aria-hidden="true" className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -328,16 +342,16 @@ export default function DraftQueuePage() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
-        <h3 className="font-semibold text-indigo-900 mb-2">About Draft Queue</h3>
-        <p className="text-sm text-indigo-800 mb-3">
+      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
+        <h3 className="font-semibold text-indigo-900 dark:text-indigo-200 mb-2">About Draft Queue</h3>
+        <p className="text-sm text-indigo-800 dark:text-indigo-300 mb-3">
           HeyWren never sends messages on your behalf. Instead, it pre-writes thoughtful follow-ups based on your open commitments and context. You maintain full control.
         </p>
-        <ul className="text-sm text-indigo-800 space-y-1">
+        <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-1">
           <li>&#10003; AI-generated drafts based on your real commitments</li>
           <li>&#10003; Full editor to customize before sending</li>
           <li>&#10003; New drafts generated daily at 7 AM PT</li>
-          <li>&#10003; Click "Generate Drafts" anytime for fresh follow-ups</li>
+          <li>&#10003; Click &quot;Generate Drafts&quot; anytime for fresh follow-ups</li>
         </ul>
       </div>
     </div>
