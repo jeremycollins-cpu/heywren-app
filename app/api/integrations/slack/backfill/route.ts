@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createClient as createServerClient } from '@/lib/supabase/server'
-import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
 
 // Process max 100 messages per request to stay within 300s timeout
 const MAX_MESSAGES_PER_RUN = 100
@@ -53,17 +54,46 @@ async function slackPost(url: string, token: string, body: any): Promise<any> {
 }
 
 export async function POST(request: NextRequest) {
-  // Authenticate the user via session instead of trusting client-supplied userId
-  const serverSupabase = await createServerClient()
-  const { data: { user: authUser }, error: authError } = await serverSupabase.auth.getUser()
-  if (authError || !authUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // ================================================================
+  // STEP 1: Authenticate the user from their session cookie
+  // This prevents unauthorized access to the backfill endpoint
+  // ================================================================
+  const cookieStore = await cookies()
+  const supabaseAuth = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Ignore — cookies can't be set in route handlers after streaming starts
+          }
+        },
+      },
+    }
+  )
+
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+  if (authError || !user) {
+    console.error('Slack backfill auth failed:', authError?.message || 'No user session')
+    return NextResponse.json({ error: 'Unauthorized. Please log in again.' }, { status: 401 })
   }
 
+  const userId = user.id
+
+  // ================================================================
+  // STEP 2: Use service role key for all data operations (bypasses RLS)
+  // ================================================================
   const supabase = getAdminClient()
   const startTime = Date.now()
 
-  const userId: string = authUser.id
   let daysBack: number = 30
   let channelId: string | null = null
 
@@ -72,7 +102,7 @@ export async function POST(request: NextRequest) {
     daysBack = body.daysBack || 30
     channelId = body.channelId || null
   } catch (e) {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    // Use defaults — body is optional
   }
 
   // Get user's team
@@ -99,7 +129,7 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (!integration || !integration.access_token) {
-    return NextResponse.json({ error: 'Slack not connected or missing access token' }, { status: 400 })
+    return NextResponse.json({ error: 'Slack not connected. Please connect Slack first.' }, { status: 400 })
   }
 
   const slackToken = integration.access_token
@@ -108,7 +138,7 @@ export async function POST(request: NextRequest) {
   const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
   if (!authTest.ok) {
     return NextResponse.json({
-      error: 'Slack token invalid: ' + authTest.error + '. Please reconnect Slack.',
+      error: 'Slack token expired or invalid: ' + authTest.error + '. Please reconnect Slack in Settings.',
     }, { status: 401 })
   }
 
@@ -162,7 +192,6 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
-              priority_score: calculatePriorityScore(commitment),
               source: 'slack',
               source_ref: item.dbId,
             })
@@ -403,7 +432,6 @@ export async function POST(request: NextRequest) {
                   title: commitment.title || 'Untitled commitment',
                   description: commitment.description || null,
                   status: 'open',
-                  priority_score: calculatePriorityScore(commitment),
                   source: 'slack',
                   source_ref: item.dbId,
                 })
