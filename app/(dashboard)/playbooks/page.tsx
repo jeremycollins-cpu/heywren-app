@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FileText, Plus, CheckCircle2, Trash2, X, Zap, ToggleLeft, ToggleRight } from 'lucide-react'
+import UpgradeGate from '@/components/upgrade-gate'
 import toast from 'react-hot-toast'
 
 interface Playbook {
@@ -223,6 +224,7 @@ export default function PlaybooksPage() {
   }
 
   return (
+    <UpgradeGate featureKey="playbooks">
     <div className="space-y-6">
       {error && (
         <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
@@ -487,5 +489,6 @@ export default function PlaybooksPage() {
         </div>
       )}
     </div>
+    </UpgradeGate>
   )
 }

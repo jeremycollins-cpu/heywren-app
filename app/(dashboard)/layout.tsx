@@ -8,6 +8,8 @@ import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
 import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
 import HelpPanel from '@/components/help-panel'
+import FeatureDiscovery from '@/components/feature-discovery'
+import { PlanProvider } from '@/lib/contexts/plan-context'
 
 function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
   const router = useRouter()
@@ -114,6 +116,7 @@ export default function DashboardLayout({
   }
 
   return (
+    <PlanProvider>
     <div className="flex flex-col h-screen bg-surface-secondary dark:bg-surface-dark font-sans transition-colors duration-300">
       {/* Onboarding banner */}
       {showOnboardingBanner && !bannerDismissed && (
@@ -148,6 +151,10 @@ export default function DashboardLayout({
         onClose={() => setHelpPanelOpen(false)}
         onStartWalkthrough={handleStartWalkthrough}
       />
+
+      {/* Page-specific feature discovery popups */}
+      {!walkthroughOpen && <FeatureDiscovery />}
     </div>
+    </PlanProvider>
   )
 }

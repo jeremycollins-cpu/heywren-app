@@ -29,7 +29,7 @@ export interface Team {
   stripe_customer_id?: string
   stripe_subscription_id?: string
   subscription_plan: 'trial' | 'basic' | 'pro' | 'team'
-  subscription_status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'incomplete'
+  subscription_status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'cancelling' | 'incomplete'
   trial_ends_at?: string
   max_users: number
   created_at: string

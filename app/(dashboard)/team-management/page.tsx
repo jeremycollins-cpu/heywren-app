@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Users, Mail, Trash2, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
+import UpgradeGate from '@/components/upgrade-gate'
 
 interface TeamMember {
   id: string
@@ -86,6 +87,7 @@ export default function TeamManagementPage() {
   }
 
   return (
+    <UpgradeGate featureKey="team_management">
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Team Management</h1>
@@ -175,5 +177,6 @@ export default function TeamManagementPage() {
         </div>
       </div>
     </div>
+    </UpgradeGate>
   )
 }

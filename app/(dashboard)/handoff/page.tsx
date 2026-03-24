@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import UpgradeGate from '@/components/upgrade-gate'
 import { Hand, Calendar, CheckCircle2, AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 
 // ── Types ──
@@ -333,6 +334,7 @@ export default function HandoffPage() {
 
   // ── Render ──
   return (
+    <UpgradeGate featureKey="handoff">
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">PTO Handoff Protocol</h1>
@@ -578,5 +580,6 @@ export default function HandoffPage() {
         </ul>
       </div>
     </div>
+    </UpgradeGate>
   )
 }
