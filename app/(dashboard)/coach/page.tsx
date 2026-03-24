@@ -1,6 +1,6 @@
 // app/(dashboard)/coach/page.tsx
-// Executive Coach v3 — Priority-based insights with action callouts
-// Matches demo: personalized header, CRITICAL/HIGH/MEDIUM/GROWTH sections
+// Executive Coach v4 — SECURITY FIX: All queries filtered by team_id
+// Priority-based insights with action callouts
 
 'use client'
 
@@ -162,9 +162,30 @@ export default function CoachPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
+
+      // ── SECURITY: Get user's team_id first ──
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) {
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const teamId = profile?.current_team_id
+      if (!teamId) {
+        setLoading(false)
+        return
+      }
+
       const { data } = await supabase
         .from('commitments')
         .select('*')
+        .eq('team_id', teamId)
         .order('created_at', { ascending: false })
 
       if (data) setCommitments(data)
