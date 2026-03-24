@@ -281,7 +281,8 @@ export default function CommitmentsPage() {
     }
 
     return result
-  }, [baseList, searchQuery, filterSource, filterUrgency, filterHealth, sortBy])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commitments, activeTab, searchQuery, filterSource, filterUrgency, filterHealth, sortBy])
 
   const hasActiveFilters = filterSource !== 'all' || filterUrgency !== 'all' || filterHealth !== 'all' || searchQuery.trim() !== ''
   const activeFilterCount = [filterSource !== 'all', filterUrgency !== 'all', filterHealth !== 'all'].filter(Boolean).length
@@ -335,7 +336,10 @@ export default function CommitmentsPage() {
               <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
               <div className="text-right">
                 <p className="text-2xl font-bold text-indigo-600">
-                  {Math.round(completedCommitments.length / commitments.filter(c => c.status !== 'dismissed').length * 100 || 0)}%
+                  {(() => {
+                    const nonDismissed = commitments.filter(c => c.status !== 'dismissed').length
+                    return nonDismissed > 0 ? Math.round(completedCommitments.length / nonDismissed * 100) : 0
+                  })()}%
                 </p>
                 <p className="text-xs text-gray-500">follow-through</p>
               </div>
