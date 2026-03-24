@@ -185,13 +185,17 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 7. UPSERT PROFILE ─────────────────────────────────────────────
+    // Detect name column: production may use 'display_name' instead of 'full_name'
+    const nameCol = await detectNameColumn()
+    const profileRole = flow === 'created' ? 'admin' : 'user'
+
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
         id: userId,
-        full_name: fullName,
+        [nameCol]: fullName,
         email: userEmail,
-        role: flow === 'created' ? 'admin' : 'user',
+        role: profileRole,
         current_team_id: teamId,
       }, {
         onConflict: 'id',
@@ -203,9 +207,9 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin
         .from('profiles')
         .update({
-          full_name: fullName,
+          [nameCol]: fullName,
           email: userEmail,
-          role: flow === 'created' ? 'admin' : 'user',
+          role: profileRole,
           current_team_id: teamId,
         })
         .eq('id', userId)
@@ -297,4 +301,17 @@ async function createNewTeam(
   }
 
   return { teamId: newTeam.id }
+}
+
+// Detect whether profiles table uses 'full_name' or 'display_name'
+async function detectNameColumn(): Promise<string> {
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .limit(1)
+
+  if (error && error.message?.includes('full_name')) {
+    return 'display_name'
+  }
+  return 'full_name'
 }

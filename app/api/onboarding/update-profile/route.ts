@@ -23,28 +23,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
     }
 
-    // Ensure the onboarding columns exist (migration 009)
-    // This handles the case where the migration hasn't been applied yet
-    try {
-      await supabaseAdmin.rpc('exec_sql', {
-        sql: `
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS job_title TEXT;
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company TEXT;
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS team_size TEXT;
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;
-          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_step TEXT;
-        `,
-      })
-    } catch {
-      // rpc may not exist — try direct column adds via individual updates
-      // If columns already exist, these are no-ops
-    }
+    // Detect which name column exists: production may use 'display_name' or 'full_name'
+    const nameColumn = await detectNameColumn()
 
-    // Update the profile using admin client to bypass RLS
+    // Try full update with all onboarding columns
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
-        full_name: fullName.trim(),
+        [nameColumn]: fullName.trim(),
         job_title: jobTitle || null,
         company: companyName?.trim() || null,
         team_size: teamSize || null,
@@ -55,13 +41,13 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Profile update failed:', error)
 
-      // If the error is about missing columns, try updating only the base columns
+      // If error is about missing columns (job_title etc.), fall back to name-only
       if (error.message?.includes('column') || error.code === '42703') {
-        console.warn('Falling back to base-column-only update (migration 009 may be missing)')
+        console.warn('Falling back to name-only update (migration 009 columns may be missing)')
         const { error: fallbackError } = await supabaseAdmin
           .from('profiles')
           .update({
-            full_name: fullName.trim(),
+            [nameColumn]: fullName.trim(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', userId)
@@ -75,7 +61,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
           success: true,
-          warning: 'Only base profile fields were saved. Run migration 009 to enable full onboarding fields.',
+          warning: 'Only name was saved. Run migration 009 to enable full onboarding fields.',
         })
       }
 
@@ -93,4 +79,20 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+/**
+ * Detect whether the profiles table uses 'full_name' or 'display_name'.
+ * Tries full_name first (matches migration 001), falls back to display_name.
+ */
+async function detectNameColumn(): Promise<string> {
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .limit(1)
+
+  if (error && error.message?.includes('full_name')) {
+    return 'display_name'
+  }
+  return 'full_name'
 }

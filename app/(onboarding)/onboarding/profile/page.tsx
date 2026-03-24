@@ -43,14 +43,28 @@ export default function ProfileSetupPage() {
           return
         }
 
-        const { data: profile } = await supabase
+        // Try full_name first, fall back to display_name (production may differ)
+        let profile: any = null
+        const { data: p1, error: e1 } = await supabase
           .from('profiles')
-          .select('full_name, company')
+          .select('full_name, display_name, company')
           .eq('id', authData.user.id)
           .single()
 
+        if (!e1) {
+          profile = p1
+        } else {
+          // If columns are missing, try minimal select
+          const { data: p2 } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authData.user.id)
+            .single()
+          profile = p2
+        }
+
         if (profile) {
-          setFullName(profile.full_name || '')
+          setFullName(profile.full_name || profile.display_name || '')
           setCompanyName(profile.company || '')
         }
 
