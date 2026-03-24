@@ -202,9 +202,28 @@ function IntegrationsContent() {
   useEffect(() => {
     const fetchIntegrations = async () => {
       try {
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
         const { data } = await supabase
           .from('integrations')
           .select('*')
+          .eq('team_id', teamId)
           .order('created_at', { ascending: false })
 
         setIntegrations(data || [])
