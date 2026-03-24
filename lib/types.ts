@@ -1,11 +1,11 @@
 export type CommitmentSource = 'slack' | 'email' | 'meeting' | 'manual'
-export type CommitmentStatus = 'open' | 'in_progress' | 'completed' | 'overdue' | 'dropped'
+export type CommitmentStatus = 'open' | 'in_progress' | 'completed' | 'overdue' | 'dropped' | 'likely_complete'
 export type IntegrationProvider = 'slack' | 'outlook' | 'google'
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error'
 export type TeamMemberRole = 'owner' | 'admin' | 'member'
 export type NudgeChannel = 'slack' | 'email' | 'in_app'
 export type NudgeStatus = 'pending' | 'sent' | 'dismissed'
-export type ActivityAction = 'created' | 'updated' | 'completed' | 'nudged' | 'commented'
+export type ActivityAction = 'created' | 'updated' | 'completed' | 'nudged' | 'commented' | 'auto_completed'
 
 export interface Profile {
   id: string

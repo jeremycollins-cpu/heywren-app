@@ -6,6 +6,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCompletions } from '@/lib/ai/detect-completion'
 
 function getAdminClient() {
   return createClient(
@@ -201,6 +202,111 @@ export const processSlackMessage = inngest.createFunction(
         .eq('id', messageData.id)
     })
 
-    return { success: true, commitments: successCount }
+    // ── Detect completions of existing commitments ──
+    const completionResult = await step.run('detect-completions', async () => {
+      try {
+        // Fetch open commitments for this team
+        const { data: openCommitments } = await supabase
+          .from('commitments')
+          .select('id, title, description')
+          .eq('team_id', teamId)
+          .in('status', ['open', 'in_progress'])
+          .order('created_at', { ascending: false })
+          .limit(50)
+
+        if (!openCommitments || openCommitments.length === 0) {
+          return { matches: 0 }
+        }
+
+        const matches = await detectCompletions(
+          {
+            text: event.data.text,
+            author: slackUserId,
+            source: 'slack' as const,
+          },
+          openCommitments.map((c: any) => ({
+            id: c.id,
+            title: c.title,
+            description: c.description || '',
+          }))
+        )
+
+        if (matches.length === 0) return { matches: 0 }
+
+        const now = new Date().toISOString()
+        let autoCompleted = 0
+        let markedLikely = 0
+
+        for (const match of matches) {
+          const { data: existing } = await supabase
+            .from('commitments')
+            .select('metadata, creator_id')
+            .eq('id', match.commitmentId)
+            .single()
+
+          const existingMeta = (existing?.metadata as Record<string, unknown>) || {}
+
+          if (match.confidence >= 0.7) {
+            await supabase
+              .from('commitments')
+              .update({
+                status: 'completed',
+                completed_at: now,
+                updated_at: now,
+                metadata: {
+                  ...existingMeta,
+                  autoCompleted: true,
+                  completionEvidence: match.evidence,
+                  completionConfidence: match.confidence,
+                  completionSource: 'slack',
+                  completionDetectedAt: now,
+                },
+              })
+              .eq('id', match.commitmentId)
+              .eq('team_id', teamId)
+
+            if (existing?.creator_id) {
+              await supabase.from('activities').insert({
+                team_id: teamId,
+                user_id: existing.creator_id,
+                commitment_id: match.commitmentId,
+                action: 'completed',
+                metadata: {
+                  autoCompleted: true,
+                  evidence: match.evidence,
+                  confidence: match.confidence,
+                  source: 'Auto-completed: detected from slack message',
+                },
+              })
+            }
+            autoCompleted++
+          } else if (match.confidence >= 0.5) {
+            await supabase
+              .from('commitments')
+              .update({
+                status: 'likely_complete',
+                updated_at: now,
+                metadata: {
+                  ...existingMeta,
+                  completionEvidence: match.evidence,
+                  completionConfidence: match.confidence,
+                  completionSource: 'slack',
+                  completionDetectedAt: now,
+                },
+              })
+              .eq('id', match.commitmentId)
+              .eq('team_id', teamId)
+            markedLikely++
+          }
+        }
+
+        return { matches: matches.length, autoCompleted, markedLikely }
+      } catch (err) {
+        console.error('Completion detection in process-slack-message failed:', err)
+        return { matches: 0 }
+      }
+    })
+
+    return { success: true, commitments: successCount, completions: completionResult }
   }
 )

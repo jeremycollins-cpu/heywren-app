@@ -11,6 +11,7 @@ import { sendNudges } from '@/inngest/functions/send-nudges'
 import { syncOutlook } from '@/inngest/functions/sync-outlook'
 import { generateDrafts } from '@/inngest/functions/generate-drafts'
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
+import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -22,5 +23,6 @@ export const { GET, POST, PUT } = serve({
     syncOutlook,          // 6 AM PT daily — sync Outlook emails & calendar
     generateDrafts,       // 7 AM PT daily — AI follow-up draft generation
     scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
+    detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
   ],
 })

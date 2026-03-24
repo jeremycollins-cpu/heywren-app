@@ -54,6 +54,7 @@ function getCommitmentScore(c: Commitment): number {
 
 function getCommitmentStatus(c: Commitment): { label: string; color: string; bgColor: string } {
   if (c.status === 'completed') return { label: 'COMPLETED', color: 'text-green-700 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30' }
+  if (c.status === 'likely_complete') return { label: 'LIKELY DONE', color: 'text-emerald-700 dark:text-emerald-400', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30' }
   if (c.status === 'overdue') return { label: 'OVERDUE', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-900/30' }
   const age = daysSince(c.created_at)
   if (age > 7) return { label: 'AT RISK', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-900/30' }
@@ -211,6 +212,7 @@ export default function CommitmentsPage() {
   }
 
   const openCommitments = commitments.filter(c => c.status !== 'completed' && c.status !== 'dismissed')
+  const likelyCompleteCommitments = commitments.filter(c => c.status === 'likely_complete')
   const completedCommitments = commitments.filter(c => c.status === 'completed')
   const slackMentions = commitments.filter(c => c.source === 'slack')
 
@@ -278,6 +280,15 @@ export default function CommitmentsPage() {
       }
       default: // newest
         result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    }
+
+    // In the Active tab, always float likely_complete items to the top
+    if (activeTab === 'active') {
+      result.sort((a, b) => {
+        const aLikely = a.status === 'likely_complete' ? 0 : 1
+        const bLikely = b.status === 'likely_complete' ? 0 : 1
+        return aLikely - bLikely
+      })
     }
 
     return result
@@ -565,6 +576,16 @@ export default function CommitmentsPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Likely complete banner */}
+          {activeTab === 'active' && likelyCompleteCommitments.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                Wren thinks {likelyCompleteCommitments.length === 1 ? 'this is' : `these ${likelyCompleteCommitments.length} are`} done — confirm?
+              </p>
+            </div>
+          )}
+
           {/* Select all row */}
           {activeTab === 'active' && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
             <div className="flex items-center gap-2 px-2">
@@ -594,11 +615,16 @@ export default function CommitmentsPage() {
               : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700'
             const isSelected = selectedIds.has(c.id)
 
+            const isLikelyComplete = c.status === 'likely_complete'
+            const completionEvidence = (meta as any).completionEvidence as string | undefined
+
             return (
-              <div key={c.id} className={`bg-white dark:bg-surface-dark-secondary border rounded-xl p-5 transition-colors ${
-                isSelected
+              <div key={c.id} className={`border rounded-xl p-5 transition-colors ${
+                isLikelyComplete
+                  ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-300 dark:border-emerald-700'
+                  : isSelected
                   ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/10'
-                  : 'border-gray-200 dark:border-border-dark'
+                  : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark'
               }`}>
                 {/* Row 1: Checkbox + title + actions */}
                 <div className="flex items-start gap-3 mb-2">
@@ -622,16 +648,39 @@ export default function CommitmentsPage() {
                         View in {sourceBadge.label}
                       </a>
                     )}
-                    {c.status !== 'completed' && (
+                    {isLikelyComplete ? (
+                      <>
+                        <button
+                          onClick={() => updateStatus(c.id, 'completed')}
+                          className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors"
+                        >
+                          Confirm complete
+                        </button>
+                        <button
+                          onClick={() => updateStatus(c.id, 'open')}
+                          className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 font-medium transition-colors"
+                        >
+                          Not done
+                        </button>
+                      </>
+                    ) : c.status !== 'completed' ? (
                       <button
                         onClick={() => updateStatus(c.id, 'completed')}
                         className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium transition-colors"
                       >
                         Complete
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
+
+                {/* Completion evidence for likely_complete items */}
+                {isLikelyComplete && completionEvidence && (
+                  <div className="flex items-center gap-2 mb-2.5 px-3 py-2 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-lg">
+                    <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Evidence:</span>
+                    <span className="text-xs text-emerald-600 dark:text-emerald-300 italic">&ldquo;{completionEvidence}&rdquo;</span>
+                  </div>
+                )}
 
                 {/* Row 2: Badges */}
                 <div className="flex items-center gap-2 flex-wrap mb-2.5">
