@@ -16,7 +16,7 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
     <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-6 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-300 flex-shrink-0" />
+          <AlertTriangle aria-hidden="true" className="w-5 h-5 text-amber-300 flex-shrink-0" />
           <p className="text-sm font-medium">
             <span className="font-semibold">Setup incomplete:</span> Connect Slack or Outlook to start capturing commitments automatically.
           </p>
@@ -27,14 +27,14 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
             className="flex items-center gap-1.5 bg-white text-indigo-700 px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-indigo-50 transition"
           >
             Complete Setup
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight aria-hidden="true" className="w-4 h-4" />
           </button>
           <button
             onClick={onDismiss}
             className="text-indigo-200 hover:text-white transition"
             aria-label="Dismiss"
           >
-            <X className="w-4 h-4" />
+            <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
       </div>
