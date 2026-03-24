@@ -59,12 +59,89 @@ function getTrend(daysSinceLastContact: number, interactions: number): 'up' | 'd
   return 'stable'
 }
 
-function inferRole(email: string, _name: string, interactions: number): string {
+function inferRole(email: string, _name: string, interactions: number, userDomain: string): string {
   const domain = email.split('@')[1]?.toLowerCase() || ''
-  if (domain.includes('routeware')) return interactions > 15 ? 'Direct Report' : 'Team Member'
+  if (userDomain && domain === userDomain) return interactions > 15 ? 'Direct Report' : 'Team Member'
   if (interactions > 10) return 'Key Stakeholder'
   if (interactions > 5) return 'Collaborator'
   return 'Contact'
+}
+
+// Filter out automated/service/company accounts — only keep real people
+function isRealPerson(email: string, name: string): boolean {
+  const emailLower = email.toLowerCase()
+  const nameLower = name.toLowerCase()
+  const localPart = emailLower.split('@')[0] || ''
+  const domain = emailLower.split('@')[1] || ''
+
+  // Generic/automated prefixes
+  const automatedPrefixes = [
+    'noreply', 'no-reply', 'no_reply', 'donotreply', 'do-not-reply',
+    'notification', 'notifications', 'alert', 'alerts',
+    'mailer-daemon', 'postmaster', 'bounce', 'bounces',
+    'info', 'support', 'help', 'helpdesk', 'service', 'services',
+    'billing', 'invoice', 'invoices', 'receipts', 'receipt',
+    'sales', 'marketing', 'team', 'hello', 'contact', 'feedback',
+    'admin', 'administrator', 'system', 'automated', 'auto',
+    'updates', 'update', 'news', 'newsletter', 'digest',
+    'security', 'verify', 'confirm', 'confirmation',
+    'accounts', 'account', 'orders', 'order',
+    'calendar', 'events', 'rsvp', 'invite', 'invites',
+  ]
+  if (automatedPrefixes.some(p => localPart === p || localPart.startsWith(p + '+') || localPart.startsWith(p + '.'))) return false
+
+  // Known SaaS/service domains that send as "people" but aren't
+  const serviceDomains = [
+    'ramp.com', 'userramp.com',
+    'jira.com', 'atlassian.com', 'atlassian.net',
+    'github.com', 'gitlab.com', 'bitbucket.org',
+    'slack.com', 'slackbot.com',
+    'linear.app', 'notion.so', 'asana.com', 'monday.com', 'clickup.com',
+    'figma.com', 'canva.com',
+    'stripe.com', 'paypal.com', 'brex.com', 'bill.com', 'expensify.com',
+    'zoom.us', 'zoom.com', 'calendly.com', 'loom.com',
+    'hubspot.com', 'salesforce.com', 'intercom.io', 'zendesk.com', 'freshdesk.com',
+    'mailchimp.com', 'sendgrid.net', 'sendgrid.com', 'mailgun.org', 'postmarkapp.com',
+    'amazonaws.com', 'google.com', 'googlemail.com', 'docs.google.com',
+    'dropbox.com', 'box.com', 'onedrive.com', 'sharepoint.com',
+    'docusign.net', 'docusign.com', 'hellosign.com',
+    'workday.com', 'adp.com', 'gusto.com', 'rippling.com', 'bamboohr.com',
+    'lever.co', 'greenhouse.io', 'ashbyhq.com',
+    'sentry.io', 'datadog.com', 'pagerduty.com', 'opsgenie.com',
+    'vercel.com', 'netlify.com', 'heroku.com', 'render.com',
+    'twilio.com', 'plaid.com', 'segment.com', 'amplitude.com', 'mixpanel.com',
+    'snyk.io', 'grammarly.com', 'notion.so',
+    'trello.com', 'basecamp.com', 'wrike.com',
+    'shopify.com', 'squarespace.com', 'wordpress.com',
+    'samsara.com',
+  ]
+  if (serviceDomains.some(d => domain === d || domain.endsWith('.' + d))) return false
+
+  // Names that look like companies/services (single word, all-caps, or known patterns)
+  const serviceNames = [
+    'ramp', 'jira', 'slack', 'github', 'notion', 'linear', 'figma',
+    'asana', 'trello', 'zoom', 'loom', 'calendly', 'hubspot',
+    'salesforce', 'stripe', 'paypal', 'docusign', 'dropbox',
+    'samsara', 'workday', 'gusto', 'rippling', 'grammarly',
+    'sentry', 'datadog', 'pagerduty', 'vercel', 'heroku',
+    'bamboohr', 'greenhouse', 'lever', 'ashby',
+    'zendesk', 'intercom', 'freshdesk', 'mailchimp',
+    'confluence', 'bitbucket', 'gitlab',
+  ]
+  if (serviceNames.includes(nameLower)) return false
+
+  // Names that are just a single word with no space (likely a service/brand)
+  // but allow common single first-names by checking length
+  if (!name.includes(' ') && name.length > 1) {
+    // If the "name" matches the domain name (minus TLD), it's a service
+    const domainName = domain.split('.')[0]
+    if (nameLower === domainName) return false
+  }
+
+  // Email-like names (name is just the email address)
+  if (nameLower.includes('@')) return false
+
+  return true
 }
 
 export default function RelationshipsPage() {
@@ -90,6 +167,7 @@ export default function RelationshipsPage() {
       if (!teamId) { setLoading(false); return }
 
       const userEmail = userData.user.email?.toLowerCase() || ''
+      const userDomain = userEmail.includes('@') ? userEmail.split('@')[1] : ''
 
       try {
         // Fetch emails and commitments in parallel
@@ -133,12 +211,15 @@ export default function RelationshipsPage() {
 
         emailData.forEach((msg: any) => {
           const email = (msg.from_email || '').toLowerCase()
-          if (!email || email.includes('noreply') || email.includes('notification') || email.includes('mailer-daemon') || email.includes('postmaster') || email.includes('no-reply')) return
+          if (!email) return
+
+          const senderName = msg.from_name || email.split('@')[0]
+          if (!isRealPerson(email, senderName)) return
 
           const receivedAt = msg.received_at || new Date().toISOString()
 
           if (!contactMap[email]) {
-            contactMap[email] = { name: msg.from_name || email.split('@')[0], email, count: 0, lastDate: receivedAt }
+            contactMap[email] = { name: senderName, email, count: 0, lastDate: receivedAt }
           }
           contactMap[email].count++
           if (receivedAt > contactMap[email].lastDate) {
@@ -162,7 +243,7 @@ export default function RelationshipsPage() {
               daysSinceContact: dsc,
               healthScore: score,
               trend: getTrend(dsc, c.count),
-              role: inferRole(c.email, c.name, c.count),
+              role: inferRole(c.email, c.name, c.count, userDomain),
               commitments,
             }
           })
