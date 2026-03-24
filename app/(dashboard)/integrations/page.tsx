@@ -197,10 +197,10 @@ function IntegrationsContent() {
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
 
-  const supabase = createClient()
-
   useEffect(() => {
-    const fetchIntegrations = async () => {
+    async function fetchIntegrations() {
+      const supabase = createClient()
+
       try {
         const { data: userData } = await supabase.auth.getUser()
         if (!userData?.user) {
@@ -255,9 +255,10 @@ function IntegrationsContent() {
     if (searchParams.get('status') === 'success') {
       toast.success('Integration connected successfully!')
     }
-  }, [supabase, searchParams])
+  }, [])
 
   const handleSlackConnect = async () => {
+    const supabase = createClient()
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
       toast.error('Please log in first')
@@ -284,6 +285,7 @@ function IntegrationsContent() {
   }
 
   const handleOutlookConnect = async () => {
+    const supabase = createClient()
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
       toast.error('Please log in first')
@@ -308,6 +310,7 @@ function IntegrationsContent() {
   }
 
   const handleDisconnect = async (id: string) => {
+    const supabase = createClient()
     const { error } = await supabase
       .from('integrations')
       .delete()
