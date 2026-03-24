@@ -262,15 +262,11 @@ export default function BriefingsPage() {
         .order('start_time', { ascending: true })
 
       if (!events || events.length === 0) {
-        // Check if Outlook is connected — if so, suggest re-syncing
-        const { data: integration } = await supabase
-          .from('integrations')
-          .select('id')
-          .eq('team_id', teamId)
-          .eq('provider', 'outlook')
-          .maybeSingle()
+        // Check if Outlook is connected via server-side API (bypasses RLS)
+        const intRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const hasOutlook = intRes.integrations?.some((i: any) => i.provider === 'outlook')
 
-        if (integration) {
+        if (hasOutlook) {
           setError('no_calendar_data')
         }
 

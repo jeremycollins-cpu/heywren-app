@@ -76,12 +76,9 @@ export default function WeeklyPage() {
 
         if (commitmentsError) throw commitmentsError
 
-        const { data: intData, error: intError } = await supabase
-          .from('integrations')
-          .select('provider')
-          .eq('team_id', teamId)
-
-        if (intError) throw intError
+        // Fetch integrations via server-side API (bypasses RLS)
+        const intStatusRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const intData = intStatusRes.integrations || []
 
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)

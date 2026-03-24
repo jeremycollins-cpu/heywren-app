@@ -143,25 +143,14 @@ function IntegrationsSetupContent() {
         return
       }
 
-      // Get user's current team
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', authData.user.id)
-        .single()
-
-      if (!profile?.current_team_id) {
+      // Use server-side API to check integrations (bypasses RLS issues)
+      const res = await fetch('/api/integrations/status')
+      if (res.ok) {
+        const data = await res.json()
+        setIntegrations(data.integrations?.map((i: any) => ({ id: i.id, provider: i.provider })) || [])
+      } else {
         setIntegrations([])
-        setChecking(false)
-        return
       }
-
-      const { data: integrations } = await supabase
-        .from('integrations')
-        .select('id, provider')
-        .eq('team_id', profile.current_team_id)
-
-      setIntegrations(integrations || [])
       setChecking(false)
 
       // Show success toasts

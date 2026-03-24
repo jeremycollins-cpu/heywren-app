@@ -26,25 +26,10 @@ export default function OnboardingCompletePage() {
         return
       }
 
-      // Get user's current team
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', authData.user.id)
-        .single()
-
-      if (!profile?.current_team_id) {
-        setIntegrations([])
-        setInitializing(false)
-        return
-      }
-
-      const { data: integrationData } = await supabase
-        .from('integrations')
-        .select('provider')
-        .eq('team_id', profile.current_team_id)
-
-      const providers = integrationData?.map((i) => i.provider) || []
+      // Use server-side API for integration check (bypasses RLS)
+      const intRes = await fetch('/api/integrations/status')
+      const intData = intRes.ok ? await intRes.json() : { integrations: [] }
+      const providers = (intData.integrations || []).map((i: any) => i.provider)
       setIntegrations(providers)
 
       // Mark onboarding as completed via API route (uses admin client)

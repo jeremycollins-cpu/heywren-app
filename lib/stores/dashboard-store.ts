@@ -71,7 +71,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         return
       }
 
-      const [commitResult, mentionResult, intResult] = await Promise.all([
+      const [commitResult, mentionResult, intStatusRes] = await Promise.all([
         supabase
           .from('commitments')
           .select('*')
@@ -83,20 +83,17 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .eq('team_id', teamId)
           .order('created_at', { ascending: false })
           .limit(10),
-        supabase
-          .from('integrations')
-          .select('provider')
-          .eq('team_id', teamId),
+        // Use server-side API for integrations (bypasses RLS)
+        fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] }),
       ])
 
       if (commitResult.error) throw commitResult.error
       if (mentionResult.error) throw mentionResult.error
-      if (intResult.error) throw intResult.error
 
       set({
         commitments: commitResult.data || [],
         mentions: mentionResult.data || [],
-        integrationCount: intResult.data?.length || 0,
+        integrationCount: intStatusRes.integrations?.length || 0,
         loading: false,
       })
     } catch (err) {

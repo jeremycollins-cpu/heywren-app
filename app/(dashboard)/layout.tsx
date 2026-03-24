@@ -78,13 +78,13 @@ export default function DashboardLayout({
           return
         }
 
-        const { data: integrations } = await supabase
-          .from('integrations')
-          .select('id')
-          .limit(1)
-
-        if (!integrations || integrations.length === 0) {
-          setShowOnboardingBanner(true)
+        // Use server-side API to check integrations (bypasses RLS)
+        const res = await fetch('/api/integrations/status')
+        if (res.ok) {
+          const data = await res.json()
+          if (!data.integrations || data.integrations.length === 0) {
+            setShowOnboardingBanner(true)
+          }
         }
       } catch (err) {
         console.error('Error checking integrations:', err)

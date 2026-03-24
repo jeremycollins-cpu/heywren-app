@@ -35,25 +35,12 @@ export default function ChannelsSetupPage() {
         return
       }
 
-      // Get user's current team
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', authData.user.id)
-        .single()
+      // Use server-side API for integration check (bypasses RLS)
+      const intRes = await fetch('/api/integrations/status')
+      const intData = intRes.ok ? await intRes.json() : { integrations: [] }
+      const integrations = intData.integrations || []
 
-      if (!profile?.current_team_id) {
-        setHasSlack(false)
-        setInitializing(false)
-        return
-      }
-
-      const { data: integrations } = await supabase
-        .from('integrations')
-        .select('id, provider')
-        .eq('team_id', profile.current_team_id)
-
-      const hasSlackIntegration = integrations?.some((i) => i.provider === 'slack')
+      const hasSlackIntegration = integrations.some((i: any) => i.provider === 'slack')
       setHasSlack(!!hasSlackIntegration)
 
       // For demo purposes, show mock channels

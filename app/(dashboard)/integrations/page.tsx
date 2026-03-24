@@ -199,49 +199,13 @@ function IntegrationsContent() {
 
   useEffect(() => {
     async function fetchIntegrations() {
-      const supabase = createClient()
-
       try {
-        const { data: userData } = await supabase.auth.getUser()
-        if (!userData?.user) {
-          setLoading(false)
-          return
+        // Use server-side API to bypass RLS issues
+        const res = await fetch('/api/integrations/status')
+        if (res.ok) {
+          const data = await res.json()
+          setIntegrations(data.integrations || [])
         }
-
-        // Resolve team_id: try profile first, fall back to team_members
-        let teamId: string | null = null
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', userData.user.id)
-          .single()
-
-        teamId = profile?.current_team_id || null
-
-        if (!teamId) {
-          const { data: membership } = await supabase
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', userData.user.id)
-            .limit(1)
-            .single()
-
-          teamId = membership?.team_id || null
-        }
-
-        if (!teamId) {
-          setLoading(false)
-          return
-        }
-
-        const { data } = await supabase
-          .from('integrations')
-          .select('id, provider, created_at, config')
-          .eq('team_id', teamId)
-          .order('created_at', { ascending: false })
-
-        setIntegrations(data || [])
       } catch (err) {
         console.error('Error fetching integrations:', err)
       } finally {

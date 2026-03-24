@@ -54,26 +54,18 @@ export default function SyncPage() {
       if (!profile?.current_team_id) return
       const teamId = profile.current_team_id
 
-      const [intResult, commitResult] = await Promise.all([
-        supabase.from('integrations').select('provider, created_at').eq('team_id', teamId),
+      // Fetch integrations via server-side API (bypasses RLS) + commitments client-side
+      const [intStatusRes, commitResult] = await Promise.all([
+        fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] }),
         supabase.from('commitments').select('status, created_at, source').eq('team_id', teamId),
       ])
 
-      let integrationData = intResult.data || []
+      const integrationData = (intStatusRes.integrations || []).map((i: any) => ({
+        provider: i.provider,
+        created_at: i.created_at,
+      }))
 
       const commitments = commitResult.data || []
-
-      // Fallback: if integrations query returned empty (RLS) but we have commitments
-      // from those sources, infer that integrations are connected
-      if (integrationData.length === 0 && commitments.length > 0) {
-        const sources = new Set(commitments.map((c: { source: string | null }) => c.source).filter(Boolean))
-        if (sources.has('slack')) {
-          integrationData.push({ provider: 'slack', created_at: new Date().toISOString() })
-        }
-        if (sources.has('outlook') || sources.has('email')) {
-          integrationData.push({ provider: 'outlook', created_at: new Date().toISOString() })
-        }
-      }
 
       setIntegrations(integrationData as Integration[])
 

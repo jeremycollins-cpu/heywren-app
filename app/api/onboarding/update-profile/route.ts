@@ -71,6 +71,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Ensure user has a team — create one if needed so integrations step works
+    const { data: currentProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userId)
+      .single()
+
+    if (!currentProfile?.current_team_id) {
+      const slug = (companyName || 'team')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') + '-' + Date.now().toString(36)
+
+      const { data: newTeam, error: teamError } = await supabaseAdmin
+        .from('teams')
+        .insert({ name: companyName?.trim() || 'My Team', slug })
+        .select('id')
+        .single()
+
+      if (teamError) {
+        console.error('Team creation error during onboarding:', teamError)
+      }
+
+      if (newTeam) {
+        await supabaseAdmin
+          .from('team_members')
+          .insert({ team_id: newTeam.id, user_id: userId, role: 'owner' })
+
+        await supabaseAdmin
+          .from('profiles')
+          .update({ current_team_id: newTeam.id })
+          .eq('id', userId)
+      }
+    }
+
     return NextResponse.json({ success: true })
   } catch (err: any) {
     console.error('Update profile error:', err)
