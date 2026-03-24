@@ -23,10 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_outlook_calendar_events_team_id ON outlook_calend
 CREATE INDEX IF NOT EXISTS idx_outlook_calendar_events_start_time ON outlook_calendar_events(start_time);
 CREATE INDEX IF NOT EXISTS idx_outlook_calendar_events_processed ON outlook_calendar_events(processed);
 
--- Add 'calendar' as a valid commitment source
-ALTER TABLE commitments DROP CONSTRAINT IF EXISTS commitments_source_check;
-ALTER TABLE commitments ADD CONSTRAINT commitments_source_check
-  CHECK (source IN ('slack', 'outlook', 'manual', 'email', 'calendar'));
+-- Add 'calendar' to the commitment_source enum
+ALTER TYPE commitment_source ADD VALUE IF NOT EXISTS 'calendar';
 
 -- RLS policies
 ALTER TABLE outlook_calendar_events ENABLE ROW LEVEL SECURITY;
