@@ -230,7 +230,7 @@ export default function CommitmentsPage() {
         c.title.toLowerCase().includes(q) ||
         (c.description && c.description.toLowerCase().includes(q)) ||
         (c.metadata?.originalQuote && c.metadata.originalQuote.toLowerCase().includes(q)) ||
-        (c.metadata?.stakeholders?.some(s => s.name.toLowerCase().includes(q)))
+        (Array.isArray(c.metadata?.stakeholders) && c.metadata.stakeholders.some(s => s.name && s.name.toLowerCase().includes(q)))
       )
     }
 
@@ -582,7 +582,8 @@ export default function CommitmentsPage() {
             const status = getCommitmentStatus(c)
             const age = daysSince(c.created_at)
             const sourceBadge = getSourceBadge(c.source)
-            const meta = c.metadata || {}
+            const rawMeta = c.metadata
+            const meta: CommitmentMetadata = (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) ? rawMeta as CommitmentMetadata : {}
             const urgency = getUrgencyConfig(meta.urgency)
             const commitmentType = getCommitmentTypeLabel(meta.commitmentType)
             const toneNote = getToneLabel(meta.tone)
@@ -679,7 +680,7 @@ export default function CommitmentsPage() {
                 {/* Row 5: Stakeholders + origin */}
                 <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
                   <div className="flex items-center gap-1.5">
-                    {meta.stakeholders && meta.stakeholders.length > 0 && meta.stakeholders.map((s, i) => (
+                    {Array.isArray(meta.stakeholders) && meta.stakeholders.filter(s => s && s.name).map((s, i) => (
                       <span
                         key={i}
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
