@@ -236,6 +236,7 @@ export default function SettingsPage() {
                     [setting.id]: e.target.checked,
                   })
                 }
+                aria-label={setting.label}
                 className="w-5 h-5 cursor-pointer"
               />
             </div>
@@ -292,8 +293,9 @@ export default function SettingsPage() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Team Name</label>
+            <label htmlFor="settings-teamname" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Team Name</label>
             <input
+              id="settings-teamname"
               type="text"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
