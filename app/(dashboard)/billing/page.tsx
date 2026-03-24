@@ -120,8 +120,8 @@ export default function BillingPage() {
     if (!billingInfo) return
     setActionLoading(newPlan)
     try {
-      // Trial users without a Stripe subscription need a fresh checkout session
-      if (!billingInfo.stripeCustomerId) {
+      // Trial users, cancelled users, or those without a Stripe subscription need a fresh checkout
+      if (!billingInfo.stripeCustomerId || billingInfo.status === 'cancelled') {
         const response = await fetch('/api/stripe/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -224,7 +224,8 @@ export default function BillingPage() {
   const currentPlan = billingInfo?.plan || 'trial'
   const currentStatus = STATUS_CONFIG[billingInfo?.status || 'trialing']
   const isActivePaid = billingInfo?.status === 'active' || billingInfo?.status === 'trialing'
-  const canChangePlan = isActivePaid
+  const isCancelled = billingInfo?.status === 'cancelled'
+  const canChangePlan = isActivePaid || isCancelled
 
   const daysUntilTrialEnds = billingInfo?.trialEndsAt
     ? Math.ceil((new Date(billingInfo.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -385,17 +386,17 @@ export default function BillingPage() {
                       onClick={() => setShowUpgradeModal(planKey)}
                       disabled={actionLoading !== null}
                       className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
-                        isUpgrade
+                        isUpgrade || isCancelled
                           ? 'text-white hover:opacity-90'
                           : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                       }`}
-                      style={isUpgrade ? {
+                      style={(isUpgrade || isCancelled) ? {
                         background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                         boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
                       } : undefined}
                     >
-                      {isUpgrade && <ArrowUpRight className="w-4 h-4" />}
-                      {isUpgrade ? 'Upgrade' : 'Downgrade'}
+                      {(isUpgrade || isCancelled) && <ArrowUpRight className="w-4 h-4" />}
+                      {isCancelled ? 'Subscribe' : isUpgrade ? 'Upgrade' : 'Downgrade'}
                     </button>
                   ) : (
                     <div className="w-full py-2.5 px-4 rounded-lg font-medium text-sm text-center bg-gray-100 dark:bg-gray-800 text-gray-400">
