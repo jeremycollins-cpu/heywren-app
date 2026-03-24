@@ -1,14 +1,18 @@
+// app/api/stripe/create-checkout/route.ts
+// Creates Stripe checkout session v2
+// Key change: no longer requires a teamId (team is created AFTER payment in provisioning)
+// Passes userId, plan, joiningTeamId, email, and companyName in Stripe metadata
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { stripe } from '@/lib/stripe/server'
 
 interface CheckoutRequest {
   plan: 'basic' | 'pro' | 'team'
-  email?: string
-  userId?: string
+  joiningTeamId?: string | null
 }
 
-const PRICE_IDS = {
+const PRICE_IDS: Record<string, string> = {
   basic: process.env.STRIPE_BASIC_PRICE_ID!,
   pro: process.env.STRIPE_PRO_PRICE_ID!,
   team: process.env.STRIPE_TEAM_PRICE_ID!,
@@ -16,104 +20,71 @@ const PRICE_IDS = {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as CheckoutRequest
-    const { plan } = body
+    const { plan, joiningTeamId } = (await request.json()) as CheckoutRequest
 
     if (!plan || !['basic', 'pro', 'team'].includes(plan)) {
-      return NextResponse.json(
-        { error: 'Invalid or missing plan' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
     const priceId = PRICE_IDS[plan]
     if (!priceId) {
-      return NextResponse.json(
-        { error: 'Price ID not configured for this plan' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Price ID not configured for this plan' }, { status: 500 })
     }
 
-    // Try server-side auth first
-    let userEmail: string | undefined
-    let userId: string | undefined
-    let teamId: string | undefined
-    let customerId: string | undefined
-
+    // Get current user from session
     const supabase = await createClient()
     const { data: userData } = await supabase.auth.getUser()
-
-    if (userData?.user) {
-      // User is fully authenticated
-      userEmail = userData.user.email || undefined
-      userId = userData.user.id
-
-      // Check for existing team/customer
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userId)
-        .single()
-
-      if (profile?.current_team_id) {
-        teamId = profile.current_team_id
-        const { data: team } = await supabase
-          .from('teams')
-          .select('stripe_customer_id')
-          .eq('id', teamId)
-          .single()
-        customerId = team?.stripe_customer_id || undefined
-      }
-    } else {
-      // Not authenticated yet (signup flow before email confirmation)
-      // Use client-provided email as fallback
-      userEmail = body.email || undefined
-      userId = body.userId || undefined
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    // Create Stripe customer if needed
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: userEmail || undefined,
-        metadata: {
-          userId: userId || 'pending',
-          teamId: teamId || 'pending',
-          plan,
-        },
-      })
-      customerId = customer.id
+    const userId = userData.user.id
+    const userEmail = userData.user.email || ''
+    const fullName = userData.user.user_metadata?.full_name || ''
+    const companyName = userData.user.user_metadata?.company_name || ''
 
-      // Update team with customer ID if team exists
-      if (teamId) {
-        await supabase
-          .from('teams')
-          .update({ stripe_customer_id: customerId })
-          .eq('id', teamId)
-      }
-    }
-
-    // Create checkout session — auto-apply early access coupon
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      mode: 'subscription',
-      discounts: [
-        { coupon: process.env.STRIPE_EARLY_ACCESS_COUPON_ID || 'r6pxCjPz' },
-      ],
-      subscription_data: {
-        metadata: {
-          userId: userId || 'pending',
-          teamId: teamId || 'pending',
-          plan,
-        },
-      },
+    // Create a Stripe customer for this user (not team — team doesn't exist yet for new signups)
+    const customer = await stripe.customers.create({
+      email: userEmail,
+      name: fullName,
       metadata: {
-        userId: userId || 'pending',
-        teamId: teamId || 'pending',
-        plan,
+        userId,
+        supabaseUserId: userId,
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/callback?session_id={CHECKOUT_SESSION_ID}`,
+    })
+
+    // Build metadata — this is what provision-account reads after payment
+    const metadata: Record<string, string> = {
+      userId,
+      plan,
+      email: userEmail,
+      fullName,
+      companyName,
+    }
+
+    // If joining an existing team, include that info
+    if (joiningTeamId) {
+      metadata.joiningTeamId = joiningTeamId
+    }
+
+    // Create checkout session with 14-day trial
+    const session = await stripe.checkout.sessions.create({
+      customer: customer.id,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      metadata,
+      subscription_data: {
+        trial_period_days: 14,
+        metadata,
+      },
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/signup/plan`,
+      allow_promotion_codes: true,
     })
 
     return NextResponse.json({ sessionId: session.id })
