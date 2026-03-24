@@ -487,8 +487,12 @@ export async function POST(request: NextRequest) {
           email: a.emailAddress?.address || '',
           response: a.status?.response || 'none',
         }))
-        const startTime = event.start?.dateTime || ''
-        const endTime = event.end?.dateTime || ''
+        // Graph API returns dateTime without timezone and timeZone separately.
+        // Append 'Z' if the dateTime has no offset, since Graph defaults to UTC for calendarview.
+        const rawStart = event.start?.dateTime || ''
+        const rawEnd = event.end?.dateTime || ''
+        const startTime = rawStart && !rawStart.endsWith('Z') && !rawStart.includes('+') ? rawStart + 'Z' : rawStart
+        const endTime = rawEnd && !rawEnd.endsWith('Z') && !rawEnd.includes('+') ? rawEnd + 'Z' : rawEnd
         const location = event.location?.displayName || ''
 
         // Check if already stored

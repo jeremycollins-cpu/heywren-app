@@ -233,6 +233,18 @@ export default function BriefingsPage() {
         .order('start_time', { ascending: true })
 
       if (!events || events.length === 0) {
+        // Check if Outlook is connected — if so, suggest re-syncing
+        const { data: integration } = await supabase
+          .from('integrations')
+          .select('id')
+          .eq('team_id', teamId)
+          .eq('provider', 'outlook')
+          .maybeSingle()
+
+        if (integration) {
+          setError('no_calendar_data')
+        }
+
         setLoading(false)
         return
       }
@@ -353,7 +365,7 @@ export default function BriefingsPage() {
         </p>
       </div>
 
-      {error && (
+      {error && error !== 'no_calendar_data' && (
         <div role="alert" className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800 dark:text-red-400">
           <span className="font-medium">Error:</span> {error}
         </div>
@@ -366,13 +378,28 @@ export default function BriefingsPage() {
             <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center mb-4">
               <Briefcase className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No upcoming meetings</h3>
-            <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-              Connect your calendar to Slack or Outlook to automatically generate context briefings for your upcoming meetings. HeyWren will surface relevant commitments and relationships for each meeting.
-            </p>
-            <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-              Connect Calendar
-            </a>
+            {error === 'no_calendar_data' ? (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No calendar events synced yet</h3>
+                <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
+                  Your Outlook account is connected, but calendar events haven&apos;t been synced yet.
+                  Go to the Sync page and run an Outlook sync to pull in your upcoming meetings.
+                </p>
+                <a href="/sync" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                  Sync Calendar
+                </a>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No upcoming meetings</h3>
+                <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
+                  Connect your calendar to Slack or Outlook to automatically generate context briefings for your upcoming meetings. HeyWren will surface relevant commitments and relationships for each meeting.
+                </p>
+                <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                  Connect Calendar
+                </a>
+              </>
+            )}
           </div>
         ) : (
           briefings.map((briefing) => {
