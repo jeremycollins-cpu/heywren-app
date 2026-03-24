@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
 
     const userId = userData.user.id
 
-    // Try full update with onboarding columns
+    // Ensure the onboarding_completed column exists
+    await ensureOnboardingColumns()
+
+    // Mark onboarding as completed
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -29,15 +32,10 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Onboarding complete update failed:', error)
-
-      // If columns don't exist (migration 009 not applied), just update timestamp
-      if (error.message?.includes('column') || error.code === '42703') {
-        console.warn('Falling back: onboarding columns missing (run migration 009)')
-        await supabaseAdmin
-          .from('profiles')
-          .update({ updated_at: new Date().toISOString() })
-          .eq('id', userId)
-      }
+      return NextResponse.json(
+        { error: 'Failed to mark onboarding complete: ' + error.message },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ success: true })
@@ -47,5 +45,33 @@ export async function POST(request: NextRequest) {
       { error: err.message || 'Internal server error' },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Ensure the onboarding tracking columns exist on the profiles table.
+ * This handles the case where migration 009 hasn't been applied.
+ */
+async function ensureOnboardingColumns() {
+  try {
+    // Test if the column exists by selecting it
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .select('onboarding_completed')
+      .limit(1)
+
+    if (error && error.message?.includes('onboarding_completed')) {
+      // Column doesn't exist — create it via raw SQL
+      await supabaseAdmin.rpc('exec_sql', {
+        sql: `
+          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;
+          ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_step TEXT;
+        `,
+      })
+    }
+  } catch {
+    // If rpc doesn't exist either, we can't auto-migrate.
+    // Log but don't block — the update will fail with a clear error.
+    console.warn('Could not ensure onboarding columns exist. Migration 009 may need to be applied manually.')
   }
 }
