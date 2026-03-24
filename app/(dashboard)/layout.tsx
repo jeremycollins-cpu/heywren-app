@@ -8,6 +8,7 @@ import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
 import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
 import HelpPanel from '@/components/help-panel'
+import FeatureDiscovery from '@/components/feature-discovery'
 
 function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
   const router = useRouter()
@@ -148,6 +149,9 @@ export default function DashboardLayout({
         onClose={() => setHelpPanelOpen(false)}
         onStartWalkthrough={handleStartWalkthrough}
       />
+
+      {/* Page-specific feature discovery popups */}
+      {!walkthroughOpen && <FeatureDiscovery />}
     </div>
   )
 }

@@ -43,19 +43,19 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   }, [supabase])
 
   const mainLinks = [
-    { href: '/', label: 'Dashboard', icon: BarChart3 },
-    { href: '/commitments', label: 'Commitments', icon: CheckCircle2 },
-    { href: '/relationships', label: 'Relationships', icon: Users },
-    { href: '/coach', label: 'Coach', icon: Brain },
-    { href: '/weekly', label: 'Weekly', icon: Calendar },
-    { href: '/playbooks', label: 'Playbooks', icon: FileText },
-    { href: '/draft-queue', label: 'Draft Queue', icon: Edit },
-    { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning },
-    { href: '/briefings', label: 'Briefings', icon: Briefcase },
-    { href: '/handoff', label: 'Handoff', icon: Hand },
-    { href: '/achievements', label: 'Achievements', icon: Trophy },
-    { href: '/integrations', label: 'Integrations', icon: Zap },
-    { href: '/ideas', label: 'Ideas', icon: Lightbulb },
+    { href: '/', label: 'Dashboard', icon: BarChart3, tourId: 'nav-dashboard' },
+    { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments' },
+    { href: '/relationships', label: 'Relationships', icon: Users, tourId: 'nav-relationships' },
+    { href: '/coach', label: 'Coach', icon: Brain, tourId: 'nav-coach' },
+    { href: '/weekly', label: 'Weekly', icon: Calendar, tourId: 'nav-weekly' },
+    { href: '/playbooks', label: 'Playbooks', icon: FileText, tourId: 'nav-playbooks' },
+    { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue' },
+    { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails' },
+    { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings' },
+    { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff' },
+    { href: '/achievements', label: 'Achievements', icon: Trophy, tourId: 'nav-achievements' },
+    { href: '/integrations', label: 'Integrations', icon: Zap, tourId: 'nav-integrations' },
+    { href: '/ideas', label: 'Ideas', icon: Lightbulb, tourId: 'nav-ideas' },
   ]
 
   const adminLinks = [
@@ -91,7 +91,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         <div className="h-screen flex flex-col">
           {/* Logo */}
           <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200 dark:border-border-dark">
-            <Link href="/" className="flex items-center group">
+            <Link href="/" className="flex items-center group" data-tour="logo">
               <WrenFullLogo width={110} />
             </Link>
             <button
@@ -106,12 +106,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           {/* Navigation */}
           <nav aria-label="Main navigation" className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
             <ul role="list" className="space-y-0.5">
-            {mainLinks.map(({ href, label, icon: Icon }) => {
+            {mainLinks.map(({ href, label, icon: Icon, tourId }) => {
               const active = isActive(href)
               return (
                 <li key={href}>
                 <Link
                   href={href}
+                  data-tour={tourId}
                   onClick={() => open && onToggle()}
                   aria-current={active ? 'page' : undefined}
                   className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${

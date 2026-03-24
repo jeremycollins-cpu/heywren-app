@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { X, HelpCircle, Lightbulb, MessageSquare, ExternalLink } from 'lucide-react'
 import { resetWalkthrough } from './walkthrough'
+import { resetFeatureDiscovery } from './feature-discovery'
 
 interface HelpTip {
   title: string
@@ -313,6 +314,18 @@ export default function HelpPanel({ open, onClose, onStartWalkthrough }: HelpPan
             >
               <Lightbulb className="w-4 h-4" />
               Take a Tour
+            </button>
+
+            <button
+              onClick={() => {
+                resetFeatureDiscovery()
+                onClose()
+                window.location.reload()
+              }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-200 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium text-sm"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Restart Page Guides
             </button>
 
             <a
