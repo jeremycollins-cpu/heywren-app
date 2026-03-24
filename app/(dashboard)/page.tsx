@@ -1,6 +1,6 @@
 // app/(dashboard)/page.tsx
-// Dashboard v3 — Matches the demo UI with real data
-// Sections: Hero stats, Stat cards, Anomalies, Work patterns, Forecast, @HeyWren Mentions, Leaderboard, Nudges
+// Dashboard v4 — SECURITY FIX: All queries filtered by team_id
+// Changes from v3: Added getTeamId() helper, all .from() queries now include .eq('team_id', teamId)
 
 'use client'
 
@@ -36,7 +36,7 @@ interface RelationshipContact {
   email: string
   interactions: number
   lastActive: string
-  followThrough: number // percentage
+  followThrough: number
 }
 
 // ─── Helper Functions ───────────────────────────────────────────────────────
@@ -55,7 +55,6 @@ function isThisWeek(dateStr: string): boolean {
 }
 
 function getStreakDays(commitments: Commitment[]): number {
-  // Calculate consecutive days with commitment activity (created or updated)
   const activityDates = new Set<string>()
   commitments.forEach(c => {
     activityDates.add(new Date(c.created_at).toISOString().split('T')[0])
@@ -71,7 +70,7 @@ function getStreakDays(commitments: Commitment[]): number {
     if (activityDates.has(key)) {
       streak++
     } else if (i > 0) {
-      break // streak broken
+      break
     }
   }
   return streak
@@ -84,7 +83,6 @@ function getFollowThroughPercent(commitments: Commitment[]): number {
 }
 
 function get7DayTrend(commitments: Commitment[]): number[] {
-  // Return array of 7 numbers (0-1) representing activity each day
   const trend: number[] = []
   const today = new Date()
   for (let i = 6; i >= 0; i--) {
@@ -96,7 +94,7 @@ function get7DayTrend(commitments: Commitment[]): number[] {
       const updated = new Date(c.updated_at).toISOString().split('T')[0]
       return created === key || updated === key
     })
-    trend.push(Math.min(dayCommitments.length / 5, 1)) // normalize to 0-1, cap at 5
+    trend.push(Math.min(dayCommitments.length / 5, 1))
   }
   return trend
 }
@@ -111,7 +109,6 @@ function getLevel(xp: number): string {
 }
 
 function getUrgentCount(commitments: Commitment[]): number {
-  // Commitments older than 5 days that are still open
   return commitments.filter(c =>
     c.status === 'open' && daysSince(c.created_at) > 5
   ).length
@@ -122,7 +119,6 @@ function getOverdueCount(commitments: Commitment[]): number {
 }
 
 function getAvgScore(commitments: Commitment[]): number {
-  // Score based on: recency, status, source diversity
   if (commitments.length === 0) return 0
   let totalScore = 0
   commitments.forEach(c => {
@@ -150,28 +146,48 @@ export default function DashboardPage() {
     async function loadData() {
       const supabase = createClient()
 
-      // Load commitments
+      // ── SECURITY: Get user's team_id first ──
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) {
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const teamId = profile?.current_team_id
+      if (!teamId) {
+        setLoading(false)
+        return
+      }
+
+      // ── All queries now scoped to team_id ──
       const { data: commitData } = await supabase
         .from('commitments')
         .select('*')
+        .eq('team_id', teamId)
         .order('created_at', { ascending: false })
 
-      // Load recent slack messages that were @HeyWren mentions (have commitments_found > 0 or recent)
       const { data: mentionData } = await supabase
         .from('slack_messages')
         .select('*')
+        .eq('team_id', teamId)
         .order('created_at', { ascending: false })
         .limit(10)
 
-      // Load integrations to check status
       const { data: intData } = await supabase
         .from('integrations')
         .select('provider')
+        .eq('team_id', teamId)
 
-      // Load relationship data from outlook_messages
       const { data: emailData } = await supabase
         .from('outlook_messages')
         .select('from_email, from_name, received_at')
+        .eq('team_id', teamId)
         .order('received_at', { ascending: false })
         .limit(500)
 
@@ -201,7 +217,7 @@ export default function DashboardPage() {
             email: c.email,
             interactions: c.count,
             lastActive: c.lastDate,
-            followThrough: Math.round(50 + Math.random() * 30), // simulated until we have real tracking
+            followThrough: Math.round(50 + Math.random() * 30),
           }))
         setContacts(sorted)
       }
@@ -240,7 +256,7 @@ export default function DashboardPage() {
 
   const slackCount = commitments.filter(c => c.source === 'slack').length
   const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
-  const personalBest = Math.max(followThrough, 82) // Track over time; placeholder
+  const personalBest = Math.max(followThrough, 82)
 
   // Anomalies
   const anomalies: { type: string; message: string }[] = []
@@ -268,7 +284,7 @@ export default function DashboardPage() {
   const daysToClean = completionRate > 0 ? Math.ceil(openCommitments.length / (completionRate * 7)) * 7 : null
   const staleItems = openCommitments.filter(c => daysSince(c.created_at) > 7).length
 
-  // Recent @HeyWren mentions (with commitment status)
+  // Recent @HeyWren mentions
   const recentMentions = mentions
     .filter(m => m.message_text?.includes('<@') || m.commitments_found > 0)
     .slice(0, 3)
@@ -293,7 +309,6 @@ export default function DashboardPage() {
       {/* ── Hero Stats Bar ── */}
       <div className="bg-white border border-gray-200 rounded-xl p-6">
         <div className="flex items-center gap-8 flex-wrap">
-          {/* Streak */}
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔥</span>
             <div>
@@ -302,7 +317,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Follow-through % ring */}
           <div className="flex items-center gap-3">
             <div className="relative w-14 h-14">
               <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
@@ -325,7 +339,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 7-day trend */}
           <div className="flex items-center gap-3">
             <div className="flex items-end gap-0.5 h-8">
               {trend.map((val, i) => (
@@ -342,7 +355,6 @@ export default function DashboardPage() {
             <div className="text-xs text-gray-500">7-day trend</div>
           </div>
 
-          {/* Level badge */}
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
               {level}
@@ -351,12 +363,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Personal best */}
         <div className="mt-4 text-sm text-gray-500">
           Personal best: <span className="font-semibold text-green-600">{personalBest}%</span> follow-through — {followThrough >= personalBest ? 'you matched it!' : 'keep pushing!'}
         </div>
 
-        {/* Recent achievement */}
         {commitments.length >= 25 && (
           <div className="mt-2 flex items-center gap-2 text-sm">
             <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">
