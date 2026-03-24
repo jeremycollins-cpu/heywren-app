@@ -11,6 +11,13 @@ export interface DetectedCommitment {
   dueDate?: string
   priority: 'high' | 'medium' | 'low'
   confidence: number
+  // Enriched context fields (from enhanced Tier 3 extraction)
+  urgency?: 'low' | 'medium' | 'high' | 'critical'
+  tone?: 'casual' | 'professional' | 'urgent' | 'demanding'
+  commitmentType?: 'deliverable' | 'meeting' | 'follow_up' | 'decision' | 'review' | 'request'
+  stakeholders?: Array<{ name: string; role: 'owner' | 'assignee' | 'stakeholder' }>
+  originalQuote?: string
+  channelOrThread?: string
 }
 
 // ============================================================
@@ -161,26 +168,35 @@ async function haiku_triage(text: string): Promise<boolean> {
 async function sonnet_analyze(text: string): Promise<DetectedCommitment[]> {
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    system: `You detect commitments, promises, and action items in messages.
+    max_tokens: 2048,
+    system: `You detect commitments, promises, and action items in messages. Extract rich context to make each commitment actionable and understandable at a glance.
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "commitments": [
     {
-      "title": "short task title",
-      "description": "what was committed to",
-      "assignee": "person name if mentioned",
+      "title": "concise but specific task title (include WHO and WHAT, e.g. 'Sarah to send Q3 budget report to finance team')",
+      "description": "2-3 sentence description with full context: what exactly was promised, why it matters, and any conditions or dependencies mentioned",
+      "assignee": "person name who owns the commitment (if mentioned)",
       "dueDate": "ISO date if mentioned, null otherwise",
       "priority": "high|medium|low",
-      "confidence": 0.0-1.0
+      "confidence": 0.0-1.0,
+      "urgency": "low|medium|high|critical — based on language cues (ASAP=critical, 'when you get a chance'=low, explicit deadlines=high)",
+      "tone": "casual|professional|urgent|demanding — the tone of the original request/commitment",
+      "commitmentType": "deliverable|meeting|follow_up|decision|review|request — what kind of commitment this is",
+      "stakeholders": [{"name": "person name", "role": "owner|assignee|stakeholder"}],
+      "originalQuote": "the exact sentence(s) from the message that contain the commitment — keep it short, max 200 chars"
     }
   ]
 }
 
-Look for: promises to do something, deadlines, action items, follow-ups, requests.
-If no commitments: {"commitments": []}
-Only include items with confidence >= 0.5.`,
+Guidelines:
+- Title should be specific enough to understand without reading the full message. Bad: "Look into the issue". Good: "Mike to investigate payment gateway timeout errors reported by Acme Corp".
+- Description should explain the business context, not just restate the title.
+- originalQuote must be a direct excerpt from the source message, not a paraphrase.
+- stakeholders should include anyone mentioned as involved (the person committing, the person they're committing to, anyone CC'd or referenced).
+- If no commitments: {"commitments": []}
+- Only include items with confidence >= 0.5.`,
     messages: [{ role: 'user', content: `Analyze for commitments:\n\n"${text}"` }],
   })
 
@@ -300,18 +316,23 @@ export async function detectCommitmentsBatch(
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: `You detect commitments in batched messages. Each message is numbered [1], [2], etc.
+      max_tokens: 8192,
+      system: `You detect commitments in batched messages. Each message is numbered [1], [2], etc. Extract rich context for each commitment.
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "results": {
-    "1": [{"title": "...", "description": "...", "assignee": "...", "dueDate": null, "priority": "medium", "confidence": 0.8}],
+    "1": [{"title": "concise but specific (include WHO and WHAT)", "description": "2-3 sentences with full context", "assignee": "person name", "dueDate": null, "priority": "medium", "confidence": 0.8, "urgency": "low|medium|high|critical", "tone": "casual|professional|urgent|demanding", "commitmentType": "deliverable|meeting|follow_up|decision|review|request", "stakeholders": [{"name": "...", "role": "owner|assignee|stakeholder"}], "originalQuote": "exact excerpt from the message, max 200 chars"}],
     "2": [],
     "3": [...]
   }
 }
 
+Guidelines:
+- Title should be specific enough to understand without the source message. Bad: "Look into the issue". Good: "Mike to investigate payment gateway timeout errors".
+- Description should explain the business context.
+- originalQuote must be a direct excerpt from the source, not a paraphrase.
+- stakeholders: include anyone mentioned as involved.
 Keys are the message numbers. Values are arrays of commitments found.
 Only include commitments with confidence >= 0.5. Empty array if none found.`,
       messages: [

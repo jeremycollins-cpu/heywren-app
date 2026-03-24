@@ -1,6 +1,16 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore, DetectedCommitment } from '@/lib/ai/detect-commitments'
+
+function buildCommitmentMetadata(commitment: DetectedCommitment): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {}
+  if (commitment.urgency) metadata.urgency = commitment.urgency
+  if (commitment.tone) metadata.tone = commitment.tone
+  if (commitment.commitmentType) metadata.commitmentType = commitment.commitmentType
+  if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
+  if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
+  return metadata
+}
 
 const MAX_MESSAGES_PER_RUN = 100
 const TIME_BUDGET_MS = 240000
@@ -118,13 +128,13 @@ async function syncTeamOutlook(
   // Phase 1: Process unprocessed stored messages
   const { data: unprocessed } = await supabase
     .from('outlook_messages')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link')
     .eq('team_id', teamId)
     .eq('processed', false)
     .limit(MAX_MESSAGES_PER_RUN)
 
   if (unprocessed && unprocessed.length > 0) {
-    const batch: Array<{ id: string; text: string; dbId: string }> = []
+    const batch: Array<{ id: string; text: string; dbId: string; webLink?: string }> = []
 
     for (const msg of unprocessed) {
       const preview = msg.body_preview || ''
@@ -146,7 +156,7 @@ async function syncTeamOutlook(
         preview,
       ].join('\n')
 
-      batch.push({ id: msg.message_id, text: messageText, dbId: msg.id })
+      batch.push({ id: msg.message_id, text: messageText, dbId: msg.id, webLink: msg.web_link || undefined })
     }
 
     for (let i = 0; i < batch.length; i += 15) {
@@ -168,6 +178,8 @@ async function syncTeamOutlook(
               priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
+              source_url: item.webLink || null,
+              metadata: buildCommitmentMetadata(commitment),
             })
             if (!commitErr) totalCommitments++
           }
@@ -187,7 +199,7 @@ async function syncTeamOutlook(
   if (Date.now() - startTime < TIME_BUDGET_MS) {
     const oldestDate = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
     const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
-    const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead'
+    const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead,webLink'
     let nextLink: string | null =
       `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
 
@@ -200,7 +212,7 @@ async function syncTeamOutlook(
       if (pageData.error) break
 
       const emails = pageData.value || []
-      const batch: Array<{ id: string; text: string; dbId: string }> = []
+      const batch: Array<{ id: string; text: string; dbId: string; webLink?: string }> = []
 
       for (const email of emails) {
         totalEmails++
@@ -258,7 +270,7 @@ async function syncTeamOutlook(
         }
 
         totalNewEmails++
-        batch.push({ id: email.id, text: messageText, dbId })
+        batch.push({ id: email.id, text: messageText, dbId, webLink: email.webLink || undefined })
       }
 
       if (batch.length > 0) {
@@ -275,8 +287,11 @@ async function syncTeamOutlook(
                 title: commitment.title || 'Untitled commitment',
                 description: commitment.description || null,
                 status: 'open',
+                priority_score: calculatePriorityScore(commitment),
                 source: 'outlook',
                 source_ref: item.dbId,
+                source_url: item.webLink || null,
+                metadata: buildCommitmentMetadata(commitment),
               })
               if (!commitErr) totalCommitments++
             }
@@ -410,6 +425,7 @@ async function syncTeamOutlook(
                 priority_score: calculatePriorityScore(commitment),
                 source: 'calendar',
                 source_ref: item.dbId,
+                metadata: buildCommitmentMetadata(commitment),
               })
               if (!commitErr) {
                 calendarCommitments++

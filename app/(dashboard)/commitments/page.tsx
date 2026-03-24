@@ -1,13 +1,25 @@
 // app/(dashboard)/commitments/page.tsx
-// Commitment Tracing v5 — ALL REAL DATA, zero mock/placeholder content
-// Changes from v4: Removed simulated intermediate timeline events
-// Timeline now shows only real events: origin (created) and current state
+// Commitment Tracing v6 — Rich context cards with deep links, urgency, stakeholders, and original quotes
 
 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+
+interface CommitmentStakeholder {
+  name: string
+  role: 'owner' | 'assignee' | 'stakeholder'
+}
+
+interface CommitmentMetadata {
+  urgency?: 'low' | 'medium' | 'high' | 'critical'
+  tone?: 'casual' | 'professional' | 'urgent' | 'demanding'
+  commitmentType?: 'deliverable' | 'meeting' | 'follow_up' | 'decision' | 'review' | 'request'
+  stakeholders?: CommitmentStakeholder[]
+  originalQuote?: string
+  channelName?: string
+}
 
 interface Commitment {
   id: string
@@ -16,6 +28,8 @@ interface Commitment {
   status: string
   source: string | null
   source_ref: string | null
+  source_url: string | null
+  metadata: CommitmentMetadata | null
   created_at: string
   updated_at: string
 }
@@ -46,55 +60,45 @@ function getCommitmentStatus(c: Commitment): { label: string; color: string; bgC
   return { label: 'ACTIVE', color: 'text-green-700 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30' }
 }
 
-function getSourceBadge(source: string | null): { label: string; color: string } {
+function getSourceBadge(source: string | null): { label: string; color: string; icon: string } {
   switch (source) {
-    case 'slack': return { label: 'Slack', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' }
-    case 'outlook': case 'email': return { label: 'Email', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' }
-    case 'meeting': return { label: 'Meeting', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' }
-    default: return { label: 'Manual', color: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400' }
+    case 'slack': return { label: 'Slack', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', icon: '#' }
+    case 'outlook': case 'email': return { label: 'Email', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', icon: '@' }
+    case 'meeting': case 'calendar': return { label: 'Calendar', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', icon: '\u{1F4C5}' }
+    default: return { label: 'Manual', color: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400', icon: '+' }
   }
 }
 
-function buildTimeline(c: Commitment): Array<{ date: string; source: string; text: string; isCurrent: boolean }> {
-  const events: Array<{ date: string; source: string; text: string; isCurrent: boolean }> = []
-  const createdDate = new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const sourceBadge = getSourceBadge(c.source)
-  const age = daysSince(c.created_at)
-
-  // Origin event (real — from created_at)
-  events.push({
-    date: createdDate,
-    source: sourceBadge.label,
-    text: c.source === 'slack'
-      ? 'Captured from Slack conversation'
-      : c.source === 'outlook' || c.source === 'email'
-        ? 'Detected in email thread'
-        : c.source === 'meeting'
-          ? 'Captured from meeting'
-          : 'Manually created',
-    isCurrent: false,
-  })
-
-  // Current state (real — computed from actual status and age)
-  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  if (c.status === 'completed') {
-    const completedDate = new Date(c.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    events.push({
-      date: completedDate,
-      source: 'Resolved',
-      text: 'Marked as completed',
-      isCurrent: true,
-    })
-  } else if (age > 0) {
-    events.push({
-      date: today,
-      source: 'Now',
-      text: `Open for ${age} day${age !== 1 ? 's' : ''}. ${getCommitmentStatus(c).label}.`,
-      isCurrent: true,
-    })
+function getUrgencyConfig(urgency?: string): { label: string; color: string; dotColor: string } | null {
+  switch (urgency) {
+    case 'critical': return { label: 'Critical', color: 'text-red-600 dark:text-red-400', dotColor: 'bg-red-500' }
+    case 'high': return { label: 'High', color: 'text-orange-600 dark:text-orange-400', dotColor: 'bg-orange-500' }
+    case 'medium': return { label: 'Medium', color: 'text-yellow-600 dark:text-yellow-400', dotColor: 'bg-yellow-500' }
+    case 'low': return { label: 'Low', color: 'text-gray-500 dark:text-gray-400', dotColor: 'bg-gray-400' }
+    default: return null
   }
+}
 
-  return events
+function getCommitmentTypeLabel(type?: string): string | null {
+  switch (type) {
+    case 'deliverable': return 'Deliverable'
+    case 'meeting': return 'Meeting'
+    case 'follow_up': return 'Follow-up'
+    case 'decision': return 'Decision'
+    case 'review': return 'Review'
+    case 'request': return 'Request'
+    default: return null
+  }
+}
+
+function getToneLabel(tone?: string): string | null {
+  switch (tone) {
+    case 'demanding': return 'Demanding tone'
+    case 'urgent': return 'Urgent tone'
+    case 'professional': return null // Don't show — it's the default
+    case 'casual': return null
+    default: return null
+  }
 }
 
 export default function CommitmentsPage() {
@@ -108,7 +112,6 @@ export default function CommitmentsPage() {
       try {
         const supabase = createClient()
 
-        // ── SECURITY: Get user's team_id first ──
         const { data: userData } = await supabase.auth.getUser()
         if (!userData?.user) {
           setLoading(false)
@@ -211,8 +214,8 @@ export default function CommitmentsPage() {
       {/* Commitment Trace Cards */}
       {displayedCommitments.length === 0 ? (
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
-          <div className="text-3xl mb-3">
-            {activeTab === 'active' ? '✅' : activeTab === 'completed' ? '📋' : '💬'}
+          <div className="text-3xl mb-3" aria-hidden="true">
+            {activeTab === 'active' ? '\u2705' : activeTab === 'completed' ? '\u{1F4CB}' : '\u{1F4AC}'}
           </div>
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
             {activeTab === 'active' ? 'No active commitments' : activeTab === 'completed' ? 'No completed commitments yet' : 'No @HeyWren mentions yet'}
@@ -230,71 +233,125 @@ export default function CommitmentsPage() {
           {displayedCommitments.map(c => {
             const score = getCommitmentScore(c)
             const status = getCommitmentStatus(c)
-            const timeline = buildTimeline(c)
             const age = daysSince(c.created_at)
-            const scoreColor = score >= 70 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700' : score >= 50 ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700'
+            const sourceBadge = getSourceBadge(c.source)
+            const meta = c.metadata || {}
+            const urgency = getUrgencyConfig(meta.urgency)
+            const commitmentType = getCommitmentTypeLabel(meta.commitmentType)
+            const toneNote = getToneLabel(meta.tone)
+            const scoreColor = score >= 70
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700'
+              : score >= 50
+              ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700'
+              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700'
 
             return (
               <div key={c.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-1">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">{c.title}</h3>
-                  {c.status !== 'completed' && (
-                    <button
-                      onClick={() => updateStatus(c.id, 'completed')}
-                      className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium"
-                    >
-                      Mark Complete
-                    </button>
-                  )}
+                {/* Row 1: Header with title + actions */}
+                <div className="flex items-start justify-between gap-4 mb-2">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-snug">{c.title}</h3>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {c.source_url && (
+                      <a
+                        href={c.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-medium transition-colors"
+                      >
+                        View in {sourceBadge.label}
+                      </a>
+                    )}
+                    {c.status !== 'completed' && (
+                      <button
+                        onClick={() => updateStatus(c.id, 'completed')}
+                        className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium transition-colors"
+                      >
+                        Mark Complete
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Score + Status + Age */}
-                <div className="flex items-center gap-2 mb-4">
+                {/* Row 2: Badges — score, status, urgency, type, source, age */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
                   <span className={`px-2 py-0.5 rounded border text-xs font-bold ${scoreColor}`}>
                     Score: {score}
                   </span>
                   <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.bgColor} ${status.color}`}>
                     {status.label}
                   </span>
+                  {urgency && (
+                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 ${urgency.color}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${urgency.dotColor}`} aria-hidden="true" />
+                      {urgency.label} urgency
+                    </span>
+                  )}
+                  {commitmentType && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                      {commitmentType}
+                    </span>
+                  )}
+                  {toneNote && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+                      {toneNote}
+                    </span>
+                  )}
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceBadge.color}`}>
+                    {sourceBadge.label}
+                  </span>
                   <span className="text-xs text-gray-400">{age} day{age !== 1 ? 's' : ''}</span>
                 </div>
 
-                {/* Description if exists */}
+                {/* Row 3: Description */}
                 {c.description && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{c.description}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">{c.description}</p>
                 )}
 
-                {/* Timeline (real events only) */}
-                <div className="ml-2 space-y-0">
-                  {timeline.map((event, i) => (
-                    <div key={i} className="flex items-start gap-3 relative">
-                      {i < timeline.length - 1 && (
-                        <div className="absolute left-[7px] top-4 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
-                      )}
-                      <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex-shrink-0 z-10 ${
-                        event.isCurrent
-                          ? 'bg-indigo-500 border-indigo-500'
-                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
-                      }`} />
-                      <div className="pb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400">{event.date}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                            event.source === 'Slack' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' :
-                            event.source === 'Email' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
-                            event.source === 'Meeting' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' :
-                            event.source === 'Resolved' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                            event.source === 'Now' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400' :
-                            'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            {event.source}
+                {/* Row 4: Original quote (if available) */}
+                {meta.originalQuote && (
+                  <div className="border-l-3 border-gray-300 dark:border-gray-600 pl-3 mb-3">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 italic leading-relaxed">
+                      &ldquo;{meta.originalQuote}&rdquo;
+                    </p>
+                  </div>
+                )}
+
+                {/* Row 5: Stakeholders + Source origin line */}
+                <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-3">
+                    {/* Stakeholders */}
+                    {meta.stakeholders && meta.stakeholders.length > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        {meta.stakeholders.map((s, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                              s.role === 'owner'
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400'
+                                : s.role === 'assignee'
+                                ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                            }`}
+                          >
+                            <span className="w-4 h-4 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-[10px] text-white font-bold" aria-hidden="true">
+                              {s.name.charAt(0).toUpperCase()}
+                            </span>
+                            {s.name}
+                            {s.role === 'owner' && <span className="text-[10px] opacity-60">owner</span>}
+                            {s.role === 'assignee' && <span className="text-[10px] opacity-60">assigned</span>}
                           </span>
-                        </div>
-                        <div className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{event.text}</div>
+                        ))}
                       </div>
-                    </div>
-                  ))}
+                    ) : null}
+                  </div>
+
+                  {/* Origin timestamp */}
+                  <div className="flex items-center gap-2 text-xs text-gray-400 flex-shrink-0">
+                    <span>{new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${sourceBadge.color}`}>
+                      {sourceBadge.label}
+                    </span>
+                  </div>
                 </div>
               </div>
             )

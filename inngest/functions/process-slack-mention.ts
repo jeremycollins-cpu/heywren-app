@@ -254,8 +254,20 @@ export const processSlackMention = inngest.createFunction(
         return []
       }
 
+      // Build Slack permalink for deep linking
+      const slackPermalink = channel_id && ts
+        ? `https://slack.com/archives/${channel_id}/p${ts.replace('.', '')}`
+        : null
+
       const results = await Promise.all(
         detected.map(async (commitment) => {
+          const metadata: Record<string, unknown> = {}
+          if (commitment.urgency) metadata.urgency = commitment.urgency
+          if (commitment.tone) metadata.tone = commitment.tone
+          if (commitment.commitmentType) metadata.commitmentType = commitment.commitmentType
+          if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
+          if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
+
           // Full insert with correct columns and enum values
           const { data, error } = await supabase
             .from('commitments')
@@ -268,6 +280,8 @@ export const processSlackMention = inngest.createFunction(
               priority_score: calculatePriorityScore(commitment),
               source: 'slack', // matches commitment_source enum
               source_ref: messageRecord?.id || ts, // NOT 'source_message_id'
+              source_url: slackPermalink,
+              metadata,
             })
             .select('id, title')
             .single()
