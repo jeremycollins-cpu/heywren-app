@@ -4,6 +4,13 @@ import { stripe } from '@/lib/stripe/server'
 
 export async function POST(request: NextRequest) {
   try {
+    // Origin validation to prevent CSRF
+    const origin = request.headers.get('origin')
+    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
+    if (origin && allowedOrigin && origin !== allowedOrigin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { teamId } = await request.json()
 
     if (!teamId) {
@@ -20,6 +27,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      )
+    }
+
+    // Verify user is a member of the team with billing access (owner or admin)
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('role')
+      .eq('team_id', teamId)
+      .eq('user_id', userData.user.id)
+      .single()
+
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return NextResponse.json(
+        { error: 'Forbidden: insufficient permissions for billing access' },
+        { status: 403 }
       )
     }
 

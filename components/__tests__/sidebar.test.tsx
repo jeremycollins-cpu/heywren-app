@@ -52,6 +52,7 @@ jest.mock('lucide-react', () => {
     CreditCard: createIcon('CreditCard'),
     Lightbulb: createIcon('Lightbulb'),
     HelpCircle: createIcon('HelpCircle'),
+    MailWarning: createIcon('MailWarning'),
   }
 })
 
@@ -107,6 +108,7 @@ describe('Sidebar', () => {
         'Weekly',
         'Playbooks',
         'Draft Queue',
+        'Missed Emails',
         'Briefings',
         'Handoff',
         'Achievements',

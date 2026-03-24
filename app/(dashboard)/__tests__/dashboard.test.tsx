@@ -122,7 +122,7 @@ describe('DashboardPage', () => {
       render(<DashboardPage />)
 
       expect(await screen.findByText('Welcome to HeyWren')).toBeInTheDocument()
-      expect(screen.getByText('Connect your first tool')).toBeInTheDocument()
+      expect(screen.getByText('Connect a tool to get started')).toBeInTheDocument()
       expect(screen.getByText('Connect Slack or Outlook')).toBeInTheDocument()
     })
 

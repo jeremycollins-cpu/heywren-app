@@ -46,6 +46,7 @@ const ACTION_TYPES = Object.keys(ACTION_LABELS)
 export default function PlaybooksPage() {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [teamId, setTeamId] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -62,43 +63,52 @@ export default function PlaybooksPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
+      try {
+        const supabase = createClient()
 
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) {
-        setLoading(false)
-        return
-      }
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
 
-      setUserId(userData.user.id)
+        setUserId(userData.user.id)
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
 
-      const tid = profile?.current_team_id
-      if (!tid) {
-        setLoading(false)
-        return
-      }
+        const tid = profile?.current_team_id
+        if (!tid) {
+          setLoading(false)
+          return
+        }
 
-      setTeamId(tid)
+        setTeamId(tid)
 
-      const { data, error } = await supabase
-        .from('playbooks')
-        .select('*')
-        .eq('team_id', tid)
-        .order('created_at', { ascending: false })
+        const { data, error: fetchError } = await supabase
+          .from('playbooks')
+          .select('*')
+          .eq('team_id', tid)
+          .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Error fetching playbooks:', error)
+        if (fetchError) {
+          console.error('Error fetching playbooks:', fetchError)
+          setError('Failed to load playbooks. Please try again.')
+          toast.error('Failed to load playbooks')
+        }
+
+        if (data) setPlaybooks(data)
+      } catch (err) {
+        console.error('Error loading playbooks:', err)
+        const message = err instanceof Error ? err.message : 'Failed to load playbooks'
+        setError(message)
         toast.error('Failed to load playbooks')
+      } finally {
+        setLoading(false)
       }
-
-      if (data) setPlaybooks(data)
-      setLoading(false)
     }
     load()
   }, [])
@@ -214,6 +224,13 @@ export default function PlaybooksPage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm font-medium">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Playbooks</h1>

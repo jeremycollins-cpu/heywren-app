@@ -59,9 +59,24 @@ export default function AchievementsPage() {
     async function load() {
       try {
       const supabase = createClient()
+
+      // Get authenticated user and their current team
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) { setLoading(false); return }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const teamId = profile?.current_team_id
+      if (!teamId) { setLoading(false); return }
+
       const { data: commitments } = await supabase
         .from('commitments')
         .select('id, status, source, created_at, updated_at')
+        .eq('team_id', teamId)
         .order('created_at', { ascending: false })
 
       if (!commitments) { setLoading(false); return }

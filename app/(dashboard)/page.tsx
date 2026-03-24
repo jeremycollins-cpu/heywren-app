@@ -74,15 +74,108 @@ export default function DashboardPage() {
 
   if (commitments.length === 0 && mentions.length === 0 && integrationCount === 0) {
     return (
-      <div className="p-6 max-w-[1200px] mx-auto space-y-6">
-        <PageHeader title="Welcome to HeyWren" description="Let's get you set up" />
-        <EmptyState
-          icon="🐦"
-          title="Connect your first tool"
-          description="Wren watches your Slack messages and Outlook emails to automatically detect commitments and track follow-through. Connect a tool to get started."
-          actionLabel="Connect Slack or Outlook"
-          actionHref="/integrations"
-        />
+      <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
+        <PageHeader title="Welcome to HeyWren" description="Let's get your AI follow-through engine running" />
+
+        {/* Getting Started Hero */}
+        <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+              <span className="text-3xl text-white" aria-hidden="true">W</span>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Connect a tool to get started</h2>
+            <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+              Wren watches your Slack messages and Outlook emails to automatically detect commitments. Connect your first tool and results appear within minutes.
+            </p>
+          </div>
+
+          {/* Quick value props */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-4 text-center">
+              <p className="text-2xl mb-1" aria-hidden="true">1</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Connect Slack or Email</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Takes less than 60 seconds</p>
+            </div>
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-4 text-center">
+              <p className="text-2xl mb-1" aria-hidden="true">2</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Wren scans your messages</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">AI finds promises and follow-ups</p>
+            </div>
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-4 text-center">
+              <p className="text-2xl mb-1" aria-hidden="true">3</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Never drop the ball</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Get nudges before things slip</p>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <a
+              href="/integrations"
+              className="inline-flex items-center gap-2 px-6 py-3 text-white font-semibold rounded-xl text-sm transition hover:opacity-90"
+              style={{
+                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                boxShadow: '0 8px 24px rgba(79, 70, 229, 0.3)',
+              }}
+            >
+              Connect Slack or Outlook
+            </a>
+          </div>
+        </div>
+
+        {/* Quick Tips */}
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Quick tips to get value faster</h3>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold flex-shrink-0" aria-hidden="true">1</span>
+              <p className="text-sm text-gray-600 dark:text-gray-400"><span className="font-medium text-gray-900 dark:text-white">Connect both Slack and email</span> for a complete picture of your commitments across all channels.</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold flex-shrink-0" aria-hidden="true">2</span>
+              <p className="text-sm text-gray-600 dark:text-gray-400"><span className="font-medium text-gray-900 dark:text-white">Select your most active Slack channels</span> so Wren focuses on conversations that matter most.</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center text-xs font-bold flex-shrink-0" aria-hidden="true">3</span>
+              <p className="text-sm text-gray-600 dark:text-gray-400"><span className="font-medium text-gray-900 dark:text-white">Rate alerts as helpful or not</span> to train Wren on what matters to you.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (commitments.length === 0 && integrationCount > 0) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
+        <PageHeader title="Wren is scanning your messages..." description={`${integrationCount} tool${integrationCount > 1 ? 's' : ''} connected`} />
+        <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-8 text-center">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Analyzing your conversations</h3>
+          <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6">
+            Wren is reading through your recent Slack messages and emails to find commitments, questions, and follow-ups. Your first results typically appear within minutes.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto text-left">
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-3">
+              <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Step 1</p>
+              <p className="text-sm text-gray-700 dark:text-gray-300">Scanning messages</p>
+            </div>
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-400">Step 2</p>
+              <p className="text-sm text-gray-500">Detecting commitments</p>
+            </div>
+            <div className="bg-white/80 dark:bg-white/10 rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-400">Step 3</p>
+              <p className="text-sm text-gray-500">Building your score</p>
+            </div>
+          </div>
+        </div>
+        <div className="text-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            This page auto-refreshes. You can also check back in a few minutes.
+          </p>
+        </div>
       </div>
     )
   }

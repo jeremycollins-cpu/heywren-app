@@ -168,15 +168,35 @@ export default function MissedEmailsPage() {
 
   async function triggerScan() {
     setScanning(true)
+    setError(null)
     try {
-      // This would trigger the Inngest function via API
-      // For now, just refresh the data
+      // Trigger an actual scan via the API
+      const scanRes = await fetch('/api/missed-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (!scanRes.ok) {
+        const scanData = await scanRes.json().catch(() => ({}))
+        // If POST is not supported (e.g. 405), fall back to refreshing data
+        if (scanRes.status === 405) {
+          await loadEmails()
+          toast.success('Refreshed missed emails')
+          return
+        }
+        throw new Error(scanData.error || 'Failed to trigger scan')
+      }
+
+      toast.success('Scan triggered — refreshing results...')
+      // Reload the data after triggering the scan
       await loadEmails()
-      toast.success('Refreshed missed emails')
-    } catch {
-      toast.error('Failed to scan')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to scan'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setScanning(false)
     }
-    setScanning(false)
   }
 
   const filteredEmails = filter === 'all'

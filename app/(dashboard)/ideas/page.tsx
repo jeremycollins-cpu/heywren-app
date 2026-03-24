@@ -43,6 +43,7 @@ export default function IdeasPage() {
   const [filteredIdeas, setFilteredIdeas] = useState<FeatureRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [teamId, setTeamId] = useState<string | null>(null)
 
   // Form state
   const [title, setTitle] = useState('')
@@ -55,25 +56,37 @@ export default function IdeasPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
 
-  // Fetch user
+  // Fetch user and their current team
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser()
       if (data?.user) {
         setUserId(data.user.id)
+        // Get user's current team
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', data.user.id)
+          .single()
+        if (profile?.current_team_id) {
+          setTeamId(profile.current_team_id)
+        }
       }
     }
     fetchUser()
-  }, [supabase])
+  }, [])
 
   // Fetch ideas
   useEffect(() => {
     const fetchIdeas = async () => {
+      if (!teamId) return
+
       try {
         setLoading(true)
         const { data: requests, error } = await supabase
           .from('feature_requests')
           .select('*')
+          .eq('team_id', teamId)
           .order('vote_count', { ascending: false })
           .order('created_at', { ascending: false })
 
@@ -108,7 +121,7 @@ export default function IdeasPage() {
     }
 
     fetchIdeas()
-  }, [supabase, userId])
+  }, [userId, teamId])
 
   const applyFilters = (allIdeas: FeatureRequest[]) => {
     let filtered = allIdeas
@@ -136,7 +149,7 @@ export default function IdeasPage() {
 
   useEffect(() => {
     applyFilters(ideas)
-  }, [searchQuery, selectedCategory, selectedStatus])
+  }, [searchQuery, selectedCategory, selectedStatus, ideas])
 
   const handleSubmitIdea = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -166,6 +179,7 @@ export default function IdeasPage() {
           category,
           author_id: userId,
           author_name: authorName,
+          team_id: teamId,
         })
         .select()
         .single()
