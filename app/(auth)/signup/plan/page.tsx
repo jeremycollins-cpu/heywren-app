@@ -10,61 +10,24 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { Check } from 'lucide-react'
 import { getStripe } from '@/lib/stripe/client'
+import { PLAN_DISPLAY } from '@/lib/plans'
 
 type Plan = 'basic' | 'pro' | 'team'
 
-interface PlanConfig {
-  name: string
-  price: string
-  description: string
-  features: string[]
-  cta: string
-  highlighted?: boolean
-}
-
-const PLANS: Record<Plan, PlanConfig> = {
+const PLANS: Record<Plan, { name: string; price: string; description: string; features: string[]; cta: string; highlighted?: boolean }> = {
   basic: {
-    name: 'Basic',
-    price: '$5',
-    description: 'For individuals getting started',
-    features: [
-      'Slack & email monitoring',
-      'Basic nudges',
-      'Up to 50 commitments',
-      'Email support',
-      '14-day free trial',
-    ],
+    ...PLAN_DISPLAY.basic,
+    features: [...PLAN_DISPLAY.basic.features, '14-day free trial'],
     cta: 'Start Free Trial',
   },
   pro: {
-    name: 'Pro',
-    price: '$10',
-    description: 'For professionals & small teams',
-    features: [
-      'Slack, email & calendar',
-      'AI nudges & scoring',
-      'Draft queue',
-      'Pre-meeting briefings',
-      'Unlimited commitments',
-      'Priority support',
-      '14-day free trial',
-    ],
+    ...PLAN_DISPLAY.pro,
+    features: [...PLAN_DISPLAY.pro.features, '14-day free trial'],
     cta: 'Start Free Trial',
-    highlighted: true,
   },
   team: {
-    name: 'Team',
-    price: '$20',
-    description: 'For scaling teams',
-    features: [
-      'Everything in Pro',
-      'Team dashboards',
-      'Playbooks & automation',
-      'PTO handoff protocol',
-      'Admin controls',
-      'Dedicated support',
-      '14-day free trial',
-    ],
+    ...PLAN_DISPLAY.team,
+    features: [...PLAN_DISPLAY.team.features, '14-day free trial'],
     cta: 'Start Free Trial',
   },
 }

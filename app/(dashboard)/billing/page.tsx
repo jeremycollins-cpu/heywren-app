@@ -7,8 +7,8 @@ import {
   Check, Sparkles, Shield, Zap, X, AlertTriangle, Clock, ExternalLink,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { type PlanKey, type PlanDisplay, PLAN_DISPLAY } from '@/lib/plans'
 
-type PlanKey = 'trial' | 'basic' | 'pro' | 'team'
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'cancelling' | 'incomplete'
 
 interface BillingInfo {
@@ -21,63 +21,7 @@ interface BillingInfo {
   stripeCustomerId: string | null
 }
 
-interface PlanConfig {
-  name: string
-  price: string
-  priceValue: number
-  description: string
-  features: string[]
-  highlighted?: boolean
-  maxUsers: number
-}
-
-const PLANS: Record<Exclude<PlanKey, 'trial'>, PlanConfig> = {
-  basic: {
-    name: 'Basic',
-    price: '$5',
-    priceValue: 5,
-    description: 'For individuals getting started',
-    maxUsers: 5,
-    features: [
-      'Slack & email monitoring',
-      'Basic nudges',
-      'Up to 50 commitments',
-      'Up to 5 team members',
-      'Email support',
-    ],
-  },
-  pro: {
-    name: 'Pro',
-    price: '$10',
-    priceValue: 10,
-    description: 'For professionals & small teams',
-    highlighted: true,
-    maxUsers: 25,
-    features: [
-      'Slack, email & calendar',
-      'AI nudges & scoring',
-      'Draft queue & briefings',
-      'Unlimited commitments',
-      'Up to 25 team members',
-      'Priority support',
-    ],
-  },
-  team: {
-    name: 'Team',
-    price: '$20',
-    priceValue: 20,
-    description: 'For scaling teams',
-    maxUsers: 100,
-    features: [
-      'Everything in Pro',
-      'Team dashboards & analytics',
-      'Playbooks & automation',
-      'PTO handoff protocol',
-      'Up to 100 team members',
-      'Dedicated support',
-    ],
-  },
-}
+const PLANS = PLAN_DISPLAY
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string; description: string }> = {
   trialing: {
@@ -375,7 +319,7 @@ export default function BillingPage() {
         </div>
 
         <div className="grid md:grid-cols-3 gap-5">
-          {(Object.entries(PLANS) as [Exclude<PlanKey, 'trial'>, PlanConfig][]).map(([planKey, plan]) => {
+          {(Object.entries(PLANS) as [Exclude<PlanKey, 'trial'>, PlanDisplay][]).map(([planKey, plan]: [Exclude<PlanKey, 'trial'>, PlanDisplay]) => {
             const isCurrent = currentPlan === planKey
             const isUpgrade = !isCurrent && plan.priceValue > (PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0)
             const isDowngrade = !isCurrent && plan.priceValue < (PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0)

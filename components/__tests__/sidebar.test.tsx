@@ -12,6 +12,20 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 
+// ─── Mock plan context ──────────────────────────────────────────────────────
+
+jest.mock('@/lib/contexts/plan-context', () => ({
+  usePlan: () => ({
+    plan: 'basic',
+    loading: false,
+    teamId: 'team-123',
+    canAccess: () => true,
+    canAccessRoute: () => true,
+    hasAccess: () => true,
+    refresh: jest.fn(),
+  }),
+}))
+
 // ─── Mock Supabase client ───────────────────────────────────────────────────
 
 const mockGetUser = jest.fn()
@@ -56,6 +70,7 @@ jest.mock('lucide-react', () => {
     Lightbulb: createIcon('Lightbulb'),
     HelpCircle: createIcon('HelpCircle'),
     MailWarning: createIcon('MailWarning'),
+    Lock: createIcon('Lock'),
   }
 })
 

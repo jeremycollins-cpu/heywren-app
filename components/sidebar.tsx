@@ -5,9 +5,12 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WrenFullLogo } from '@/components/logo'
+import { usePlan } from '@/lib/contexts/plan-context'
+import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/plans'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
+  Lock,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -19,6 +22,7 @@ interface SidebarProps {
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
+  const { plan } = usePlan()
   const supabase = createClient()
 
   useEffect(() => {
@@ -69,6 +73,17 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     return pathname.startsWith(href)
   }
 
+  /** Check if a nav route is locked for the current plan. */
+  const isLocked = (href: string): { locked: boolean; requiredPlan: string } => {
+    const feature = featureForRoute(href)
+    if (!feature) return { locked: false, requiredPlan: '' }
+    const locked = !hasAccess(plan, feature.minPlan)
+    const requiredPlan = locked
+      ? PLAN_DISPLAY[feature.minPlan as Exclude<PlanKey, 'trial'>]?.name || feature.minPlan
+      : ''
+    return { locked, requiredPlan }
+  }
+
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
 
   return (
@@ -108,6 +123,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             <ul role="list" className="space-y-0.5">
             {mainLinks.map(({ href, label, icon: Icon, tourId }) => {
               const active = isActive(href)
+              const { locked, requiredPlan } = isLocked(href)
               return (
                 <li key={href}>
                 <Link
@@ -115,19 +131,32 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                   data-tour={tourId}
                   onClick={() => open && onToggle()}
                   aria-current={active ? 'page' : undefined}
+                  title={locked ? `Requires ${requiredPlan} plan` : undefined}
                   className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     active
                       ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
+                      : locked
+                        ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
                   }`}
                 >
                   <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
                     active
                       ? 'text-indigo-600 dark:text-indigo-400'
-                      : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                      : locked
+                        ? 'text-gray-300 dark:text-gray-600'
+                        : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                   }`} />
                   <span className="truncate">{label}</span>
-                  {active && (
+                  {locked && (
+                    <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
+                        {requiredPlan}
+                      </span>
+                      <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                    </div>
+                  )}
+                  {!locked && active && (
                     <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
                   )}
                 </Link>
@@ -145,25 +174,39 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                 <ul role="list" className="space-y-0.5">
                 {adminLinks.map(({ href, label, icon: Icon }) => {
                   const active = isActive(href)
+                  const { locked, requiredPlan } = isLocked(href)
                   return (
                     <li key={href}>
                     <Link
                       href={href}
                       onClick={() => open && onToggle()}
                       aria-current={active ? 'page' : undefined}
+                      title={locked ? `Requires ${requiredPlan} plan` : undefined}
                       className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                         active
                           ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
+                          : locked
+                            ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'
+                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
                       }`}
                     >
                       <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
                         active
                           ? 'text-indigo-600 dark:text-indigo-400'
-                          : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                          : locked
+                            ? 'text-gray-300 dark:text-gray-600'
+                            : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                       }`} />
                       <span className="truncate">{label}</span>
-                      {active && (
+                      {locked && (
+                        <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
+                            {requiredPlan}
+                          </span>
+                          <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                        </div>
+                      )}
+                      {!locked && active && (
                         <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
                       )}
                     </Link>

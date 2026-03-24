@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Send, Edit, Trash2, MessageSquare, RefreshCw, X, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import UpgradeGate from '@/components/upgrade-gate'
 
 interface Draft {
   id: string
@@ -162,6 +163,7 @@ export default function DraftQueuePage() {
   const editedCount = drafts.filter(d => d.status === 'edited').length
 
   return (
+    <UpgradeGate featureKey="draft_queue">
     <div className="space-y-6">
       {error && (
         <div role="alert" className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
@@ -355,5 +357,6 @@ export default function DraftQueuePage() {
         </ul>
       </div>
     </div>
+    </UpgradeGate>
   )
 }

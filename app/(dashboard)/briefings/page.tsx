@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare } from 'lucide-react'
+import UpgradeGate from '@/components/upgrade-gate'
 
 // ── Types ──
 
@@ -357,6 +358,7 @@ export default function BriefingsPage() {
   }
 
   return (
+    <UpgradeGate featureKey="briefings">
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Pre-Meeting Briefings</h1>
@@ -612,5 +614,6 @@ export default function BriefingsPage() {
         </div>
       </div>
     </div>
+    </UpgradeGate>
   )
 }
