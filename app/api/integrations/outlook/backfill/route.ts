@@ -17,66 +17,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// Extract the authenticated user from the request cookies
-async function getAuthenticatedUser(request: NextRequest) {
-  let token: string | null = null
-
-  // Method 1: Look for Supabase auth token in cookies
-  for (const cookie of request.cookies.getAll()) {
-    if (cookie.name.includes('auth-token') && !cookie.name.includes('auth-token.')) {
-      try {
-        const parsed = JSON.parse(cookie.value)
-        if (Array.isArray(parsed) && parsed.length >= 1) {
-          token = parsed[0]
-        } else if (parsed.access_token) {
-          token = parsed.access_token
-        }
-      } catch {
-        token = cookie.value
-      }
-      break
-    }
-  }
-
-  if (!token) {
-    // Method 2: Check for chunked cookies (sb-XXX-auth-token.0, sb-XXX-auth-token.1, etc.)
-    const chunks: string[] = []
-    for (const cookie of request.cookies.getAll()) {
-      if (cookie.name.includes('auth-token.')) {
-        const chunkIndex = parseInt(cookie.name.split('.').pop() || '0')
-        chunks[chunkIndex] = cookie.value
-      }
-    }
-    if (chunks.length > 0) {
-      const combined = chunks.join('')
-      try {
-        const parsed = JSON.parse(combined)
-        if (Array.isArray(parsed) && parsed.length >= 1) {
-          token = parsed[0]
-        } else if (parsed.access_token) {
-          token = parsed.access_token
-        }
-      } catch {
-        token = combined
-      }
-    }
-  }
-
-  if (!token) return null
-
-  // Verify the token with Supabase
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  )
-
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user) return null
-
-  return user
-}
-
 async function refreshMicrosoftToken(
   supabase: ReturnType<typeof getAdminClient>,
   integrationId: string,
@@ -105,22 +45,12 @@ async function refreshMicrosoftToken(
     }
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-
-    // Preserve existing config fields
-    const { data: currentIntegration } = await supabase
-      .from('integrations')
-      .select('config')
-      .eq('id', integrationId)
-      .single()
-
-    const existingConfig = currentIntegration?.config || {}
-
     await supabase
       .from('integrations')
       .update({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || refreshToken,
-        config: { ...existingConfig, token_expires_at: expiresAt },
+        config: { token_expires_at: expiresAt },
       })
       .eq('id', integrationId)
 
@@ -146,10 +76,9 @@ async function graphFetch(
   })
 
   if (res.status === 401) {
-    console.log('Graph API returned 401, attempting token refresh...')
     const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
     if (!newToken) {
-      return { data: { error: { message: 'Token refresh failed. Please reconnect Outlook.', code: 'TokenRefreshFailed' } }, token: currentToken }
+      return { data: { error: 'Token refresh failed. Reconnect Outlook.' }, token: currentToken }
     }
     currentToken = newToken
     const retryRes = await fetch(url, {
@@ -162,32 +91,21 @@ async function graphFetch(
 }
 
 export async function POST(request: NextRequest) {
-  // ================================================================
-  // STEP 1: Authenticate the user from their session cookie
-  // ================================================================
-  const user = await getAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized. Please log in again.' },
-      { status: 401 }
-    )
-  }
-
-  const userId = user.id
-
-  // ================================================================
-  // STEP 2: Use service role key for all data operations (bypasses RLS)
-  // ================================================================
   const supabase = getAdminClient()
   const startTime = Date.now()
 
+  let userId: string
   let daysBack: number = 30
 
   try {
     const body = await request.json()
+    userId = body.userId
     daysBack = body.daysBack || 30
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    }
   } catch (e) {
-    // Use defaults
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
   // Get user's team
@@ -208,28 +126,27 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (!integration || !integration.access_token) {
-    return NextResponse.json({ error: 'Outlook not connected. Please connect Outlook first.' }, { status: 400 })
+    return NextResponse.json({ error: 'Outlook not connected.' }, { status: 400 })
   }
 
   let msToken = integration.access_token
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
 
-  // Proactive token refresh if expired or about to expire (within 5 min)
+  // Proactive token refresh
   const tokenExpiresAt = integration.config?.token_expires_at
-  const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000)
-  if (tokenExpiresAt && new Date(tokenExpiresAt) < fiveMinutesFromNow) {
-    console.log('Outlook token expired or expiring soon, refreshing...')
+  if (tokenExpiresAt && new Date(tokenExpiresAt) < new Date()) {
     const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
     if (newToken) {
       msToken = newToken
     } else {
-      return NextResponse.json({ error: 'Outlook token expired and refresh failed. Please reconnect Outlook in Settings.' }, { status: 401 })
+      return NextResponse.json({ error: 'Token expired. Reconnect Outlook.' }, { status: 401 })
     }
   }
 
   // ================================================================
   // PHASE 1: Process previously stored but unprocessed messages
+  // This is FAST — no Graph API calls, just AI processing
   // ================================================================
   const { data: unprocessed, count: unprocessedCount } = await supabase
     .from('outlook_messages')
@@ -269,6 +186,7 @@ export async function POST(request: NextRequest) {
       batch.push({ id: msg.message_id, text: messageText, dbId: msg.id })
     }
 
+    // Process in chunks of 15
     for (let i = 0; i < batch.length; i += 15) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
@@ -311,6 +229,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // If more unprocessed messages remain, return early
     const remainingUnprocessed = (unprocessedCount || 0) - processedMessages
     if (remainingUnprocessed > 0) {
       const aiStats = getDetectionStats()
@@ -335,7 +254,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ================================================================
-  // PHASE 2: Fetch NEW emails from Graph API
+  // PHASE 2: Fetch NEW emails from Graph API (only if Phase 1 done)
   // ================================================================
   if (Date.now() - startTime > TIME_BUDGET_MS) {
     const aiStats = getDetectionStats()
@@ -386,9 +305,7 @@ export async function POST(request: NextRequest) {
     msToken = updatedToken
 
     if (pageData.error) {
-      const errMsg = pageData.error.message || pageData.error.code || JSON.stringify(pageData.error)
-      console.error('Graph API error:', errMsg)
-      errors.push('Graph API error: ' + errMsg)
+      errors.push('Graph API error: ' + (pageData.error.message || pageData.error.code || JSON.stringify(pageData.error)))
       break
     }
 
@@ -462,6 +379,7 @@ export async function POST(request: NextRequest) {
       batch.push({ id: email.id, text: messageText, dbId, email })
     }
 
+    // Process batch through AI
     if (batch.length > 0) {
       try {
         const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
