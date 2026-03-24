@@ -107,7 +107,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-col h-screen" style={{ background: '#fafbfc', fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+    <div className="flex flex-col h-screen bg-surface-secondary dark:bg-surface-dark font-sans transition-colors duration-300">
       {/* Onboarding banner */}
       {showOnboardingBanner && !bannerDismissed && (
         <OnboardingBanner onDismiss={handleDismissBanner} />

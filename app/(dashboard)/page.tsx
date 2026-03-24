@@ -203,10 +203,10 @@ export default function DashboardPage() {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-40 bg-gray-100 rounded"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          <div className="h-40 bg-gray-100 dark:bg-gray-800 rounded"></div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
+            {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
           </div>
         </div>
       </div>
@@ -317,13 +317,13 @@ export default function DashboardPage() {
     return (
       <div className="p-6 max-w-[1200px] mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Welcome to HeyWren</h1>
-          <p className="text-gray-500 text-sm mt-1">Let&apos;s get you set up</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome to HeyWren</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Let&apos;s get you set up</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-8 text-center">
           <div className="text-4xl mb-4">🐦</div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Connect your first tool</h2>
-          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Connect your first tool</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm max-w-md mx-auto mb-6">
             Wren watches your Slack messages and Outlook emails to automatically detect commitments and track follow-through. Connect a tool to get started.
           </p>
           <Link
@@ -342,10 +342,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
+    <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
       {/* ── Error Banner ── */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-brand p-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-red-700">
             <span>⚠</span>
             <span className="text-sm font-medium">{error}</span>
@@ -361,13 +361,13 @@ export default function DashboardPage() {
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
           Here&apos;s what Wren found{' '}
           <span className="inline-flex items-center gap-1 text-sm font-medium text-green-600">
             <span className="w-2 h-2 bg-green-500 rounded-full"></span> Live
           </span>
         </h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
           {integrationCount > 0
             ? `${integrationCount} connected tool${integrationCount > 1 ? 's' : ''} watching for commitments`
             : 'Connect your tools to start tracking commitments'}
@@ -375,14 +375,14 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Hero Stats Bar ── */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-6">
         <div className="flex items-center gap-8 flex-wrap">
           {/* Streak */}
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔥</span>
             <div>
-              <div className="text-3xl font-bold text-gray-900">{streak}</div>
-              <div className="text-xs text-gray-500">day streak</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">{streak}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">day streak</div>
             </div>
           </div>
 
@@ -404,8 +404,8 @@ export default function DashboardPage() {
               </div>
             </div>
             <div>
-              <div className="text-sm font-semibold text-gray-900">Follow-through</div>
-              <div className="text-xs text-gray-500">{commitments.length} total commitments</div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">Follow-through</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">{commitments.length} total commitments</div>
             </div>
           </div>
 
@@ -423,7 +423,7 @@ export default function DashboardPage() {
                 />
               ))}
             </div>
-            <div className="text-xs text-gray-500">7-day trend</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">7-day trend</div>
           </div>
 
           {/* Level badge */}
@@ -431,7 +431,7 @@ export default function DashboardPage() {
             <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
               {level}
             </span>
-            <span className="text-sm text-gray-500">{xp.toLocaleString()} XP</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{xp.toLocaleString()} XP</span>
           </div>
         </div>
       </div>
@@ -444,11 +444,11 @@ export default function DashboardPage() {
           { label: 'Overdue', value: overdueCount, color: '#ef4444', barPercent: Math.min(overdueCount / 5 * 100, 100) },
           { label: 'Avg Score', value: avgScore, color: '#22c55e', barPercent: avgScore },
         ].map(({ label, value, color, barPercent }) => (
-          <div key={label} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div key={label} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand overflow-hidden">
             <div className="h-1" style={{ background: `linear-gradient(to right, ${color} ${barPercent}%, #e5e7eb ${barPercent}%)` }} />
             <div className="p-4 text-center">
               <div className="text-3xl font-bold" style={{ color }}>{value}</div>
-              <div className="text-sm text-gray-500 mt-1">{label}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{label}</div>
             </div>
           </div>
         ))}
@@ -456,7 +456,7 @@ export default function DashboardPage() {
 
       {/* ── Anomalies ── */}
       {anomalies.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-brand p-5">
           <div className="flex items-center gap-2 text-red-700 font-semibold mb-3">
             <span>⚠</span> {anomalies.length} anomal{anomalies.length === 1 ? 'y' : 'ies'} detected
           </div>
@@ -488,7 +488,7 @@ export default function DashboardPage() {
             value: `${completedCommitments.length}`,
             label: 'Completed',
             status: completedCommitments.length === 0 && commitments.length > 0 ? 'Needs attention' : completedCommitments.length > 0 ? 'Good' : '—',
-            statusColor: completedCommitments.length === 0 && commitments.length > 0 ? 'text-red-600 bg-red-50' : completedCommitments.length > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400 bg-gray-50'
+            statusColor: completedCommitments.length === 0 && commitments.length > 0 ? 'text-red-600 bg-red-50' : completedCommitments.length > 0 ? 'text-green-600 bg-green-50' : 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800'
           },
           {
             value: `${staleItems}`,
@@ -497,9 +497,9 @@ export default function DashboardPage() {
             statusColor: staleItems > 5 ? 'text-red-600 bg-red-50' : staleItems > 0 ? 'text-yellow-600 bg-yellow-50' : 'text-green-600 bg-green-50'
           },
         ].map(({ value, label, status, statusColor }) => (
-          <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{value}</div>
-            <div className="text-sm text-gray-500">{label}</div>
+          <div key={label} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-4 text-center">
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">{label}</div>
             <span className={`inline-block mt-2 px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}>
               {status}
             </span>
@@ -508,17 +508,17 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Wren's Forecast ── */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Wren&apos;s Forecast</h2>
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-5">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Wren&apos;s Forecast</h2>
         <div className="space-y-3">
           {commitments.length === 0 ? (
-            <p className="text-gray-500 text-sm">Forecasts will appear once Wren has tracked enough commitments to identify patterns.</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Forecasts will appear once Wren has tracked enough commitments to identify patterns.</p>
           ) : (
             <>
               {daysToClean ? (
                 <div className="flex items-start gap-3">
                   <span className="text-green-500 mt-0.5">✓</span>
-                  <span className="text-gray-700">
+                  <span className="text-gray-700 dark:text-gray-300">
                     At current pace, backlog clears by{' '}
                     <span className="font-bold">
                       {new Date(Date.now() + daysToClean * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
@@ -528,7 +528,7 @@ export default function DashboardPage() {
               ) : openCommitments.length > 0 ? (
                 <div className="flex items-start gap-3">
                   <span className="text-yellow-500 mt-0.5">⚠</span>
-                  <span className="text-gray-700">
+                  <span className="text-gray-700 dark:text-gray-300">
                     No completions yet — start closing items to build your forecast
                   </span>
                 </div>
@@ -537,7 +537,7 @@ export default function DashboardPage() {
               {staleItems > 0 && (
                 <div className="flex items-start gap-3">
                   <span className="text-red-500 mt-0.5">⚠</span>
-                  <span className="text-gray-700">
+                  <span className="text-gray-700 dark:text-gray-300">
                     <span className="text-red-600 font-semibold">{staleItems} item{staleItems > 1 ? 's' : ''} stale for 7+ days</span>{' '}
                     — review and close or update
                   </span>
@@ -546,8 +546,8 @@ export default function DashboardPage() {
 
               {openCommitments.length > 0 && (
                 <div className="flex items-start gap-3">
-                  <span className="text-gray-400 mt-0.5">📋</span>
-                  <span className="text-gray-700">
+                  <span className="text-gray-400 dark:text-gray-500 mt-0.5">📋</span>
+                  <span className="text-gray-700 dark:text-gray-300">
                     {openCommitments.length} open commitment{openCommitments.length !== 1 ? 's' : ''} need follow-through this week
                   </span>
                 </div>
@@ -558,19 +558,19 @@ export default function DashboardPage() {
       </div>
 
       {/* ── @HeyWren Recent Mentions ── */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <span className="px-2 py-1 bg-green-600 text-white rounded text-xs font-bold">@HeyWren</span>
-            <h2 className="text-lg font-bold text-gray-900">Recent Mentions</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Recent Mentions</h2>
           </div>
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-gray-400 dark:text-gray-500">
             {mentions.filter(m => isThisWeek(m.created_at)).length} this week
           </span>
         </div>
 
         {recentMentions.length === 0 ? (
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
             Tag <span className="font-semibold text-green-600">@HeyWren</span> in any Slack conversation to capture commitments. Try it now!
           </p>
         ) : (
@@ -581,12 +581,12 @@ export default function DashboardPage() {
                   💬
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-900">
+                  <div className="text-sm text-gray-900 dark:text-white">
                     <span className="font-semibold text-green-600">@HeyWren</span>{' '}
                     {m.message_text?.replace(/<@[A-Z0-9]+>/g, '').trim().slice(0, 100)}
                     {(m.message_text?.length || 0) > 100 ? '...' : ''}
                   </div>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500">
                     <span>#{m.channel_id?.slice(-6)}</span>
                     <span>·</span>
                     <span>{daysSince(m.created_at) === 0 ? 'Today' : daysSince(m.created_at) === 1 ? 'Yesterday' : `${daysSince(m.created_at)} days ago`}</span>
@@ -605,7 +605,7 @@ export default function DashboardPage() {
       {/* ── Nudge Cards ── */}
       {openCommitments.filter(c => daysSince(c.created_at) > 3).length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900">Needs Follow-through</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Needs Follow-through</h2>
           {openCommitments
             .filter(c => daysSince(c.created_at) > 3)
             .slice(0, 3)
@@ -614,28 +614,28 @@ export default function DashboardPage() {
               const urgency = age > 7 ? 'URGENT' : age > 5 ? 'GENTLE' : 'DIGEST'
               const score = Math.max(100 - age * 5, 30)
               const borderColor = urgency === 'URGENT' ? 'border-l-red-500' : urgency === 'GENTLE' ? 'border-l-indigo-500' : 'border-l-gray-400'
-              const badgeColor = urgency === 'URGENT' ? 'bg-red-100 text-red-700' : urgency === 'GENTLE' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700'
+              const badgeColor = urgency === 'URGENT' ? 'bg-red-100 text-red-700' : urgency === 'GENTLE' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700 dark:text-gray-300'
               const sourceBadge = c.source === 'slack' ? 'SLACK' : c.source === 'outlook' || c.source === 'email' ? 'OUTLOOK' : 'MANUAL'
 
               return (
-                <div key={c.id} className={`bg-white border border-gray-200 border-l-4 ${borderColor} rounded-xl p-5`}>
+                <div key={c.id} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${borderColor} rounded-brand p-5`}>
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${badgeColor}`}>{urgency}</span>
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">Score: {score}</span>
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{sourceBadge}</span>
-                    <span className="text-xs text-gray-400">{age} days open</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">Score: {score}</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">{sourceBadge}</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">{age} days open</span>
                   </div>
-                  <div className="font-bold text-gray-900 mb-1">{c.title}</div>
+                  <div className="font-bold text-gray-900 dark:text-white mb-1">{c.title}</div>
                   {c.description && (
-                    <p className="text-sm text-gray-500 mb-3">{c.description}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{c.description}</p>
                   )}
                   <div className="flex items-center gap-2">
                     <button onClick={() => handleNudgeDone(c.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">Done</button>
                     <button onClick={() => handleNudgeSnooze(c.id)} className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600">Snooze</button>
-                    <button onClick={() => handleNudgeDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">Dismiss</button>
+                    <button onClick={() => handleNudgeDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600">Dismiss</button>
                     <Link
                       href="/commitments"
-                      className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+                      className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                       View Trace
                     </Link>

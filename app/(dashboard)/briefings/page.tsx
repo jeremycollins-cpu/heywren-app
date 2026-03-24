@@ -334,10 +334,10 @@ export default function BriefingsPage() {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-4 bg-gray-100 rounded w-1/2"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-1/2"></div>
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-32 bg-gray-100 rounded-xl"></div>
+            <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
           ))}
         </div>
       </div>
@@ -347,14 +347,14 @@ export default function BriefingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Pre-Meeting Briefings</h1>
-        <p className="text-gray-600 mt-1">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Pre-Meeting Briefings</h1>
+        <p className="text-gray-600 dark:text-gray-300 mt-1">
           Context cards for every upcoming meeting — open commitments, relationships, and talking points
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800">
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800 dark:text-red-400">
           <span className="font-medium">Error:</span> {error}
         </div>
       )}

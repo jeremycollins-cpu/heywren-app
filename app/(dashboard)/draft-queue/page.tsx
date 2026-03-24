@@ -149,9 +149,9 @@ export default function DraftQueuePage() {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded"></div>)}
+            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
           </div>
         </div>
       </div>
@@ -171,8 +171,8 @@ export default function DraftQueuePage() {
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Draft Queue</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Draft Queue</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             HeyWren pre-writes follow-ups based on open commitments. Review, edit, and send when ready.
           </p>
         </div>
@@ -188,16 +188,16 @@ export default function DraftQueuePage() {
 
       {/* Queue Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Total Drafts</p>
-          <p className="text-3xl font-bold text-gray-900">{drafts.length}</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Drafts</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white">{drafts.length}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Ready to Send</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Ready to Send</p>
           <p className="text-3xl font-bold text-green-600">{readyCount}</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <p className="text-sm text-gray-600 mb-1">Edited</p>
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Edited</p>
           <p className="text-3xl font-bold text-indigo-600">{editedCount}</p>
         </div>
       </div>

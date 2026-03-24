@@ -64,9 +64,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   ]
 
   const isActive = (href: string) => {
-    if (href === '/') {
-      return pathname === '/'
-    }
+    if (href === '/') return pathname === '/'
     return pathname.startsWith(href)
   }
 
@@ -77,84 +75,103 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       {/* Mobile backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/50 lg:hidden z-40"
+          className="fixed inset-0 bg-black/40 glass lg:hidden z-40 animate-fade-in"
           onClick={onToggle}
+          aria-label="Close sidebar"
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 z-50 lg:z-0 ${
+        className={`fixed lg:static inset-y-0 left-0 w-64 bg-white dark:bg-surface-dark-secondary border-r border-gray-200 dark:border-border-dark transform transition-transform duration-300 ease-brand z-50 lg:z-0 ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
-        style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}
       >
         <div className="h-screen flex flex-col">
           {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200">
-            <Link href="/" className="flex items-center">
+          <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200 dark:border-border-dark">
+            <Link href="/" className="flex items-center group">
               <WrenFullLogo width={110} />
             </Link>
             <button
               onClick={onToggle}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+              aria-label="Close sidebar"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-            {mainLinks.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => open && onToggle()}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
-                  isActive(href)
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? 'text-indigo-600' : 'text-gray-400'}`} />
-                <span className="truncate">{label}</span>
-              </Link>
-            ))}
+            {mainLinks.map(({ href, label, icon: Icon }) => {
+              const active = isActive(href)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => open && onToggle()}
+                  className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                    active
+                      ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                    active
+                      ? 'text-indigo-600 dark:text-indigo-400'
+                      : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                  }`} />
+                  <span className="truncate">{label}</span>
+                  {active && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" />
+                  )}
+                </Link>
+              )
+            })}
 
             {/* Admin Section */}
             {isAdmin && (
-              <>
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <p className="px-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    Administration
-                  </p>
-                  {adminLinks.map(({ href, label, icon: Icon }) => (
+              <div className="pt-4 mt-4 border-t border-gray-200 dark:border-border-dark">
+                <p className="px-3 text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+                  Administration
+                </p>
+                {adminLinks.map(({ href, label, icon: Icon }) => {
+                  const active = isActive(href)
+                  return (
                     <Link
                       key={href}
                       href={href}
                       onClick={() => open && onToggle()}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
-                        isActive(href)
-                          ? 'bg-indigo-50 text-indigo-700'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                        active
+                          ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 flex-shrink-0 ${isActive(href) ? 'text-indigo-600' : 'text-gray-400'}`} />
+                      <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                        active
+                          ? 'text-indigo-600 dark:text-indigo-400'
+                          : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                      }`} />
                       <span className="truncate">{label}</span>
+                      {active && (
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" />
+                      )}
                     </Link>
-                  ))}
-                </div>
-              </>
+                  )
+                })}
+              </div>
             )}
           </nav>
 
-          {/* Help Button at bottom */}
-          <div className="px-3 py-4 border-t border-gray-200 flex-shrink-0">
+          {/* Help Button */}
+          <div className="px-3 py-4 border-t border-gray-200 dark:border-border-dark flex-shrink-0">
             <button
               onClick={onHelpClick}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition font-medium text-[13px]"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 font-medium text-[13px]"
             >
-              <HelpCircle className="w-4 h-4 text-gray-400" />
+              <HelpCircle className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="truncate">Help & Tips</span>
             </button>
           </div>
