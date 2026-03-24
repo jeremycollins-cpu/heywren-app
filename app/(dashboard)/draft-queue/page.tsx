@@ -301,8 +301,8 @@ export default function DraftQueuePage() {
                   </div>
 
                   {selectedDraft === draft.id && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm text-gray-700 whitespace-pre-wrap">
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                      <div className="bg-gray-50 dark:bg-surface-dark rounded-lg p-4 mb-4 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                         {draft.body}
                       </div>
                       <div className="flex gap-2">
@@ -315,7 +315,7 @@ export default function DraftQueuePage() {
                         </button>
                         <button
                           onClick={() => startEditing(draft)}
-                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                         >
                           <Edit className="w-4 h-4" />
                           Edit
@@ -337,12 +337,12 @@ export default function DraftQueuePage() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
-        <h3 className="font-semibold text-indigo-900 mb-2">About Draft Queue</h3>
-        <p className="text-sm text-indigo-800 mb-3">
+      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
+        <h3 className="font-semibold text-indigo-900 dark:text-indigo-200 mb-2">About Draft Queue</h3>
+        <p className="text-sm text-indigo-800 dark:text-indigo-300 mb-3">
           HeyWren never sends messages on your behalf. Instead, it pre-writes thoughtful follow-ups based on your open commitments and context. You maintain full control.
         </p>
-        <ul className="text-sm text-indigo-800 space-y-1">
+        <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-1">
           <li>&#10003; AI-generated drafts based on your real commitments</li>
           <li>&#10003; Full editor to customize before sending</li>
           <li>&#10003; New drafts generated daily at 7 AM PT</li>
