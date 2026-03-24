@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ─── 5. CHECK IF ALREADY PROVISIONED (idempotent) ───────────────────
+    // ─── 5. CHECK IF ALREADY PROVISIONED ─────────────────────────────────
     const { data: existingProfile } = await supabaseAdmin
       .from('profiles')
       .select('id, current_team_id')
@@ -95,6 +95,45 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (existingProfile?.current_team_id) {
+      // User already has a team — but they may be upgrading from trial.
+      // Update the team's Stripe IDs so billing works going forward.
+      if (customerId || subscriptionId) {
+        const updateFields: Record<string, any> = {}
+        if (customerId) updateFields.stripe_customer_id = customerId
+        if (subscriptionId) updateFields.stripe_subscription_id = subscriptionId
+        if (plan) updateFields.subscription_plan = plan
+        updateFields.subscription_status = 'trialing'
+
+        // Calculate trial_ends_at from subscription if available
+        const sub = typeof checkoutSession.subscription === 'object'
+          ? checkoutSession.subscription
+          : null
+        if (sub?.trial_end) {
+          updateFields.trial_ends_at = new Date(sub.trial_end * 1000).toISOString()
+        }
+
+        await supabaseAdmin
+          .from('teams')
+          .update(updateFields)
+          .eq('id', existingProfile.current_team_id)
+
+        // Also update Stripe metadata with real team ID
+        if (subscriptionId) {
+          try {
+            await stripeClient.subscriptions.update(subscriptionId, {
+              metadata: { userId, teamId: existingProfile.current_team_id, plan },
+            })
+          } catch {}
+        }
+        if (customerId) {
+          try {
+            await stripeClient.customers.update(customerId, {
+              metadata: { userId, teamId: existingProfile.current_team_id, plan },
+            })
+          } catch {}
+        }
+      }
+
       return NextResponse.json({
         success: true,
         teamId: existingProfile.current_team_id,

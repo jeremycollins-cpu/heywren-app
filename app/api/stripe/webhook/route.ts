@@ -35,7 +35,11 @@ export async function POST(request: NextRequest) {
         const teamId = subscription.metadata?.teamId
 
         if (teamId) {
-          const plan = subscription.items.data[0]?.price?.lookup_key || 'basic'
+          // Resolve plan from metadata (set during checkout/change-plan),
+          // then fall back to price lookup_key, then 'basic'
+          const plan = subscription.metadata?.plan
+            || subscription.items.data[0]?.price?.lookup_key
+            || 'basic'
           const status = subscription.status
 
           await supabase

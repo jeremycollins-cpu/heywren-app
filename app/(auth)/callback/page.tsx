@@ -51,8 +51,11 @@ function CallbackContent() {
         }
 
         // Step 2: Show contextual success message
+        const isUpgrade = result.alreadyProvisioned && result.flow === 'existing'
         if (result.flow === 'joined') {
           setStatusMessage('You\'ve been added to your team!')
+        } else if (isUpgrade) {
+          setStatusMessage('Your plan has been upgraded!')
         } else if (result.alreadyProvisioned) {
           setStatusMessage('Welcome back!')
         } else {
@@ -63,14 +66,15 @@ function CallbackContent() {
         const { data: sessionData } = await supabase.auth.getSession()
 
         if (sessionData?.session) {
-          // Active session — redirect to onboarding
           setStatus('success')
           toast.success(
-            result.flow === 'joined'
-              ? 'Welcome to the team!'
-              : result.alreadyProvisioned
-                ? 'Welcome back!'
-                : 'Account created successfully!'
+            isUpgrade
+              ? 'Plan upgraded successfully!'
+              : result.flow === 'joined'
+                ? 'Welcome to the team!'
+                : result.alreadyProvisioned
+                  ? 'Welcome back!'
+                  : 'Account created successfully!'
           )
 
           // Clean up any sessionStorage leftovers
@@ -84,7 +88,9 @@ function CallbackContent() {
             sessionStorage.removeItem('joiningTeamName')
           } catch (e) {}
 
-          setTimeout(() => router.push('/onboarding/profile'), 800)
+          // Existing users upgrading go back to billing; new users go to onboarding
+          const redirectTo = isUpgrade ? '/billing' : '/onboarding/profile'
+          setTimeout(() => router.push(redirectTo), 800)
           return
         }
 
