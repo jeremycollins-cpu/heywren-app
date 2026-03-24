@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
-import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare } from 'lucide-react'
+import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2 } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 
 // ── Types ──
@@ -195,6 +195,34 @@ export default function BriefingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedBriefing, setExpandedBriefing] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [checkedItems, setCheckedItems] = useState<Record<string, Set<string>>>({})
+
+  const toggleCheckItem = (briefingId: string, item: string) => {
+    setCheckedItems(prev => {
+      const set = new Set(prev[briefingId] || [])
+      if (set.has(item)) set.delete(item)
+      else set.add(item)
+      return { ...prev, [briefingId]: set }
+    })
+  }
+
+  const copyTalkingPoints = (briefing: Briefing) => {
+    const text = [
+      `Meeting Prep: ${briefing.subject}`,
+      `${formatMeetingTime(briefing.startTime, briefing.endTime)}`,
+      ``,
+      `Talking Points:`,
+      ...briefing.talkingPoints.map((p, i) => `${i + 1}. ${p}`),
+      ``,
+      briefing.matchedCommitments.length > 0 ? `Open Commitments (${briefing.matchedCommitments.length}):` : '',
+      ...briefing.matchedCommitments.map(c => `- ${c.title} (${daysSince(c.created_at)}d old)`),
+    ].filter(l => l !== '').join('\n')
+    navigator.clipboard.writeText(text)
+    setCopiedId(briefing.id)
+    toast.success('Briefing copied to clipboard')
+    setTimeout(() => setCopiedId(null), 2000)
+  }
 
   useEffect(() => {
     async function load() {
@@ -234,15 +262,11 @@ export default function BriefingsPage() {
         .order('start_time', { ascending: true })
 
       if (!events || events.length === 0) {
-        // Check if Outlook is connected — if so, suggest re-syncing
-        const { data: integration } = await supabase
-          .from('integrations')
-          .select('id')
-          .eq('team_id', teamId)
-          .eq('provider', 'outlook')
-          .maybeSingle()
+        // Check if Outlook is connected via server-side API (bypasses RLS)
+        const intRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const hasOutlook = intRes.integrations?.some((i: any) => i.provider === 'outlook')
 
-        if (integration) {
+        if (hasOutlook) {
           setError('no_calendar_data')
         }
 
@@ -569,12 +593,61 @@ export default function BriefingsPage() {
                       </div>
                     )}
 
+                    {/* Prep Checklist */}
+                    {(() => {
+                      const checklistItems = [
+                        ...(briefing.matchedCommitments.length > 0 ? [`Review ${briefing.matchedCommitments.length} open commitment${briefing.matchedCommitments.length > 1 ? 's' : ''}`] : []),
+                        ...(briefing.attendees.filter(a => a.healthScore < 50).length > 0 ? [`Reconnect with ${briefing.attendees.filter(a => a.healthScore < 50).map(a => a.name).slice(0, 2).join(', ')}`] : []),
+                        'Review talking points below',
+                        'Prepare follow-up action items',
+                      ]
+                      const checked = checkedItems[briefing.id] || new Set()
+                      const allDone = checklistItems.every(item => checked.has(item))
+
+                      return (
+                        <div className={`rounded-lg p-4 border ${allDone ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800/50' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50'}`}>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                            <CheckCircle2 className={`w-4 h-4 ${allDone ? 'text-green-600' : 'text-amber-500'}`} />
+                            Pre-Meeting Checklist
+                            <span className="text-xs font-normal text-gray-400 ml-auto">{checked.size}/{checklistItems.length}</span>
+                          </h4>
+                          <div className="space-y-2">
+                            {checklistItems.map((item, i) => (
+                              <label key={i} className="flex items-center gap-2.5 cursor-pointer group">
+                                <input
+                                  type="checkbox"
+                                  checked={checked.has(item)}
+                                  onChange={() => toggleCheckItem(briefing.id, item)}
+                                  className="w-4 h-4 rounded cursor-pointer"
+                                />
+                                <span className={`text-sm ${checked.has(item) ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                  {item}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
                     {/* Talking points */}
                     <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
-                      <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                        <MessageSquare aria-hidden="true" className="w-4 h-4" />
-                        Suggested Talking Points
-                      </h4>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
+                          <MessageSquare aria-hidden="true" className="w-4 h-4" />
+                          Suggested Talking Points
+                        </h4>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); copyTalkingPoints(briefing) }}
+                          className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          {copiedId === briefing.id ? (
+                            <><CheckCircle2 className="w-3 h-3" /> Copied</>
+                          ) : (
+                            <><Copy className="w-3 h-3" /> Copy briefing</>
+                          )}
+                        </button>
+                      </div>
                       <div className="space-y-2">
                         {briefing.talkingPoints.map((point, i) => (
                           <div key={i} className="flex items-start gap-2 text-sm text-indigo-800 dark:text-indigo-300">

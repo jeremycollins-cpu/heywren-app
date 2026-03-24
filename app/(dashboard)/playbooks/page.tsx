@@ -265,23 +265,63 @@ export default function PlaybooksPage() {
         </div>
       </div>
 
+      {/* Starter Templates */}
+      {playbooks.length === 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Start with a Template</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              { name: 'Overdue Nudge', desc: 'Remind yourself when commitments go overdue', trigger: 'commitment_overdue', action: 'send_nudge', icon: '⏰' },
+              { name: 'Stale Item Alert', desc: 'Get notified about stale 7+ day items', trigger: 'commitment_stale', action: 'send_slack', icon: '🔔' },
+              { name: 'Auto Draft Follow-up', desc: 'Create a draft email when new commitments arrive', trigger: 'commitment_created', action: 'create_draft', icon: '✉️' },
+              { name: 'Meeting Prep Reminder', desc: 'Get a briefing before meetings start', trigger: 'meeting_upcoming', action: 'send_nudge', icon: '📋' },
+              { name: 'Escalation Rule', desc: 'Escalate ignored nudges to your manager', trigger: 'nudge_ignored', action: 'escalate', icon: '🚨' },
+              { name: 'Daily Digest', desc: 'Get a daily summary of your commitments', trigger: 'daily_schedule', action: 'send_email', icon: '📊' },
+            ].map(template => (
+              <button
+                key={template.name}
+                onClick={() => {
+                  setFormName(template.name)
+                  setFormDescription(template.desc)
+                  setFormTrigger(template.trigger)
+                  setFormAction(template.action)
+                  setShowModal(true)
+                }}
+                className="text-left p-4 bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-sm transition group"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg" aria-hidden="true">{template.icon}</span>
+                  <span className="font-semibold text-sm text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">{template.name}</span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{template.desc}</p>
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded font-medium">{TRIGGER_LABELS[template.trigger]?.replace('When a ', '').replace('When a commitment ', '')}</span>
+                  <span className="text-gray-300 dark:text-gray-600 text-[10px]">&rarr;</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded font-medium">{ACTION_LABELS[template.action]?.replace('Send a ', '').replace('Create a ', '')}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Playbooks List */}
       <div className="space-y-3">
         {playbooks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-4">
               <FileText className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No playbooks yet</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No custom playbooks yet</h3>
             <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-              Create automation rules to handle repetitive workflows. Define triggers based on calendar, email, or tool events and set actions like notifications or automated messages.
+              Pick a template above to get started, or create a custom automation rule from scratch.
             </p>
             <button
               onClick={() => setShowModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
             >
               <Plus aria-hidden="true" className="w-5 h-5" />
-              Create Your First Playbook
+              Create Custom Playbook
             </button>
           </div>
         ) : (

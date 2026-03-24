@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { classifyMissedEmailBatch, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
 
+function normalizeSubject(subject: string | null): string {
+  if (!subject) return '(no subject)'
+  // Strip Re:/Fwd:/RE:/FW:/Fw: prefixes (possibly repeated)
+  return subject.replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
+}
+
+const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const urgencyLabels = ['critical', 'high', 'medium', 'low'] as const
+
 export async function GET() {
   const supabase = await createClient()
 
@@ -28,22 +37,82 @@ export async function GET() {
     .select('*')
     .eq('team_id', profile.current_team_id)
     .in('status', ['pending', 'snoozed'])
-    .order('urgency', { ascending: true })  // critical first
     .order('received_at', { ascending: false })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Re-sort with custom urgency order since Supabase sorts alphabetically
-  const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
-  const sorted = (missedEmails || []).sort((a: { urgency: string; received_at: string }, b: { urgency: string; received_at: string }) => {
-    const urgDiff = (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4)
+  // Group emails by normalized subject line
+  const threadMap = new Map<string, Array<typeof missedEmails[number]>>()
+
+  for (const email of missedEmails || []) {
+    const key = normalizeSubject(email.subject)
+    const group = threadMap.get(key)
+    if (group) {
+      group.push(email)
+    } else {
+      threadMap.set(key, [email])
+    }
+  }
+
+  // Build thread groups
+  const threadGroups = Array.from(threadMap.values()).map((emails) => {
+    // Sort by urgency then recency within the group
+    emails.sort((a, b) => {
+      const urgDiff = (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4)
+      if (urgDiff !== 0) return urgDiff
+      return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+    })
+
+    const primary = emails[0]
+
+    // Find highest urgency in thread
+    let highestUrgencyIdx = 4
+    for (const e of emails) {
+      const idx = urgencyOrder[e.urgency] ?? 4
+      if (idx < highestUrgencyIdx) highestUrgencyIdx = idx
+    }
+    const threadHighestUrgency = urgencyLabels[highestUrgencyIdx] || primary.urgency
+
+    // Combine unique question summaries
+    const summaries = emails
+      .map(e => e.question_summary)
+      .filter((s): s is string => !!s)
+    const uniqueSummaries = [...new Set(summaries)]
+    const combinedQuestionSummary = uniqueSummaries.join(' | ')
+
+    return {
+      ...primary,
+      // Override urgency with highest in thread for display
+      urgency: threadHighestUrgency,
+      question_summary: combinedQuestionSummary || primary.question_summary,
+      // Thread metadata
+      threadCount: emails.length,
+      threadEmailIds: emails.map(e => e.id),
+      threadHighestUrgency,
+      threadEmails: emails.map(e => ({
+        id: e.id,
+        from_name: e.from_name,
+        from_email: e.from_email,
+        subject: e.subject,
+        received_at: e.received_at,
+        urgency: e.urgency,
+        body_preview: e.body_preview,
+        question_summary: e.question_summary,
+        category: e.category,
+      })),
+    }
+  })
+
+  // Sort thread groups by highest urgency then most recent email
+  threadGroups.sort((a, b) => {
+    const urgDiff = (urgencyOrder[a.threadHighestUrgency] ?? 4) - (urgencyOrder[b.threadHighestUrgency] ?? 4)
     if (urgDiff !== 0) return urgDiff
     return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
   })
 
-  return NextResponse.json({ missedEmails: sorted })
+  return NextResponse.json({ missedEmails: threadGroups })
 }
 
 export async function POST() {
@@ -195,7 +264,7 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json()
-  const { id, status, snoozed_until } = body
+  const { id, status, snoozed_until, threadEmailIds } = body
 
   if (!id || !status) {
     return NextResponse.json({ error: 'Missing id or status' }, { status: 400 })
@@ -206,6 +275,21 @@ export async function PATCH(req: Request) {
     updateData.snoozed_until = snoozed_until
   }
 
+  // If threadEmailIds provided, bulk update all emails in the thread
+  if (threadEmailIds && Array.isArray(threadEmailIds) && threadEmailIds.length > 0) {
+    const { error } = await supabase
+      .from('missed_emails')
+      .update(updateData)
+      .in('id', threadEmailIds)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, updated: threadEmailIds.length })
+  }
+
+  // Single email update (backward compatible)
   const { error } = await supabase
     .from('missed_emails')
     .update(updateData)

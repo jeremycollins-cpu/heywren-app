@@ -108,16 +108,68 @@ export async function GET(request: NextRequest) {
     }
 
     if (!teamId) {
-      const { data: newTeam } = await supabase
+      // Try domain matching first to join an existing team
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', userId)
+        .single()
+
+      const userEmail = userProfile?.email || ''
+      const domain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : null
+
+      if (domain) {
+        const { data: domainTeam } = await supabase
+          .from('teams')
+          .select('id')
+          .eq('domain', domain)
+          .limit(1)
+          .single()
+
+        if (domainTeam) {
+          teamId = domainTeam.id
+          await supabase
+            .from('team_members')
+            .upsert(
+              { team_id: teamId, user_id: userId, role: 'member' },
+              { onConflict: 'team_id,user_id' }
+            )
+          await supabase
+            .from('profiles')
+            .update({ current_team_id: teamId })
+            .eq('id', userId)
+        }
+      }
+    }
+
+    if (!teamId) {
+      // No existing team found — create a new one
+      const slug = `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+      const { data: newTeam, error: teamError } = await supabase
         .from('teams')
-        .insert({ name: 'My Team', owner_id: userId })
+        .insert({ name: 'My Team', slug })
         .select()
         .single()
 
+      if (teamError) {
+        console.error('Failed to create team during Outlook OAuth:', teamError)
+      }
+
       if (newTeam) {
         teamId = newTeam.id
-        await supabase.from('team_members').insert({ team_id: teamId, user_id: userId, role: 'owner' })
-        await supabase.from('profiles').update({ current_team_id: teamId }).eq('id', userId)
+        const { error: memberError } = await supabase
+          .from('team_members')
+          .insert({ team_id: teamId, user_id: userId, role: 'owner' })
+        if (memberError) {
+          console.error('Failed to create team member during Outlook OAuth:', memberError)
+        }
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ current_team_id: teamId })
+          .eq('id', userId)
+        if (profileError) {
+          console.error('Failed to update profile during Outlook OAuth:', profileError)
+        }
       }
     }
 

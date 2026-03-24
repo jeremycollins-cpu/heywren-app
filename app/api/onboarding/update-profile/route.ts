@@ -71,6 +71,94 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Ensure user has a team — join existing or create new so integrations step works
+    const { data: currentProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('current_team_id, email')
+      .eq('id', userId)
+      .single()
+
+    if (!currentProfile?.current_team_id) {
+      // First check if user is already in team_members (e.g. added by provision-account)
+      const { data: existingMembership } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+
+      if (existingMembership?.team_id) {
+        // User already has a team membership — just fix the profile
+        await supabaseAdmin
+          .from('profiles')
+          .update({ current_team_id: existingMembership.team_id })
+          .eq('id', userId)
+      } else {
+        // Try domain matching to join an existing team (like provision-account does)
+        const userEmail = currentProfile?.email || userData.user.email || ''
+        const domain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : null
+        const FREE_DOMAINS = new Set([
+          'gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com',
+          'outlook.com', 'live.com', 'aol.com', 'icloud.com',
+          'protonmail.com', 'proton.me', 'zoho.com', 'mail.com',
+        ])
+
+        let teamId: string | null = null
+
+        if (domain && !FREE_DOMAINS.has(domain)) {
+          const { data: domainTeam } = await supabaseAdmin
+            .from('teams')
+            .select('id')
+            .eq('domain', domain)
+            .limit(1)
+            .single()
+
+          if (domainTeam) {
+            // Join existing team
+            teamId = domainTeam.id
+            await supabaseAdmin
+              .from('team_members')
+              .upsert(
+                { team_id: teamId, user_id: userId, role: 'member' },
+                { onConflict: 'team_id,user_id' }
+              )
+          }
+        }
+
+        if (!teamId) {
+          // No domain match — create a new team
+          const slug = (companyName || 'team')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') + '-' + Date.now().toString(36)
+
+          const { data: newTeam, error: teamError } = await supabaseAdmin
+            .from('teams')
+            .insert({ name: companyName?.trim() || 'My Team', slug })
+            .select('id')
+            .single()
+
+          if (teamError) {
+            console.error('Team creation error during onboarding:', teamError)
+          }
+
+          if (newTeam) {
+            teamId = newTeam.id
+            await supabaseAdmin
+              .from('team_members')
+              .insert({ team_id: teamId, user_id: userId, role: 'owner' })
+          }
+        }
+
+        if (teamId) {
+          await supabaseAdmin
+            .from('profiles')
+            .update({ current_team_id: teamId })
+            .eq('id', userId)
+        }
+      }
+    }
+
     return NextResponse.json({ success: true })
   } catch (err: any) {
     console.error('Update profile error:', err)

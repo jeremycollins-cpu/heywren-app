@@ -71,6 +71,8 @@ jest.mock('lucide-react', () => {
     HelpCircle: createIcon('HelpCircle'),
     MailWarning: createIcon('MailWarning'),
     Lock: createIcon('Lock'),
+    RefreshCw: createIcon('RefreshCw'),
+    MessageSquareDashed: createIcon('MessageSquareDashed'),
   }
 })
 
@@ -121,16 +123,18 @@ describe('Sidebar', () => {
       const expectedLinks = [
         'Dashboard',
         'Commitments',
-        'Relationships',
+        'Weekly Review',
         'Coach',
-        'Weekly',
-        'Playbooks',
+        'Relationships',
+        'Briefings',
+        'Achievements',
         'Draft Queue',
         'Missed Emails',
-        'Briefings',
+        'Missed Chats',
         'Handoff',
-        'Achievements',
+        'Playbooks',
         'Integrations',
+        'Data Sync',
         'Ideas',
       ]
 

@@ -43,35 +43,23 @@ function LoginContent() {
       if (needsOnboarding) {
         localStorage.removeItem('heywren_needs_onboarding')
 
-        // Also check if user actually has integrations set up
-        // If not, send them to onboarding
-        const { data: integrations } = await supabase
-          .from('integrations')
-          .select('id')
-          .limit(1)
-
-        if (!integrations || integrations.length === 0) {
-          router.push('/onboarding/profile')
-          return
+        // Check integrations via server-side API (bypasses RLS)
+        const intRes = await fetch('/api/integrations/status')
+        if (intRes.ok) {
+          const intData = await intRes.json()
+          if (!intData.integrations || intData.integrations.length === 0) {
+            router.push('/onboarding/profile')
+            return
+          }
         }
       }
 
       // Check if user has completed onboarding even without the flag
-      // This catches users who close the browser and come back later
       if (data?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', data.user.id)
-          .single()
-
-        if (profile?.current_team_id) {
-          const { data: integrations } = await supabase
-            .from('integrations')
-            .select('id')
-            .limit(1)
-
-          if (!integrations || integrations.length === 0) {
+        const intRes = await fetch('/api/integrations/status')
+        if (intRes.ok) {
+          const intData = await intRes.json()
+          if (!intData.integrations || intData.integrations.length === 0) {
             router.push('/onboarding/profile')
             return
           }

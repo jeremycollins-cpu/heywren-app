@@ -76,12 +76,9 @@ export default function WeeklyPage() {
 
         if (commitmentsError) throw commitmentsError
 
-        const { data: intData, error: intError } = await supabase
-          .from('integrations')
-          .select('provider')
-          .eq('team_id', teamId)
-
-        if (intError) throw intError
+        // Fetch integrations via server-side API (bypasses RLS)
+        const intStatusRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const intData = intStatusRes.integrations || []
 
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
@@ -306,6 +303,94 @@ export default function WeeklyPage() {
           </div>
         )}
       </div>
+
+      {/* Weekly Activity Trend */}
+      {commitments.length > 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">4-Week Trend</h2>
+          <div className="flex items-end gap-2 h-32">
+            {(() => {
+              const weeks = [0, 1, 2, 3].map(weeksAgo => {
+                const weekCommitments = commitments.filter(c => {
+                  const d = daysSince(c.created_at)
+                  return d >= weeksAgo * 7 && d < (weeksAgo + 1) * 7
+                })
+                const completed = weekCommitments.filter(c => c.status === 'completed').length
+                const total = weekCommitments.length
+                const weekStart = new Date(Date.now() - (weeksAgo * 7 + 6) * 86400000)
+                return { total, completed, label: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), isThisWeek: weeksAgo === 0 }
+              }).reverse()
+              const maxVal = Math.max(...weeks.map(w => w.total), 1)
+              return weeks.map((week, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full flex flex-col items-center justify-end h-24 gap-0.5">
+                    <span className="text-[10px] font-bold text-gray-500">{week.total}</span>
+                    <div className="w-full flex flex-col gap-0.5">
+                      <div
+                        className={`w-full rounded-t ${week.isThisWeek ? 'bg-indigo-500' : 'bg-indigo-300 dark:bg-indigo-700'}`}
+                        style={{ height: `${Math.max((week.total - week.completed) / maxVal * 80, 2)}px` }}
+                      />
+                      {week.completed > 0 && (
+                        <div
+                          className="w-full bg-green-400 dark:bg-green-500 rounded-b"
+                          style={{ height: `${Math.max(week.completed / maxVal * 80, 2)}px` }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <span className={`text-[10px] ${week.isThisWeek ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>{week.label}</span>
+                </div>
+              ))
+            })()}
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <div className="w-3 h-2 bg-indigo-400 rounded" /> Open
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <div className="w-3 h-2 bg-green-400 rounded" /> Completed
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weekly Summary — Copy to share */}
+      {commitments.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-900/10 dark:to-violet-900/10 border border-indigo-200 dark:border-indigo-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-indigo-900 dark:text-indigo-200">Weekly Summary</h2>
+            <button
+              onClick={() => {
+                const summary = [
+                  `Weekly Review — ${weekLabel}`,
+                  ``,
+                  `New commitments: ${thisWeekNew.length}`,
+                  `Completed: ${completedThisWeek.length}`,
+                  `Still open: ${open.length}`,
+                  `Follow-through: ${followThrough}%`,
+                  weekOverWeekChange !== null ? `Week-over-week: ${weekOverWeekChange >= 0 ? '+' : ''}${weekOverWeekChange}%` : '',
+                  ``,
+                  `Sources: Slack (${slackCount}) · Outlook (${outlookCount}) · Manual (${manualCount})`,
+                  calendarEvents.length > 0 ? `Meetings this week: ${calendarEvents.length}` : '',
+                ].filter(Boolean).join('\n')
+                navigator.clipboard.writeText(summary)
+                toast.success('Weekly summary copied to clipboard')
+              }}
+              className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              Copy summary
+            </button>
+          </div>
+          <div className="text-xs text-indigo-700 dark:text-indigo-300 space-y-1 font-mono">
+            <p>{thisWeekNew.length} new &middot; {completedThisWeek.length} completed &middot; {open.length} open &middot; {followThrough}% follow-through</p>
+            {weekOverWeekChange !== null && (
+              <p className={weekOverWeekChange > 20 ? 'text-amber-600' : weekOverWeekChange < -20 ? 'text-green-600' : ''}>
+                {weekOverWeekChange >= 0 ? '+' : ''}{weekOverWeekChange}% vs last week
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Recent Activity */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">

@@ -1,232 +1,281 @@
 // app/(dashboard)/coach/page.tsx
-// Executive Coach v4 — SECURITY FIX: All queries filtered by team_id
-// Priority-based insights with action callouts
+// AI-powered Communication Coach — personalized insights from Claude
 
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState, useCallback } from 'react'
+import {
+  CheckCircle2,
+  X,
+  Target,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  ArrowRight,
+  Sparkles,
+  RefreshCw,
+  Clock,
+  MessageSquare,
+  Users,
+  Zap,
+  BarChart3,
+  Minus,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
+import Link from 'next/link'
 
-interface Commitment {
+interface CoachingInsight {
   id: string
-  title: string
-  description: string | null
-  status: string
-  source: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Insight {
-  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'GROWTH'
+  category: 'responsiveness' | 'tone' | 'follow_through' | 'relationship' | 'workload' | 'communication_style'
+  priority: 'critical' | 'high' | 'medium' | 'growth'
   title: string
   description: string
   action: string
+  metric?: { label: string; value: string; trend?: 'up' | 'down' | 'stable' }
+  researchBasis?: string
 }
 
-function daysSince(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+interface CommunicationProfile {
+  avgResponseTimeHours: number
+  responseTimeByUrgency: Record<string, number>
+  dominantTone: string
+  toneDistribution: Record<string, number>
+  topStakeholders: Array<{ name: string; interactions: number; openCommitments: number }>
+  completionRate: number
+  avgCompletionDays: number
+  commitmentVolume: { weekly: number; trend: 'increasing' | 'decreasing' | 'stable' }
+  commonCommitmentTypes: Record<string, number>
+  missedEmailRate: number
+  peakActivityHours: number[]
 }
 
-function generateInsights(commitments: Commitment[]): Insight[] {
-  const insights: Insight[] = []
-  const open = commitments.filter(c => c.status === 'open')
-  const completed = commitments.filter(c => c.status === 'completed')
-  const stale = open.filter(c => daysSince(c.created_at) > 7)
-  const veryStale = open.filter(c => daysSince(c.created_at) > 14)
-  const slackCount = commitments.filter(c => c.source === 'slack').length
-  const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
-  const followThrough = commitments.length > 0 ? Math.round((completed.length / commitments.length) * 100) : 0
-  const thisWeek = commitments.filter(c => daysSince(c.created_at) <= 7)
+interface CachedCoachData {
+  insights: CoachingInsight[]
+  profile: CommunicationProfile
+  generatedAt: string
+}
 
-  // CRITICAL insights
-  if (veryStale.length >= 3) {
-    insights.push({
-      priority: 'CRITICAL',
-      title: 'Commitment backlog building',
-      description: `${veryStale.length} commitments have gone 14+ days without resolution. This pattern suggests items are being captured but not followed through on, which erodes team trust over time.`,
-      action: 'Block 30 minutes today to triage your oldest commitments. Close what\'s done, delegate what you can, and set explicit deadlines for the rest.',
-    })
+const CACHE_KEY = 'coach-ai-insights'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+function getCachedData(): CachedCoachData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as CachedCoachData
+    const age = Date.now() - new Date(cached.generatedAt).getTime()
+    if (age > CACHE_TTL_MS) {
+      localStorage.removeItem(CACHE_KEY)
+      return null
+    }
+    return cached
+  } catch {
+    return null
   }
+}
 
-  if (open.length > 50 && completed.length === 0) {
-    insights.push({
-      priority: 'CRITICAL',
-      title: 'Zero follow-through detected',
-      description: `You have ${open.length} tracked commitments but none marked complete. Wren can only measure follow-through when items are closed — this is your biggest opportunity.`,
-      action: 'Start with your 5 most recent commitments. Mark any that are already done as complete. This will immediately establish your follow-through baseline.',
-    })
-  }
+function setCachedData(data: CachedCoachData) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+  } catch {}
+}
 
-  // HIGH insights
-  if (stale.length >= 5) {
-    insights.push({
-      priority: 'HIGH',
-      title: 'Stale commitments need attention',
-      description: `${stale.length} items have been open for over a week. Research shows commitments not acted on within 7 days have a 60% lower completion rate.`,
-      action: 'Review stale items and either set a concrete next step for each, or close them with a status update to stakeholders.',
-    })
-  }
-
-  if (slackCount > 0 && outlookCount > 0 && Math.abs(slackCount - outlookCount) / Math.max(slackCount, outlookCount) > 0.7) {
-    const dominant = slackCount > outlookCount ? 'Slack' : 'Outlook'
-    const weak = slackCount > outlookCount ? 'Outlook' : 'Slack'
-    insights.push({
-      priority: 'HIGH',
-      title: `Imbalanced source coverage`,
-      description: `${Math.round(Math.max(slackCount, outlookCount) / commitments.length * 100)}% of your commitments come from ${dominant}. You may be missing commitments made in ${weak} conversations.`,
-      action: `Review your recent ${weak} ${weak === 'Slack' ? 'channels' : 'email threads'} for commitments that weren\'t captured. Consider running a backfill sync.`,
-    })
-  }
-
-  if (followThrough < 30 && commitments.length > 10) {
-    insights.push({
-      priority: 'HIGH',
-      title: 'Follow-through rate below threshold',
-      description: `Your current follow-through rate is ${followThrough}%. High-performing leaders typically maintain 70%+. Every completed item builds momentum.`,
-      action: 'Set a goal to complete 3 commitments this week. Focus on quick wins first to build your streak.',
-    })
-  }
-
-  // MEDIUM insights
-  if (thisWeek.length > 15) {
-    insights.push({
-      priority: 'MEDIUM',
-      title: 'High volume week',
-      description: `${thisWeek.length} new commitments captured this week. That\'s above average and could lead to overcommitment if not managed.`,
-      action: 'Review new commitments and prioritize the top 5. Delegate or defer the rest to maintain focus.',
-    })
-  }
-
-  if (open.length > 0 && stale.length / open.length > 0.5) {
-    insights.push({
-      priority: 'MEDIUM',
-      title: 'Commitment velocity declining',
-      description: `More than half your open items are over a week old. Your velocity of closing items needs to exceed your rate of new commitments.`,
-      action: 'Aim to close 2 items for every 1 new commitment this week to reduce your backlog.',
-    })
-  }
-
-  // GROWTH insights
-  if (commitments.length < 20) {
-    insights.push({
-      priority: 'GROWTH',
-      title: 'Building your commitment baseline',
-      description: `Wren is learning your patterns with ${commitments.length} tracked items. More data means better coaching insights. The first 50 commitments establish your baseline.`,
-      action: 'Keep using @HeyWren in Slack and ensure both Slack and Outlook are syncing regularly.',
-    })
-  }
-
-  if (followThrough >= 70) {
-    insights.push({
-      priority: 'GROWTH',
-      title: 'Strong follow-through momentum',
-      description: `Your ${followThrough}% follow-through rate puts you in the top tier. Maintaining this consistency is what separates great leaders.`,
-      action: 'Challenge yourself to maintain this rate while increasing your total commitment volume by 20% next week.',
-    })
-  }
-
-  if (slackCount > 0 && outlookCount === 0) {
-    insights.push({
-      priority: 'GROWTH',
-      title: 'Expand your commitment sources',
-      description: 'You\'re only tracking Slack commitments. Many critical commitments happen over email — connecting Outlook would give you a complete picture.',
-      action: 'Go to Integrations and connect your Outlook account to capture email commitments.',
-    })
-  }
-
-  // Always return at least one insight
-  if (insights.length === 0) {
-    insights.push({
-      priority: 'GROWTH',
-      title: 'Getting started with Wren',
-      description: 'Wren is ready to analyze your communication patterns and provide coaching insights specific to your role. Connect your tools and start tracking.',
-      action: 'Tag @HeyWren in your next Slack conversation where someone makes a commitment.',
-    })
-  }
-
-  return insights
+function timeAgo(dateStr: string): string {
+  const ms = Date.now() - new Date(dateStr).getTime()
+  const minutes = Math.floor(ms / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
 const priorityConfig = {
-  CRITICAL: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400', dot: 'bg-red-500' },
-  HIGH: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400', dot: 'bg-orange-500' },
-  MEDIUM: { border: 'border-l-yellow-500', badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400', dot: 'bg-yellow-500' },
-  GROWTH: { border: 'border-l-green-500', badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400', dot: 'bg-green-500' },
+  critical: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400', dot: 'bg-red-500', icon: AlertTriangle },
+  high: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400', dot: 'bg-orange-500', icon: Target },
+  medium: { border: 'border-l-yellow-500', badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400', dot: 'bg-yellow-500', icon: TrendingUp },
+  growth: { border: 'border-l-green-500', badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400', dot: 'bg-green-500', icon: Sparkles },
+}
+
+const categoryConfig: Record<string, { label: string; icon: typeof Clock }> = {
+  responsiveness: { label: 'Responsiveness', icon: Clock },
+  tone: { label: 'Tone', icon: MessageSquare },
+  follow_through: { label: 'Follow-through', icon: CheckCircle2 },
+  relationship: { label: 'Relationships', icon: Users },
+  workload: { label: 'Workload', icon: BarChart3 },
+  communication_style: { label: 'Communication Style', icon: Zap },
+}
+
+function TrendArrow({ trend }: { trend?: 'up' | 'down' | 'stable' }) {
+  if (!trend) return null
+  if (trend === 'up') return <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+  if (trend === 'down') return <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+  return <Minus className="w-3.5 h-3.5 text-gray-400" />
+}
+
+function ResponseGauge({ hours }: { hours: number }) {
+  // Gauge: <4h = great, 4-12h = good, 12-24h = fair, 24+ = slow
+  let color = 'text-green-600'
+  let label = 'Fast'
+  if (hours > 24) { color = 'text-red-600'; label = 'Slow' }
+  else if (hours > 12) { color = 'text-amber-600'; label = 'Fair' }
+  else if (hours > 4) { color = 'text-blue-600'; label = 'Good' }
+
+  const display = hours < 1 ? '<1h' : hours < 24 ? `${Math.round(hours)}h` : `${Math.round(hours / 24)}d`
+
+  return (
+    <div>
+      <p className={`text-2xl font-bold ${color}`}>{display}</p>
+      <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+function VolumeTrendLabel({ trend }: { trend: 'increasing' | 'decreasing' | 'stable' }) {
+  if (trend === 'increasing') return <span className="text-amber-600 flex items-center gap-0.5"><TrendingUp className="w-3 h-3" /> increasing</span>
+  if (trend === 'decreasing') return <span className="text-blue-600 flex items-center gap-0.5"><TrendingDown className="w-3 h-3" /> decreasing</span>
+  return <span className="text-gray-400 flex items-center gap-0.5"><Minus className="w-3 h-3" /> stable</span>
 }
 
 export default function CoachPage() {
-  const [commitments, setCommitments] = useState<Commitment[]>([])
+  const [insights, setInsights] = useState<CoachingInsight[]>([])
+  const [profile, setProfile] = useState<CommunicationProfile | null>(null)
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set())
 
+  // Load persisted dismiss/accept state from localStorage
   useEffect(() => {
-    async function load() {
-      try {
-        const supabase = createClient()
-
-        // ── SECURITY: Get user's team_id first ──
-        const { data: userData } = await supabase.auth.getUser()
-        if (!userData?.user) {
-          setLoading(false)
-          return
-        }
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', userData.user.id)
-          .single()
-
-        const teamId = profile?.current_team_id
-        if (!teamId) {
-          setLoading(false)
-          return
-        }
-
-        const { data, error: fetchError } = await supabase
-          .from('commitments')
-          .select('*')
-          .eq('team_id', teamId)
-          .order('created_at', { ascending: false })
-
-        if (fetchError) throw fetchError
-
-        if (data) setCommitments(data)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load coaching insights'
-        setError(message)
-        toast.error(message)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
+    try {
+      const dismissed = localStorage.getItem('coach-dismissed')
+      const accepted = localStorage.getItem('coach-accepted')
+      if (dismissed) setDismissedIds(new Set(JSON.parse(dismissed)))
+      if (accepted) setAcceptedIds(new Set(JSON.parse(accepted)))
+    } catch {}
   }, [])
 
+  const fetchInsights = useCallback(async (skipCache = false) => {
+    try {
+      // Check cache first (unless forcing refresh)
+      if (!skipCache) {
+        const cached = getCachedData()
+        if (cached) {
+          setInsights(cached.insights)
+          setProfile(cached.profile)
+          setGeneratedAt(cached.generatedAt)
+          setLoading(false)
+          return
+        }
+      }
+
+      if (!loading) setRefreshing(true)
+
+      const res = await fetch('/api/coach', { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Failed to generate insights (${res.status})`)
+      }
+
+      const data = await res.json()
+      const coachData: CachedCoachData = {
+        insights: data.insights || [],
+        profile: data.profile,
+        generatedAt: data.generatedAt,
+      }
+
+      setCachedData(coachData)
+      setInsights(coachData.insights)
+      setProfile(coachData.profile)
+      setGeneratedAt(coachData.generatedAt)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load coaching insights'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [loading])
+
+  useEffect(() => {
+    fetchInsights()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleRefresh = () => {
+    setError(null)
+    fetchInsights(true)
+  }
+
+  const dismissInsight = (id: string) => {
+    const next = new Set(dismissedIds)
+    next.add(id)
+    setDismissedIds(next)
+    localStorage.setItem('coach-dismissed', JSON.stringify([...next]))
+    toast('Insight dismissed', { icon: '\u{1F44D}' })
+  }
+
+  const acceptInsight = (id: string) => {
+    const next = new Set(acceptedIds)
+    next.add(id)
+    setAcceptedIds(next)
+    localStorage.setItem('coach-accepted', JSON.stringify([...next]))
+    toast.success('Challenge accepted! Track your progress this week.')
+  }
+
+  const resetDismissed = () => {
+    setDismissedIds(new Set())
+    setAcceptedIds(new Set())
+    localStorage.removeItem('coach-dismissed')
+    localStorage.removeItem('coach-accepted')
+  }
+
+  // Loading state — AI analysis in progress
   if (loading) {
     return (
-      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading coaching insights">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          {[1,2,3].map(i => <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
+      <div className="p-8 max-w-[1200px] mx-auto" role="status" aria-live="polite" aria-busy="true" aria-label="Analyzing communication patterns">
+        <div className="flex flex-col items-center justify-center py-16 space-y-6">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+              <Sparkles className="w-8 h-8 text-white animate-pulse" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-900 rounded-full flex items-center justify-center">
+              <div className="w-3 h-3 rounded-full bg-indigo-500 animate-ping" />
+            </div>
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Analyzing your communication patterns...</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md">
+              Reviewing your commitments, response times, and stakeholder relationships to generate personalized coaching insights.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              Fetching data
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+              AI analysis
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
+              Generating insights
+            </div>
+          </div>
         </div>
       </div>
     )
   }
 
-  const insights = generateInsights(commitments)
-  const open = commitments.filter(c => c.status === 'open')
-  const completed = commitments.filter(c => c.status === 'completed')
-  const stale = open.filter(c => daysSince(c.created_at) > 7)
-
-  // Watching for topics based on data patterns
-  const watchingFor: string[] = []
-  if (stale.length > 3) watchingFor.push('Stale commitment patterns')
-  if (completed.length === 0) watchingFor.push('Completion gaps')
-  if (open.length > 30) watchingFor.push('Over-commitment risk')
-  if (watchingFor.length === 0) watchingFor.push('Building baseline patterns')
+  const activeInsights = insights.filter(i => !dismissedIds.has(i.id))
+  const acceptedInsights = activeInsights.filter(i => acceptedIds.has(i.id))
+  const pendingInsights = activeInsights.filter(i => !acceptedIds.has(i.id))
+  const dismissedCount = insights.length - activeInsights.length
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
@@ -236,50 +285,216 @@ export default function CoachPage() {
         </div>
       )}
 
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Executive Coach</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Personalized for CEO at your organization</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Your Communication Profile</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">AI-powered coaching based on your real communication patterns</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {generatedAt && (
+            <span className="text-xs text-gray-400">
+              Last analyzed: {timeAgo(generatedAt)}
+            </span>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Analyzing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
-      {/* Coach Header Card */}
-      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950 dark:to-purple-950 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-3">
-          <span className="text-3xl">🧠</span>
-          <div>
-            <div className="font-bold text-gray-900 dark:text-white text-lg">Executive Coach</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Watching for: {watchingFor.join(' · ')}
+      {/* Communication Profile Summary */}
+      {profile && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Response Speed
+            </p>
+            <ResponseGauge hours={profile.avgResponseTimeHours} />
+          </div>
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Follow-through Rate
+            </p>
+            <div className="flex items-center gap-2">
+              <p className={`text-2xl font-bold ${profile.completionRate >= 70 ? 'text-green-600' : profile.completionRate >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                {profile.completionRate}%
+              </p>
+              <VolumeTrendLabel trend={profile.commitmentVolume.trend} />
             </div>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              {profile.completionRate >= 70 ? 'Top tier' : profile.completionRate >= 40 ? 'Room to grow' : 'Needs attention'}
+            </p>
+          </div>
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+              <BarChart3 className="w-3 h-3" /> Active Commitments
+            </p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{profile.commitmentVolume.weekly}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">this week</p>
+          </div>
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+              <MessageSquare className="w-3 h-3" /> Communication Style
+            </p>
+            <p className="text-2xl font-bold text-indigo-600 capitalize">{profile.dominantTone}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">dominant tone</p>
           </div>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Wren analyzes every message, email, meeting, and task across your connected tools to surface coaching insights specific to your role. Insights update weekly based on real behavioral patterns.
-        </p>
+      )}
+
+      {/* Coach Header Card */}
+      <div className="bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/50 dark:to-violet-950/50 border border-indigo-200 dark:border-indigo-800 rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 dark:text-white">Wren Coach</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {activeInsights.length} personalized insight{activeInsights.length !== 1 ? 's' : ''} generated by AI
+              </div>
+            </div>
+          </div>
+          {dismissedCount > 0 && (
+            <button
+              onClick={resetDismissed}
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              Show {dismissedCount} dismissed
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Insights */}
+      {/* Accepted challenges */}
+      {acceptedInsights.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <Target className="w-4 h-4 text-indigo-600" />
+            Your Active Challenges
+          </h2>
+          <div className="space-y-2">
+            {acceptedInsights.map(insight => {
+              const catConfig = categoryConfig[insight.category]
+              return (
+                <div key={insight.id} className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800/50 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      {catConfig && (
+                        <span className="text-[10px] font-medium text-indigo-500 dark:text-indigo-400 uppercase tracking-wide">
+                          {catConfig.label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{insight.title}</p>
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400">{insight.action}</p>
+                  </div>
+                  {insight.metric && (
+                    <div className="text-right flex-shrink-0 flex items-center gap-1.5">
+                      <div>
+                        <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{insight.metric.value}</p>
+                        <p className="text-[10px] text-gray-400">{insight.metric.label}</p>
+                      </div>
+                      <TrendArrow trend={insight.metric.trend} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Pending Insights */}
       <div className="space-y-4">
-        {insights.map((insight, i) => {
+        {pendingInsights.map(insight => {
           const config = priorityConfig[insight.priority]
+          const PriorityIcon = config.icon
+          const catConfig = categoryConfig[insight.category]
+          const CategoryIcon = catConfig?.icon || Sparkles
+
           return (
-            <article key={i} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-6`}>
-              <div className="mb-3">
-                <span className={`px-2 py-0.5 rounded text-xs font-bold ${config.badge}`}>
-                  {insight.priority}
-                </span>
+            <article key={insight.id} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-5`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {catConfig && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                      <CategoryIcon className="w-3 h-3" />
+                      {catConfig.label}
+                    </span>
+                  )}
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${config.badge}`}>
+                    {insight.priority}
+                  </span>
+                  {insight.metric && (
+                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                      {insight.metric.value} {insight.metric.label}
+                      <TrendArrow trend={insight.metric.trend} />
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => dismissInsight(insight.id)}
+                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded"
+                  title="Dismiss this insight"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2">{insight.title}</h3>
+
+              <h3 className="font-bold text-gray-900 dark:text-white text-base mb-2">{insight.title}</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{insight.description}</p>
-              <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3">
-                <span className="text-sm">
-                  <span className="font-semibold text-indigo-700 dark:text-indigo-400">Action:</span>{' '}
-                  <span className="text-indigo-600 dark:text-indigo-300">{insight.action}</span>
-                </span>
+
+              {/* Action recommendation */}
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-lg p-3 mb-3">
+                <div className="flex items-start gap-2">
+                  <PriorityIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200">{insight.action}</p>
+                </div>
+              </div>
+
+              {/* Research basis */}
+              {insight.researchBasis && (
+                <p className="text-xs italic text-gray-400 dark:text-gray-500 mb-3 pl-1">
+                  {insight.researchBasis}
+                </p>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => acceptInsight(insight.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition"
+                  style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  Accept Challenge
+                </button>
               </div>
             </article>
           )
         })}
       </div>
+
+      {/* Empty state */}
+      {pendingInsights.length === 0 && acceptedInsights.length === 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-8 text-center">
+          <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">All caught up!</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {dismissedCount > 0
+              ? `You've dismissed ${dismissedCount} insight${dismissedCount > 1 ? 's' : ''}. Hit refresh or check back later for new AI-generated insights.`
+              : 'New insights will be generated as Wren analyzes more of your communication patterns.'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

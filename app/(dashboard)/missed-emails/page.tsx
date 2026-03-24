@@ -4,11 +4,23 @@ import { useEffect, useState } from 'react'
 import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
-  ThumbsUp, ThumbsDown, Star, Settings
+  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+
+interface ThreadEmail {
+  id: string
+  from_name: string | null
+  from_email: string
+  subject: string | null
+  received_at: string
+  urgency: string
+  body_preview: string | null
+  question_summary: string | null
+  category: string
+}
 
 interface MissedEmail {
   id: string
@@ -25,6 +37,11 @@ interface MissedEmail {
   status: string
   waiting_days: number
   is_vip?: boolean
+  // Thread grouping fields from API
+  threadCount?: number
+  threadEmailIds?: string[]
+  threadHighestUrgency?: string
+  threadEmails?: ThreadEmail[]
 }
 
 const urgencyConfig = {
@@ -67,6 +84,7 @@ export default function MissedEmailsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [scanning, setScanning] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
@@ -122,49 +140,52 @@ export default function MissedEmailsPage() {
     loadEmails()
   }, [])
 
-  async function markReplied(id: string) {
+  async function markReplied(id: string, threadEmailIds?: string[]) {
     try {
       const res = await fetch('/api/missed-emails', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: 'replied' }),
+        body: JSON.stringify({ id, status: 'replied', threadEmailIds }),
       })
       if (res.ok) {
-        setEmails(emails.filter(e => e.id !== id))
-        toast.success('Marked as replied')
+        const idsToRemove = new Set(threadEmailIds || [id])
+        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Marked ${threadEmailIds.length} emails as replied` : 'Marked as replied')
       }
     } catch {
       toast.error('Failed to update')
     }
   }
 
-  async function dismiss(id: string) {
+  async function dismiss(id: string, threadEmailIds?: string[]) {
     try {
       const res = await fetch('/api/missed-emails', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: 'dismissed' }),
+        body: JSON.stringify({ id, status: 'dismissed', threadEmailIds }),
       })
       if (res.ok) {
-        setEmails(emails.filter(e => e.id !== id))
-        toast.success('Dismissed')
+        const idsToRemove = new Set(threadEmailIds || [id])
+        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Dismissed ${threadEmailIds.length} emails` : 'Dismissed')
       }
     } catch {
       toast.error('Failed to dismiss')
     }
   }
 
-  async function snooze(id: string) {
+  async function snooze(id: string, threadEmailIds?: string[]) {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     try {
       const res = await fetch('/api/missed-emails', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: 'snoozed', snoozed_until: tomorrow }),
+        body: JSON.stringify({ id, status: 'snoozed', snoozed_until: tomorrow, threadEmailIds }),
       })
       if (res.ok) {
-        setEmails(emails.filter(e => e.id !== id))
-        toast.success('Snoozed until tomorrow')
+        const idsToRemove = new Set(threadEmailIds || [id])
+        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Snoozed ${threadEmailIds.length} emails` : 'Snoozed until tomorrow')
       }
     } catch {
       toast.error('Failed to snooze')
@@ -353,6 +374,8 @@ export default function MissedEmailsPage() {
           filteredEmails.map((email) => {
             const config = urgencyConfig[email.urgency]
             const isExpanded = expandedId === email.id
+            const isThreadExpanded = expandedThreadId === email.id
+            const hasThread = (email.threadCount ?? 1) > 1
 
             return (
               <div
@@ -389,6 +412,12 @@ export default function MissedEmailsPage() {
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                           {categoryLabels[email.category] || email.category}
                         </span>
+                        {hasThread && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                            <MessageSquare aria-hidden="true" className="w-3 h-3" />
+                            {email.threadCount} emails
+                          </span>
+                        )}
                         <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                           <Clock aria-hidden="true" className="w-3 h-3" />
                           {email.waiting_days === 0
@@ -452,31 +481,122 @@ export default function MissedEmailsPage() {
                       </p>
                     )}
 
+                    {/* Thread emails expandable section */}
+                    {hasThread && email.threadEmails && (
+                      <div className="mt-4">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExpandedThreadId(isThreadExpanded ? null : email.id)
+                          }}
+                          className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition font-medium"
+                        >
+                          <MessageSquare aria-hidden="true" className="w-4 h-4" />
+                          {isThreadExpanded ? 'Hide' : 'Show'} {(email.threadCount ?? 1) - 1} other email{(email.threadCount ?? 1) - 1 !== 1 ? 's' : ''} in this thread
+                          {isThreadExpanded ? (
+                            <ChevronUp aria-hidden="true" className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown aria-hidden="true" className="w-4 h-4" />
+                          )}
+                        </button>
+
+                        {isThreadExpanded && (
+                          <div className="mt-3 space-y-2">
+                            {email.threadEmails
+                              .filter(te => te.id !== email.id)
+                              .map((te) => {
+                                const teUrgency = urgencyConfig[te.urgency as keyof typeof urgencyConfig] || urgencyConfig.low
+                                return (
+                                  <div
+                                    key={te.id}
+                                    className="flex items-start gap-3 bg-gray-50 dark:bg-surface-dark rounded-lg p-3 border border-gray-100 dark:border-gray-700"
+                                  >
+                                    <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${teUrgency.dot}`} aria-hidden="true"></div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                          {te.from_name || te.from_email}
+                                        </span>
+                                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                                          {new Date(te.received_at).toLocaleDateString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit',
+                                          })}
+                                        </span>
+                                        <span className={`px-1.5 py-0.5 text-xs rounded-full ${teUrgency.color}`}>
+                                          {teUrgency.label}
+                                        </span>
+                                      </div>
+                                      {te.body_preview && (
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                                          {te.body_preview}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Actions */}
                     <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
-                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                        >
-                          <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
-                          Mark as Replied
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); snooze(email.id) }}
-                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
-                        >
-                          <Clock aria-hidden="true" className="w-4 h-4" />
-                          Snooze 1 Day
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); dismiss(email.id) }}
-                          className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
-                          aria-label="Dismiss email"
-                        >
-                          <X aria-hidden="true" className="w-4 h-4" />
-                          Dismiss
-                        </button>
+                        {hasThread ? (
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id, email.threadEmailIds) }}
+                              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                            >
+                              <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
+                              Reply to all ({email.threadCount})
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); snooze(email.id, email.threadEmailIds) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                            >
+                              <Clock aria-hidden="true" className="w-4 h-4" />
+                              Snooze thread ({email.threadCount})
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); dismiss(email.id, email.threadEmailIds) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                              aria-label={`Dismiss thread of ${email.threadCount} emails`}
+                            >
+                              <X aria-hidden="true" className="w-4 h-4" />
+                              Dismiss thread ({email.threadCount})
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
+                              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                            >
+                              <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
+                              Mark as Replied
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); snooze(email.id) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                            >
+                              <Clock aria-hidden="true" className="w-4 h-4" />
+                              Snooze 1 Day
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); dismiss(email.id) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                              aria-label="Dismiss email"
+                            >
+                              <X aria-hidden="true" className="w-4 h-4" />
+                              Dismiss
+                            </button>
+                          </>
+                        )}
                       </div>
 
                       {/* Feedback buttons */}
@@ -532,6 +652,7 @@ export default function MissedEmailsPage() {
           <li>&#10003; Filters out sales, marketing, and automated emails</li>
           <li>&#10003; Highlights how long someone has been waiting</li>
           <li>&#10003; Extracts the specific question you need to answer</li>
+          <li>&#10003; Groups emails from the same thread together</li>
           <li>&#10003; Scans daily after your Outlook sync at 6:30 AM PT</li>
         </ul>
       </div>
