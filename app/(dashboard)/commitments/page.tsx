@@ -1,6 +1,6 @@
 // app/(dashboard)/commitments/page.tsx
-// Commitment Tracing v3 — Timeline view with scores, status, tabs
-// Matches demo: Active Traces / Delegated / @HeyWren Mentions
+// Commitment Tracing v4 — SECURITY FIX: All queries filtered by team_id
+// Timeline view with scores, status, tabs
 
 'use client'
 
@@ -99,9 +99,30 @@ export default function CommitmentsPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
+
+      // ── SECURITY: Get user's team_id first ──
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) {
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const teamId = profile?.current_team_id
+      if (!teamId) {
+        setLoading(false)
+        return
+      }
+
       const { data } = await supabase
         .from('commitments')
         .select('*')
+        .eq('team_id', teamId)
         .order('created_at', { ascending: false })
 
       if (data) setCommitments(data)
