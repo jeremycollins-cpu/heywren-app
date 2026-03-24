@@ -104,7 +104,12 @@ export default function MissedEmailsPage() {
       if (data.error) {
         setError(data.error)
       } else {
-        setEmails(data.missedEmails || [])
+        // Compute waiting_days client-side since it's not a DB column
+        const enriched = (data.missedEmails || []).map((e: MissedEmail & { received_at: string }) => ({
+          ...e,
+          waiting_days: Math.max(0, Math.floor((Date.now() - new Date(e.received_at).getTime()) / (1000 * 60 * 60 * 24))),
+        }))
+        setEmails(enriched)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load missed emails'

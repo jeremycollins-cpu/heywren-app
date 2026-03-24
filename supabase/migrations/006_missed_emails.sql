@@ -25,11 +25,6 @@ CREATE TABLE IF NOT EXISTS missed_emails (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'snoozed', 'replied', 'dismissed')),
   snoozed_until TIMESTAMPTZ,
 
-  -- Dedup and tracking
-  waiting_days INTEGER GENERATED ALWAYS AS (
-    GREATEST(0, EXTRACT(DAY FROM (NOW() - received_at))::INTEGER)
-  ) STORED,
-
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
