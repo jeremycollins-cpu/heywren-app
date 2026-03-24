@@ -25,8 +25,71 @@ interface CalendarEvent {
   start_time: string
   end_time: string
   organizer_name: string | null
+  attendees: any[] | null
   commitments_found: number
   processed: boolean
+}
+
+// Meeting type classification for calendar heatmap
+type MeetingType = 'external' | 'internal' | 'one_on_one' | 'all_hands' | 'offsite'
+
+function classifyMeeting(event: CalendarEvent, userDomain: string): MeetingType {
+  const subject = (event.subject || '').toLowerCase()
+  const attendees = event.attendees || []
+
+  // Check for offsite / all-day keywords
+  if (subject.includes('offsite') || subject.includes('full day') || subject.includes('offices')) return 'offsite'
+  if (subject.includes('all hands') || subject.includes('all-hands') || subject.includes('town hall')) return 'all_hands'
+
+  // Check attendee count for 1:1
+  if (attendees.length <= 2) return 'one_on_one'
+
+  // Check if external (attendees from different domain)
+  if (userDomain) {
+    const hasExternal = attendees.some((a: any) => {
+      const email = (a.email || a.emailAddress?.address || '').toLowerCase()
+      return email && !email.endsWith('@' + userDomain)
+    })
+    if (hasExternal) return 'external'
+  }
+
+  return 'internal'
+}
+
+function getMeetingDurationHours(event: CalendarEvent): number {
+  const start = new Date(event.start_time).getTime()
+  const end = new Date(event.end_time).getTime()
+  return Math.max(0, (end - start) / (1000 * 60 * 60))
+}
+
+const MEETING_TYPE_CONFIG: Record<MeetingType, { label: string; color: string; bgColor: string; pillBg: string; pillText: string }> = {
+  offsite: { label: 'Offsite', color: '#d97706', bgColor: 'bg-amber-100 dark:bg-amber-900/30', pillBg: 'bg-amber-100 dark:bg-amber-900/30', pillText: 'text-amber-800 dark:text-amber-300' },
+  external: { label: 'External', color: '#dc2626', bgColor: 'bg-red-100 dark:bg-red-900/30', pillBg: 'bg-red-100 dark:bg-red-900/30', pillText: 'text-red-800 dark:text-red-300' },
+  internal: { label: 'Internal', color: '#2563eb', bgColor: 'bg-blue-100 dark:bg-blue-900/30', pillBg: 'bg-blue-100 dark:bg-blue-900/30', pillText: 'text-blue-800 dark:text-blue-300' },
+  one_on_one: { label: '1:1', color: '#7c3aed', bgColor: 'bg-purple-100 dark:bg-purple-900/30', pillBg: 'bg-purple-100 dark:bg-purple-900/30', pillText: 'text-purple-800 dark:text-purple-300' },
+  all_hands: { label: 'All-hands', color: '#16a34a', bgColor: 'bg-green-100 dark:bg-green-900/30', pillBg: 'bg-green-100 dark:bg-green-900/30', pillText: 'text-green-800 dark:text-green-300' },
+}
+
+// Time allocation categories for executive time analysis
+const TIME_CATEGORIES = [
+  { key: 'customer_support', label: 'Customer Issues & Support', target: 10, keywords: ['customer', 'support', 'issue', 'bug', 'escalation', 'incident', 'ticket', 'complaint', 'outage', 'troubleshoot', 'debug'] },
+  { key: 'partnerships', label: 'Partnerships & M&A', target: 20, keywords: ['partner', 'partnership', 'm&a', 'acquisition', 'merger', 'vendor', 'deal', 'investor', 'board', 'fundrais'] },
+  { key: 'people', label: 'People & Delegation', target: 25, keywords: ['1:1', '1on1', 'one on one', 'performance', 'review', 'hiring', 'interview', 'onboard', 'offboard', 'feedback', 'coaching', 'mentor', 'career', 'hr ', 'people', 'team sync'] },
+  { key: 'strategy', label: 'Strategy & Board Prep', target: 25, keywords: ['strategy', 'strategic', 'board', 'quarterly', 'annual', 'planning', 'okr', 'kpi', 'roadmap', 'vision', 'exec ', 'leadership', 'slt', 'offsite'] },
+  { key: 'product_eng', label: 'Product & Engineering', target: 10, keywords: ['product', 'engineering', 'sprint', 'standup', 'design', 'architecture', 'deploy', 'release', 'demo', 'tech', 'code'] },
+  { key: 'culture', label: 'Culture & Communication', target: 10, keywords: ['all hands', 'all-hands', 'town hall', 'culture', 'social', 'team building', 'lunch', 'dinner', 'happy hour', 'offsite', 'celebration', 'announce'] },
+]
+
+function categorizeEvent(event: CalendarEvent): string {
+  const subject = (event.subject || '').toLowerCase()
+  const body = '' // body_preview not fetched for weekly to keep query light
+
+  for (const cat of TIME_CATEGORIES) {
+    if (cat.keywords.some(kw => subject.includes(kw) || body.includes(kw))) {
+      return cat.key
+    }
+  }
+  return 'other'
 }
 
 function daysSince(dateStr: string): number {
@@ -41,6 +104,7 @@ export default function WeeklyPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [integrationCount, setIntegrationCount] = useState(0)
+  const [userDomain, setUserDomain] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,6 +119,10 @@ export default function WeeklyPage() {
           setLoading(false)
           return
         }
+
+        const email = userData.user.email || ''
+        const domain = email.includes('@') ? email.split('@')[1] : ''
+        setUserDomain(domain)
 
         const { data: profile } = await supabase
           .from('profiles')
@@ -84,11 +152,11 @@ export default function WeeklyPage() {
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         const { data: calData, error: calError } = await supabase
           .from('outlook_calendar_events')
-          .select('id, subject, start_time, end_time, organizer_name, commitments_found, processed')
+          .select('id, subject, start_time, end_time, organizer_name, attendees, commitments_found, processed')
           .eq('team_id', teamId)
           .gte('start_time', sevenDaysAgo.toISOString())
           .eq('is_cancelled', false)
-          .order('start_time', { ascending: false })
+          .order('start_time', { ascending: true })
 
         if (calError) throw calError
 
@@ -271,6 +339,206 @@ export default function WeeklyPage() {
           </div>
         )}
       </div>
+
+      {/* Calendar Heatmap */}
+      {calendarEvents.length > 0 && (() => {
+        // Group events by day of week (Mon-Fri)
+        const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
+        const dayMap: Record<string, { hours: number; events: Array<CalendarEvent & { meetingType: MeetingType }> }> = {}
+        for (const d of dayNames) dayMap[d] = { hours: 0, events: [] }
+
+        calendarEvents.forEach(event => {
+          const date = new Date(event.start_time)
+          const dayIdx = date.getDay() // 0=Sun, 1=Mon...
+          if (dayIdx < 1 || dayIdx > 5) return // skip weekends
+          const dayName = dayNames[dayIdx - 1]
+          const duration = getMeetingDurationHours(event)
+          const meetingType = classifyMeeting(event, userDomain)
+          dayMap[dayName].hours += duration
+          dayMap[dayName].events.push({ ...event, meetingType })
+        })
+
+        const maxHours = Math.max(...Object.values(dayMap).map(d => d.hours), 1)
+
+        return (
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Calendar Heatmap</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Meeting load by day — color intensity = time in meetings</p>
+
+            {/* Heat blocks */}
+            <div className="flex items-end gap-3 mb-2">
+              {dayNames.map(day => {
+                const data = dayMap[day]
+                const hrs = Math.round(data.hours)
+                const intensity = data.hours / maxHours
+                const bg = hrs === 0
+                  ? 'bg-gray-200 dark:bg-gray-700'
+                  : intensity >= 0.75
+                  ? 'bg-red-500'
+                  : intensity >= 0.5
+                  ? 'bg-amber-500'
+                  : 'bg-green-500'
+
+                return (
+                  <div key={day} className="flex-1 text-center">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{day}</div>
+                    <div className={`${bg} text-white font-bold text-sm rounded-lg py-2 px-1`}>
+                      {hrs}hr
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-4 text-[10px] text-gray-400 mb-5">
+              <span>Heavy (6hr+)</span>
+              <span>Moderate (3-5hr)</span>
+              <span>Light (&lt;3hr)</span>
+            </div>
+
+            {/* Day-by-day meeting list */}
+            <div className="space-y-4">
+              {dayNames.map(day => {
+                const data = dayMap[day]
+                if (data.events.length === 0) return null
+                return (
+                  <div key={day}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 w-8">{day}</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {data.events.map((event, i) => {
+                          const config = MEETING_TYPE_CONFIG[event.meetingType]
+                          return (
+                            <span key={i} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${config.pillBg} ${config.pillText}`}>
+                              <span className="w-1 h-1 rounded-full" style={{ backgroundColor: config.color }} />
+                              {event.subject || 'Untitled'}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {/* Light day annotation */}
+              {dayNames.map(day => {
+                const data = dayMap[day]
+                if (data.hours > 0 && data.hours < 3) {
+                  return (
+                    <div key={`note-${day}`} className="border-l-2 border-amber-300 pl-3 py-2 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/10 rounded-r-lg">
+                      {day} was a light day — ideal for deep work blocks.
+                    </div>
+                  )
+                }
+                return null
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 mt-5 pt-3 border-t border-gray-100 dark:border-gray-800">
+              {Object.entries(MEETING_TYPE_CONFIG).map(([key, config]) => (
+                <div key={key} className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: config.color }} />
+                  {config.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Time Allocation Analysis */}
+      {calendarEvents.length > 0 && (() => {
+        // Count total email/message activity this week
+        const thisWeekCommitments = commitments.filter(c => isThisWeek(c.created_at))
+        const messageCount = thisWeekCommitments.length
+        const meetingCount = calendarEvents.length
+
+        // Categorize calendar events into time buckets
+        const categoryHours: Record<string, number> = {}
+        let totalMeetingHours = 0
+
+        calendarEvents.forEach(event => {
+          const hours = getMeetingDurationHours(event)
+          totalMeetingHours += hours
+          const cat = categorizeEvent(event)
+          categoryHours[cat] = (categoryHours[cat] || 0) + hours
+        })
+
+        // Also categorize commitments (as proxy for message/email time)
+        thisWeekCommitments.forEach(c => {
+          const title = (c.title || '').toLowerCase()
+          let matched = false
+          for (const cat of TIME_CATEGORIES) {
+            if (cat.keywords.some(kw => title.includes(kw))) {
+              categoryHours[cat.key] = (categoryHours[cat.key] || 0) + 0.25 // estimate 15min per commitment
+              matched = true
+              break
+            }
+          }
+          if (!matched) {
+            categoryHours['other'] = (categoryHours['other'] || 0) + 0.25
+          }
+        })
+
+        const totalHours = Object.values(categoryHours).reduce((a, b) => a + b, 0) || 1
+
+        return (
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Time Allocation Analysis</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+              Based on your {messageCount} commitments + {meetingCount} meetings this week, here&apos;s where your time went vs. target:
+            </p>
+
+            <div className="space-y-5">
+              {TIME_CATEGORIES.map(cat => {
+                const hours = categoryHours[cat.key] || 0
+                const pct = Math.round((hours / totalHours) * 100)
+                const target = cat.target
+                const maxPct = Math.max(pct, target)
+                const barWidth = maxPct > 0 ? (pct / 100) * 100 : 0
+                const targetPosition = (target / 100) * 100
+
+                // Color: green if within ±5% of target, red if over-indexed by >10%, amber if under-indexed by >10%
+                const diff = pct - target
+                const barColor = Math.abs(diff) <= 5
+                  ? 'bg-green-500'
+                  : diff > 5
+                  ? 'bg-red-500'
+                  : 'bg-amber-500'
+
+                return (
+                  <div key={cat.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{cat.label}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        You: {pct}% / Target: {target}%
+                      </span>
+                    </div>
+                    <div className="relative h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-visible">
+                      <div
+                        className={`h-full ${barColor} rounded-full transition-all`}
+                        style={{ width: `${Math.min(barWidth, 100)}%` }}
+                      />
+                      {/* Target marker */}
+                      <div
+                        className="absolute top-0 h-full w-0.5 bg-gray-900 dark:bg-white"
+                        style={{ left: `${Math.min(targetPosition, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 mt-5 pt-3 border-t border-gray-100 dark:border-gray-800 text-[10px] text-gray-500 dark:text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" /> Aligned with target</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> Over-indexed</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Under-indexed</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Sources */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
