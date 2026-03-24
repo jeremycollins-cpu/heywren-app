@@ -1,6 +1,7 @@
 // app/(dashboard)/commitments/page.tsx
-// Commitment Tracing v4 — SECURITY FIX: All queries filtered by team_id
-// Timeline view with scores, status, tabs
+// Commitment Tracing v5 — ALL REAL DATA, zero mock/placeholder content
+// Changes from v4: Removed simulated intermediate timeline events
+// Timeline now shows only real events: origin (created) and current state
 
 'use client'
 
@@ -57,36 +58,40 @@ function buildTimeline(c: Commitment): Array<{ date: string; source: string; tex
   const events: Array<{ date: string; source: string; text: string; isCurrent: boolean }> = []
   const createdDate = new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   const sourceBadge = getSourceBadge(c.source)
+  const age = daysSince(c.created_at)
 
-  // Origin event
+  // Origin event (real — from created_at)
   events.push({
     date: createdDate,
     source: sourceBadge.label,
-    text: c.source === 'slack' ? 'Captured from Slack conversation' : c.source === 'outlook' || c.source === 'email' ? 'Detected in email thread' : 'Manually created',
+    text: c.source === 'slack'
+      ? 'Captured from Slack conversation'
+      : c.source === 'outlook' || c.source === 'email'
+        ? 'Detected in email thread'
+        : c.source === 'meeting'
+          ? 'Captured from meeting'
+          : 'Manually created',
     isCurrent: false,
   })
 
-  // Simulate intermediate events based on age
-  const age = daysSince(c.created_at)
-  if (age > 3) {
-    const midDate = new Date(new Date(c.created_at).getTime() + 3 * 24 * 60 * 60 * 1000)
+  // Current state (real — computed from actual status and age)
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (c.status === 'completed') {
+    const completedDate = new Date(c.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     events.push({
-      date: midDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      source: 'Today',
-      text: age > 7 ? `No follow-up in ${age} days. ${getCommitmentStatus(c).label === 'AT RISK' ? 'At risk.' : 'Stalled.'}` : 'Tracking in progress',
-      isCurrent: false,
+      date: completedDate,
+      source: 'Resolved',
+      text: 'Marked as completed',
+      isCurrent: true,
+    })
+  } else if (age > 0) {
+    events.push({
+      date: today,
+      source: 'Now',
+      text: `Open for ${age} day${age !== 1 ? 's' : ''}. ${getCommitmentStatus(c).label}.`,
+      isCurrent: true,
     })
   }
-
-  // Current state
-  events.push({
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    source: 'Today',
-    text: c.status === 'completed'
-      ? 'Completed successfully'
-      : `${age} days tracked. ${c.status === 'open' ? `${getCommitmentStatus(c).label}.` : ''}`,
-    isCurrent: true,
-  })
 
   return events
 }
@@ -94,7 +99,7 @@ function buildTimeline(c: Commitment): Array<{ date: string; source: string; tex
 export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'active' | 'delegated' | 'mentions'>('active')
+  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'mentions'>('active')
 
   useEffect(() => {
     async function load() {
@@ -133,8 +138,8 @@ export default function CommitmentsPage() {
 
   async function updateStatus(id: string, newStatus: string) {
     const supabase = createClient()
-    await supabase.from('commitments').update({ status: newStatus }).eq('id', id)
-    setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c))
+    await supabase.from('commitments').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
+    setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: newStatus, updated_at: new Date().toISOString() } : c))
   }
 
   if (loading) {
@@ -149,16 +154,14 @@ export default function CommitmentsPage() {
   }
 
   const openCommitments = commitments.filter(c => c.status !== 'completed')
+  const completedCommitments = commitments.filter(c => c.status === 'completed')
   const slackMentions = commitments.filter(c => c.source === 'slack')
-
-  // For "delegated" tab, show commitments with assignee info (simulated for now)
-  const delegated = commitments.filter(c => c.description?.toLowerCase().includes('delegate') || c.description?.toLowerCase().includes('assign'))
 
   const displayedCommitments = activeTab === 'active'
     ? openCommitments
-    : activeTab === 'mentions'
-    ? slackMentions
-    : delegated
+    : activeTab === 'completed'
+    ? completedCommitments
+    : slackMentions
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
@@ -170,8 +173,8 @@ export default function CommitmentsPage() {
       {/* Tabs */}
       <div className="flex gap-6 border-b border-gray-200">
         {[
-          { key: 'active' as const, label: 'Active Traces', count: openCommitments.length },
-          { key: 'delegated' as const, label: 'Delegated', count: delegated.length },
+          { key: 'active' as const, label: 'Active', count: openCommitments.length },
+          { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
           { key: 'mentions' as const, label: '@HeyWren Mentions', count: slackMentions.length },
         ].map(tab => (
           <button
@@ -190,9 +193,20 @@ export default function CommitmentsPage() {
 
       {/* Commitment Trace Cards */}
       {displayedCommitments.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          <p className="text-lg">No {activeTab === 'active' ? 'active traces' : activeTab === 'mentions' ? '@HeyWren mentions' : 'delegated items'} yet</p>
-          <p className="text-sm mt-1">Commitments will appear here as they&apos;re detected from your connected tools</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+          <div className="text-3xl mb-3">
+            {activeTab === 'active' ? '✅' : activeTab === 'completed' ? '📋' : '💬'}
+          </div>
+          <p className="text-lg font-semibold text-gray-900">
+            {activeTab === 'active' ? 'No active commitments' : activeTab === 'completed' ? 'No completed commitments yet' : 'No @HeyWren mentions yet'}
+          </p>
+          <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+            {activeTab === 'active'
+              ? 'Commitments will appear here as Wren detects them from your connected Slack and Outlook.'
+              : activeTab === 'completed'
+                ? 'Mark commitments as complete to track your follow-through rate.'
+                : 'Tag @HeyWren in any Slack conversation to capture commitments directly.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -201,7 +215,6 @@ export default function CommitmentsPage() {
             const status = getCommitmentStatus(c)
             const timeline = buildTimeline(c)
             const age = daysSince(c.created_at)
-            const sourceBadge = getSourceBadge(c.source)
             const scoreColor = score >= 70 ? 'bg-green-100 text-green-700 border-green-300' : score >= 50 ? 'bg-yellow-100 text-yellow-700 border-yellow-300' : 'bg-red-100 text-red-700 border-red-300'
 
             return (
@@ -227,29 +240,26 @@ export default function CommitmentsPage() {
                   <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.bgColor} ${status.color}`}>
                     {status.label}
                   </span>
-                  <span className="text-xs text-gray-400">{age} days</span>
-                  {c.description?.toLowerCase().includes('customer') && (
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 border border-orange-300">
-                      Customer Promise
-                    </span>
-                  )}
+                  <span className="text-xs text-gray-400">{age} day{age !== 1 ? 's' : ''}</span>
                 </div>
 
-                {/* Timeline */}
+                {/* Description if exists */}
+                {c.description && (
+                  <p className="text-sm text-gray-500 mb-4">{c.description}</p>
+                )}
+
+                {/* Timeline (real events only) */}
                 <div className="ml-2 space-y-0">
                   {timeline.map((event, i) => (
                     <div key={i} className="flex items-start gap-3 relative">
-                      {/* Vertical line */}
                       {i < timeline.length - 1 && (
                         <div className="absolute left-[7px] top-4 bottom-0 w-0.5 bg-gray-200" />
                       )}
-                      {/* Dot */}
                       <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex-shrink-0 z-10 ${
                         event.isCurrent
                           ? 'bg-indigo-500 border-indigo-500'
                           : 'bg-white border-gray-300'
                       }`} />
-                      {/* Content */}
                       <div className="pb-4">
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-400">{event.date}</span>
@@ -257,7 +267,8 @@ export default function CommitmentsPage() {
                             event.source === 'Slack' ? 'bg-purple-100 text-purple-700' :
                             event.source === 'Email' ? 'bg-blue-100 text-blue-700' :
                             event.source === 'Meeting' ? 'bg-orange-100 text-orange-700' :
-                            event.source === 'Today' ? 'bg-indigo-100 text-indigo-700' :
+                            event.source === 'Resolved' ? 'bg-green-100 text-green-700' :
+                            event.source === 'Now' ? 'bg-indigo-100 text-indigo-700' :
                             'bg-gray-100 text-gray-600'
                           }`}>
                             {event.source}
