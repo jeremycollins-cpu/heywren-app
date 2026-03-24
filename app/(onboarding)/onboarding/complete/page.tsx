@@ -10,6 +10,7 @@ export default function OnboardingCompletePage() {
   const router = useRouter()
   const [integrations, setIntegrations] = useState<string[]>([])
   const [initializing, setInitializing] = useState(true)
+  const [onboardingMarked, setOnboardingMarked] = useState(false)
 
   const supabase = createClient()
 
@@ -47,9 +48,14 @@ export default function OnboardingCompletePage() {
       setIntegrations(providers)
 
       // Mark onboarding as completed via API route (uses admin client)
-      await fetch('/api/onboarding/complete', {
+      const completeRes = await fetch('/api/onboarding/complete', {
         method: 'POST',
       })
+      if (completeRes.ok) {
+        setOnboardingMarked(true)
+      } else {
+        console.error('Failed to mark onboarding complete')
+      }
 
       setInitializing(false)
     } catch (err) {
@@ -188,18 +194,19 @@ export default function OnboardingCompletePage() {
         </div>
       </div>
 
-      {/* CTA Button */}
-      <Link
-        href="/"
-        className="w-full py-4 px-4 text-white font-semibold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 text-base"
+      {/* CTA Button — use hard navigation so middleware sees updated onboarding_completed */}
+      <button
+        onClick={() => window.location.href = '/'}
+        disabled={!onboardingMarked}
+        className="w-full py-4 px-4 text-white font-semibold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 text-base disabled:opacity-50 disabled:cursor-not-allowed"
         style={{
           background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
           boxShadow: '0 8px 24px rgba(79, 70, 229, 0.3)',
         }}
       >
-        Go to Your Dashboard
+        {onboardingMarked ? 'Go to Your Dashboard' : 'Finishing setup...'}
         <ArrowRight className="w-5 h-5" />
-      </Link>
+      </button>
 
       {/* Additional Resources */}
       <div className="text-center space-y-4">
