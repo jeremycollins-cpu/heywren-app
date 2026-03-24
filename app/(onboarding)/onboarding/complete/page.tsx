@@ -46,15 +46,10 @@ export default function OnboardingCompletePage() {
       const providers = integrationData?.map((i) => i.provider) || []
       setIntegrations(providers)
 
-      // Mark onboarding as completed
-      await supabase
-        .from('profiles')
-        .update({
-          onboarding_completed: true,
-          onboarding_step: 'complete',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', authData.user.id)
+      // Mark onboarding as completed via API route (uses admin client)
+      await fetch('/api/onboarding/complete', {
+        method: 'POST',
+      })
 
       setInitializing(false)
     } catch (err) {
