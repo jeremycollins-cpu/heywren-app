@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { WrenFullLogo } from '@/components/logo'
 import Link from 'next/link'
@@ -20,7 +21,7 @@ interface OnboardingLayoutProps {
 }
 
 export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
-  const [currentStep, setCurrentStep] = useState(0)
+  const pathname = usePathname()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const supabase = createClient()
 
@@ -37,16 +38,14 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
     checkAuth()
   }, [supabase])
 
-  // Extract step number from pathname
-  useEffect(() => {
-    const path = window.location.pathname
-    for (const [key, step] of Object.entries(STEP_MAP)) {
-      if (path.includes(key)) {
-        setCurrentStep(step)
-        break
-      }
+  // Derive step number from pathname reactively
+  let currentStep = 0
+  for (const [key, step] of Object.entries(STEP_MAP)) {
+    if (pathname.includes(key)) {
+      currentStep = step
+      break
     }
-  }, [])
+  }
 
   if (!isAuthenticated) {
     return null
