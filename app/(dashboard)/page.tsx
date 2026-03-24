@@ -15,6 +15,7 @@ import { HeroStats } from '@/components/dashboard/hero-stats'
 import { ForecastSection } from '@/components/dashboard/forecast-section'
 import { MentionsSection } from '@/components/dashboard/mentions-section'
 import { NudgeCard } from '@/components/dashboard/nudge-card'
+import { TodaysFocus } from '@/components/dashboard/todays-focus'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -208,6 +209,12 @@ export default function DashboardPage() {
       />
 
       <HeroStats commitments={commitments} />
+
+      <TodaysFocus
+        commitments={commitments}
+        integrationCount={integrationCount}
+        onMarkDone={id => handleAction(markDone, id, 'Marked as done!')}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Active Items" value={openCommitments.length} color="#6366f1" barPercent={Math.min(openCommitments.length / 20 * 100, 100)} />
