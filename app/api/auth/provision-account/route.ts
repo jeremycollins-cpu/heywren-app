@@ -104,20 +104,48 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 6. DETERMINE FLOW: JOIN vs CREATE ──────────────────────────────
+    // Server-side domain match as fallback when joiningTeamId wasn't passed via Stripe metadata
+    // (e.g. sessionStorage was lost between signup → plan → checkout)
+    const FREE_EMAIL_DOMAINS = new Set([
+      'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk',
+      'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
+      'aol.com', 'icloud.com', 'me.com', 'mac.com',
+      'protonmail.com', 'proton.me', 'tutanota.com',
+      'zoho.com', 'yandex.com', 'mail.com', 'gmx.com',
+      'fastmail.com', 'hey.com', 'pm.me',
+    ])
+
+    let resolvedJoiningTeamId = joiningTeamId
+
+    if (!resolvedJoiningTeamId && domain && !FREE_EMAIL_DOMAINS.has(domain)) {
+      // Look for an existing team with a matching domain
+      const { data: domainTeam } = await supabaseAdmin
+        .from('teams')
+        .select('id, name')
+        .eq('domain', domain)
+        .limit(1)
+        .single()
+
+      if (domainTeam) {
+        console.log('Domain match found for', domain, '→ team:', domainTeam.id, domainTeam.name)
+        resolvedJoiningTeamId = domainTeam.id
+      }
+    }
+
     let teamId: string
     let flow: 'joined' | 'created'
 
-    if (joiningTeamId) {
+    if (resolvedJoiningTeamId) {
       // ─── FLOW B: JOIN EXISTING TEAM ─────────────────────────────────
       // Verify the team actually exists
       const { data: existingTeam, error: teamLookupError } = await supabaseAdmin
         .from('teams')
         .select('id, name')
-        .eq('id', joiningTeamId)
+        .eq('id', resolvedJoiningTeamId)
         .single()
 
       if (teamLookupError || !existingTeam) {
-        console.error('Joining team not found:', joiningTeamId, teamLookupError)
+        console.error('Joining team not found:', resolvedJoiningTeamId, teamLookupError)
         // Fall through to create a new team instead — don't fail the signup
         const result = await createNewTeam(userId, companyName, domain, customerId, subscriptionId, plan)
         teamId = result.teamId
