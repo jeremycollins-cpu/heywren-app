@@ -100,7 +100,7 @@ export default function SettingsPage() {
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 animate-pulse">
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 animate-pulse" role="status" aria-live="polite" aria-busy="true" aria-label="Loading settings">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-5 h-5 bg-gray-200 dark:bg-gray-700 rounded" />
             <div className="h-5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -125,7 +125,7 @@ export default function SettingsPage() {
 
       {/* Error State */}
       {error && !loading && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           <p className="font-medium">Error loading settings</p>
           <p className="text-sm mt-1">{error}</p>
         </div>
@@ -135,14 +135,15 @@ export default function SettingsPage() {
       {!loading && !error && (
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-          <SettingsIcon className="w-5 h-5" />
+          <SettingsIcon aria-hidden="true" className="w-5 h-5" />
           Profile
         </h2>
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Full Name</label>
+            <label htmlFor="settings-fullname" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Full Name</label>
             <input
+              id="settings-fullname"
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -151,19 +152,22 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Email</label>
+            <label htmlFor="settings-email" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Email</label>
             <input
+              id="settings-email"
               type="email"
               value={user?.email || ''}
               disabled
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-gray-50 dark:bg-surface-dark text-gray-600 dark:text-gray-400 focus:outline-none"
+              aria-describedby="email-help"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Contact support to change email</p>
+            <p id="email-help" className="text-xs text-gray-500 dark:text-gray-400 mt-1">Contact support to change email</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Role</label>
+            <label htmlFor="settings-role" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Role</label>
             <select
+              id="settings-role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-surface-dark dark:text-white"
@@ -191,7 +195,7 @@ export default function SettingsPage() {
       {/* Notification Settings */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-          <Bell className="w-5 h-5" />
+          <Bell aria-hidden="true" className="w-5 h-5" />
           Notifications
         </h2>
 

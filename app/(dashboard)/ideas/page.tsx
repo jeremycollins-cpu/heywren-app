@@ -347,12 +347,13 @@ export default function IdeasPage() {
         <div className="space-y-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search ideas..."
+              aria-label="Search ideas"
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
             />
           </div>
@@ -360,7 +361,7 @@ export default function IdeasPage() {
           {/* Category & Status Filters */}
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-400" />
+              <Filter aria-hidden="true" className="w-4 h-4 text-gray-400" />
               <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Filter:</span>
             </div>
 
@@ -423,7 +424,7 @@ export default function IdeasPage() {
 
       {/* Ideas List */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-3" role="status" aria-live="polite" aria-busy="true" aria-label="Loading ideas">
           {[1, 2, 3].map(i => (
             <div key={i} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 animate-pulse">
               <div className="flex gap-4">
@@ -466,6 +467,8 @@ export default function IdeasPage() {
                   {/* Vote Button */}
                   <button
                     onClick={() => handleVote(idea.id, idea.user_has_voted || false)}
+                    aria-label={idea.user_has_voted ? `Remove vote from ${idea.title}` : `Vote for ${idea.title}`}
+                    aria-pressed={idea.user_has_voted || false}
                     className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition flex-shrink-0 ${
                       idea.user_has_voted
                         ? 'bg-red-100 text-red-600'
