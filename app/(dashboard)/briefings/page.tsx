@@ -363,11 +363,11 @@ export default function BriefingsPage() {
       <div className="space-y-3">
         {briefings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center mb-4">
               <Briefcase className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No upcoming meetings</h3>
-            <p className="text-gray-500 max-w-md mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No upcoming meetings</h3>
+            <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
               Connect your calendar to Slack or Outlook to automatically generate context briefings for your upcoming meetings. HeyWren will surface relevant commitments and relationships for each meeting.
             </p>
             <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
@@ -384,7 +384,7 @@ export default function BriefingsPage() {
             return (
               <div
                 key={briefing.id}
-                className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition"
+                className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg overflow-hidden hover:shadow-md transition"
               >
                 {/* Card header — always visible */}
                 <div
@@ -395,9 +395,9 @@ export default function BriefingsPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <Briefcase className="w-5 h-5 text-indigo-600 flex-shrink-0" />
-                        <h3 className="font-semibold text-gray-900">{briefing.subject}</h3>
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{briefing.subject}</h3>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
+                      <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 flex-wrap">
                         <div className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
                           {formatMeetingTime(briefing.startTime, briefing.endTime)}
@@ -415,7 +415,7 @@ export default function BriefingsPage() {
                     </div>
                     <div className="flex items-center gap-4 ml-4">
                       <div className="text-right">
-                        <div className="text-xs text-gray-600 mb-1">Open Commitments</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Open Commitments</div>
                         <div className={`text-2xl font-bold ${briefing.matchedCommitments.length > 0 ? 'text-red-600' : 'text-gray-300'}`}>
                           {briefing.matchedCommitments.length}
                         </div>
@@ -430,11 +430,11 @@ export default function BriefingsPage() {
 
                 {/* Expanded view */}
                 {isExpanded && (
-                  <div className="px-6 pb-6 space-y-5 border-t border-gray-100 pt-5">
+                  <div className="px-6 pb-6 space-y-5 border-t border-gray-100 dark:border-gray-700 pt-5">
 
                     {/* Attendees with health scores */}
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                         <Users className="w-4 h-4 text-indigo-600" />
                         Attendees
                         {avgHealth > 0 && (
@@ -458,12 +458,12 @@ export default function BriefingsPage() {
                             : `${attendee.daysSinceContact}d ago`
 
                           return (
-                            <div key={attendee.email} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50">
+                            <div key={attendee.email} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
                               <div className={`w-8 h-8 ${bgColor} rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
                                 {initials}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-900 truncate">{attendee.name}</div>
+                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{attendee.name}</div>
                                 <div className="text-xs text-gray-400 truncate">{attendee.email}</div>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
@@ -500,7 +500,7 @@ export default function BriefingsPage() {
                     {/* Relevant open commitments */}
                     {briefing.matchedCommitments.length > 0 && (
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                           <FileText className="w-4 h-4 text-indigo-600" />
                           Relevant Open Commitments
                         </h4>
@@ -509,20 +509,20 @@ export default function BriefingsPage() {
                             const age = daysSince(c.created_at)
                             const isOld = age > 7
                             return (
-                              <div key={c.id} className={`flex items-start gap-3 p-3 rounded-lg border ${isOld ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                              <div key={c.id} className={`flex items-start gap-3 p-3 rounded-lg border ${isOld ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800' : 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800'}`}>
                                 <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${isOld ? 'bg-red-500' : 'bg-yellow-500'}`} />
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium text-gray-900">{c.title}</div>
+                                  <div className="text-sm font-medium text-gray-900 dark:text-white">{c.title}</div>
                                   {c.description && (
-                                    <div className="text-xs text-gray-500 mt-0.5 truncate">{c.description}</div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{c.description}</div>
                                   )}
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-xs text-gray-400">{age} day{age !== 1 ? 's' : ''} old</span>
                                     {c.source && (
                                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                                        c.source === 'slack' ? 'bg-purple-100 text-purple-700' :
-                                        c.source === 'outlook' || c.source === 'email' ? 'bg-blue-100 text-blue-700' :
-                                        'bg-gray-100 text-gray-600'
+                                        c.source === 'slack' ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400' :
+                                        c.source === 'outlook' || c.source === 'email' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400' :
+                                        'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                                       }`}>
                                         {c.source}
                                       </span>
@@ -537,14 +537,14 @@ export default function BriefingsPage() {
                     )}
 
                     {/* Talking points */}
-                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                      <h4 className="text-sm font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                    <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 mb-3 flex items-center gap-2">
                         <MessageSquare className="w-4 h-4" />
                         Suggested Talking Points
                       </h4>
                       <div className="space-y-2">
                         {briefing.talkingPoints.map((point, i) => (
-                          <div key={i} className="flex items-start gap-2 text-sm text-indigo-800">
+                          <div key={i} className="flex items-start gap-2 text-sm text-indigo-800 dark:text-indigo-300">
                             <span className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 flex-shrink-0" />
                             {point}
                           </div>
@@ -561,18 +561,18 @@ export default function BriefingsPage() {
 
       {/* Briefing Features */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
-          <h3 className="font-semibold text-indigo-900 mb-2">What's Included</h3>
-          <ul className="text-sm text-indigo-800 space-y-2">
+        <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
+          <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">What's Included</h3>
+          <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
             <li className="flex items-center gap-2"><Heart className="w-3.5 h-3.5" /> Relationship health scores per attendee</li>
             <li className="flex items-center gap-2"><FileText className="w-3.5 h-3.5" /> Open commitments relevant to this meeting</li>
             <li className="flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> Suggested talking points</li>
             <li className="flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Recent interaction history</li>
           </ul>
         </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
-          <h3 className="font-semibold text-purple-900 mb-2">How It Works</h3>
-          <ul className="text-sm text-purple-800 space-y-2">
+        <div className="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-6">
+          <h3 className="font-semibold text-purple-900 dark:text-purple-300 mb-2">How It Works</h3>
+          <ul className="text-sm text-purple-800 dark:text-purple-300 space-y-2">
             <li className="flex items-center gap-2"><Clock className="w-3.5 h-3.5" /> Scans your next 7 days of meetings</li>
             <li className="flex items-center gap-2"><Briefcase className="w-3.5 h-3.5" /> Matches attendees to open commitments</li>
             <li className="flex items-center gap-2"><Heart className="w-3.5 h-3.5" /> Calculates health from email patterns</li>

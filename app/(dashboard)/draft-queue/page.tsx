@@ -206,11 +206,11 @@ export default function DraftQueuePage() {
       <div className="space-y-3">
         {drafts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center mb-4">
               <MessageSquare className="w-8 h-8 text-indigo-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No drafts yet</h3>
-            <p className="text-gray-500 max-w-md mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No drafts yet</h3>
+            <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
               Click "Generate Drafts" to have HeyWren create follow-up messages for your open commitments.
               Drafts are also generated automatically every morning at 7 AM PT.
             </p>
@@ -226,7 +226,7 @@ export default function DraftQueuePage() {
           drafts.map((draft) => (
             <div
               key={draft.id}
-              className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition"
+              className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 hover:shadow-md transition"
             >
               {editingDraft === draft.id ? (
                 /* Edit Mode */
@@ -235,13 +235,13 @@ export default function DraftQueuePage() {
                     type="text"
                     value={editSubject}
                     onChange={(e) => setEditSubject(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg text-sm font-semibold dark:bg-surface-dark dark:text-white"
                   />
                   <textarea
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg text-sm dark:bg-surface-dark dark:text-white"
                   />
                   <div className="flex gap-2">
                     <button
@@ -253,7 +253,7 @@ export default function DraftQueuePage() {
                     </button>
                     <button
                       onClick={() => setEditingDraft(null)}
-                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm"
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
                     >
                       <X className="w-4 h-4" />
                       Cancel
@@ -278,17 +278,17 @@ export default function DraftQueuePage() {
                               Edited
                             </span>
                           )}
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
                             {new Date(draft.created_at).toLocaleDateString()}
                           </span>
                         </div>
-                        <h3 className="font-semibold text-gray-900 line-clamp-1">{draft.subject}</h3>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">{draft.body}</p>
+                        <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-1">{draft.subject}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{draft.body}</p>
                       </div>
                       {draft.recipient_name && (
                         <div className="text-right ml-4 flex-shrink-0">
-                          <div className="text-xs text-gray-500">To</div>
-                          <div className="text-sm font-medium text-gray-700">{draft.recipient_name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">To</div>
+                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{draft.recipient_name}</div>
                         </div>
                       )}
                     </div>
