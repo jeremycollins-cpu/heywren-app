@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { teamId, newPlan } = await request.json()
+    const { teamId, newPlan, promoCode } = await request.json()
 
     if (!teamId || !newPlan) {
       return NextResponse.json({ error: 'Missing teamId or newPlan' }, { status: 400 })
@@ -80,9 +80,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Subscription item not found' }, { status: 500 })
     }
 
+    // Resolve promo code to a Stripe promotion code ID if provided
+    let promotionCodeId: string | undefined
+    if (promoCode && typeof promoCode === 'string') {
+      const promoCodes = await stripe.promotionCodes.list({
+        code: promoCode.trim().toUpperCase(),
+        active: true,
+        limit: 1,
+      })
+      if (promoCodes.data.length > 0 && promoCodes.data[0].coupon.valid) {
+        promotionCodeId = promoCodes.data[0].id
+      }
+    }
+
     // Update the subscription with the new price
     // proration_behavior: 'create_prorations' handles the billing adjustment automatically
-    const updatedSubscription = await stripe.subscriptions.update(team.stripe_subscription_id, {
+    const updateParams: Record<string, any> = {
       items: [
         {
           id: subscriptionItemId,
@@ -96,7 +109,14 @@ export async function POST(request: NextRequest) {
         ...subscription.metadata,
         plan: newPlan,
       },
-    })
+    }
+
+    // Apply promotion code / coupon discount if provided
+    if (promotionCodeId) {
+      updateParams.promotion_code = promotionCodeId
+    }
+
+    const updatedSubscription = await stripe.subscriptions.update(team.stripe_subscription_id, updateParams)
 
     // Update the database immediately
     await supabaseAdmin

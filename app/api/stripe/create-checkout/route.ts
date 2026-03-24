@@ -10,6 +10,7 @@ import { stripe } from '@/lib/stripe/server'
 interface CheckoutRequest {
   plan: 'basic' | 'pro' | 'team'
   joiningTeamId?: string | null
+  promoCode?: string
 }
 
 const PRICE_IDS: Record<string, string> = {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { plan, joiningTeamId } = (await request.json()) as CheckoutRequest
+    const { plan, joiningTeamId, promoCode } = (await request.json()) as CheckoutRequest
 
     if (!plan || !['basic', 'pro', 'team'].includes(plan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
@@ -74,7 +75,21 @@ export async function POST(request: NextRequest) {
       metadata.joiningTeamId = joiningTeamId
     }
 
+    // Resolve promo code if provided from the billing page
+    let discounts: Array<{ promotion_code: string }> | undefined
+    if (promoCode && typeof promoCode === 'string') {
+      const promoCodes = await stripe.promotionCodes.list({
+        code: promoCode.trim().toUpperCase(),
+        active: true,
+        limit: 1,
+      })
+      if (promoCodes.data.length > 0 && promoCodes.data[0].coupon.valid) {
+        discounts = [{ promotion_code: promoCodes.data[0].id }]
+      }
+    }
+
     // Create checkout session with 14-day trial
+    // Note: allow_promotion_codes and discounts are mutually exclusive in Stripe
     const session = await stripe.checkout.sessions.create({
       customer: customer.id,
       line_items: [
@@ -91,7 +106,7 @@ export async function POST(request: NextRequest) {
       },
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/callback?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/signup/plan`,
-      allow_promotion_codes: true,
+      ...(discounts ? { discounts } : { allow_promotion_codes: true }),
     })
 
     return NextResponse.json({ sessionId: session.id })
