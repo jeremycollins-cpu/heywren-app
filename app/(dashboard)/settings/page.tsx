@@ -642,7 +642,7 @@ export default function SettingsPage() {
                   <option value="high">High and above</option>
                   <option value="critical">Critical only</option>
                 </select>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Emails below this threshold won't appear on your dashboard</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Emails below this threshold won&apos;t appear on your dashboard</p>
               </div>
 
               {/* Scan Window */}
@@ -698,7 +698,7 @@ export default function SettingsPage() {
             {/* Category Toggles */}
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Categories to Surface</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Choose which types of emails to flag. Disable categories you don't care about.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Choose which types of emails to flag. Disable categories you don&apos;t care about.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
                   { id: 'question', label: 'Questions', desc: 'Direct questions to you' },

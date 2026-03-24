@@ -276,7 +276,7 @@ export default function IdeasPage() {
           Feature Ideas
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
-          Share your ideas to help shape HeyWren's future. Vote on ideas you love.
+          Share your ideas to help shape HeyWren&apos;s future. Vote on ideas you love.
         </p>
       </div>
 

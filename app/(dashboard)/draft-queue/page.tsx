@@ -211,7 +211,7 @@ export default function DraftQueuePage() {
             </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No drafts yet</h3>
             <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-              Click "Generate Drafts" to have HeyWren create follow-up messages for your open commitments.
+              Click &quot;Generate Drafts&quot; to have HeyWren create follow-up messages for your open commitments.
               Drafts are also generated automatically every morning at 7 AM PT.
             </p>
             <button
@@ -351,7 +351,7 @@ export default function DraftQueuePage() {
           <li>&#10003; AI-generated drafts based on your real commitments</li>
           <li>&#10003; Full editor to customize before sending</li>
           <li>&#10003; New drafts generated daily at 7 AM PT</li>
-          <li>&#10003; Click "Generate Drafts" anytime for fresh follow-ups</li>
+          <li>&#10003; Click &quot;Generate Drafts&quot; anytime for fresh follow-ups</li>
         </ul>
       </div>
     </div>

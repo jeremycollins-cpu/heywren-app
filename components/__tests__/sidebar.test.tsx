@@ -30,10 +30,13 @@ jest.mock('@/lib/supabase/client', () => ({
 
 jest.mock('lucide-react', () => {
   const React = require('react')
-  const createIcon = (name: string) =>
-    React.forwardRef((props: any, ref: any) =>
+  const createIcon = (name: string) => {
+    const Icon = React.forwardRef((props: any, ref: any) =>
       React.createElement('svg', { ...props, ref, 'data-testid': `icon-${name}` })
     )
+    Icon.displayName = name
+    return Icon
+  }
 
   return {
     X: createIcon('X'),

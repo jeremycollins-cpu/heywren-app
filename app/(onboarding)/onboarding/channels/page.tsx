@@ -187,7 +187,7 @@ export default function ChannelsSetupPage() {
       <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between">
         <div>
           <p className="font-medium text-gray-900">Monitor all public channels</p>
-          <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they're created</p>
+          <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they&apos;re created</p>
         </div>
         <button
           onClick={() => {

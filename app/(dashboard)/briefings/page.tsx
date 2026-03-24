@@ -566,7 +566,7 @@ export default function BriefingsPage() {
       {/* Briefing Features */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
-          <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">What's Included</h3>
+          <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">What&apos;s Included</h3>
           <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
             <li className="flex items-center gap-2"><Heart aria-hidden="true" className="w-3.5 h-3.5" /> Relationship health scores per attendee</li>
             <li className="flex items-center gap-2"><FileText aria-hidden="true" className="w-3.5 h-3.5" /> Open commitments relevant to this meeting</li>

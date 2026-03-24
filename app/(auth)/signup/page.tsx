@@ -158,7 +158,7 @@ export default function SignupPage() {
           <div>
             <p className="text-emerald-800 font-semibold text-sm">{domainResult.team!.name} is already on HeyWren!</p>
             <p className="text-emerald-600 text-xs mt-0.5">
-              You'll automatically join their team ({domainResult.team!.memberCount} {domainResult.team!.memberCount === 1 ? 'member' : 'members'})
+              You&apos;ll automatically join their team ({domainResult.team!.memberCount} {domainResult.team!.memberCount === 1 ? 'member' : 'members'})
             </p>
           </div>
         </div>

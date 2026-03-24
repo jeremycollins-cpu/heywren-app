@@ -169,7 +169,7 @@ export default function BillingPage() {
         {daysUntilTrialEnds !== null && daysUntilTrialEnds > 0 && (
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
             <p className="text-blue-900 dark:text-blue-200">
-              Your trial ends in <strong>{daysUntilTrialEnds} days</strong>. You'll be charged when your trial ends.
+              Your trial ends in <strong>{daysUntilTrialEnds} days</strong>. You&apos;ll be charged when your trial ends.
             </p>
           </div>
         )}
@@ -206,7 +206,7 @@ export default function BillingPage() {
       <div className="card dark:bg-surface-dark-secondary dark:border-border-dark">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">Billing History</h2>
         <div className="text-center py-12">
-          <p className="text-gray-500 dark:text-gray-400">No invoices yet. They'll appear here once you're on a paid plan.</p>
+          <p className="text-gray-500 dark:text-gray-400">No invoices yet. They&apos;ll appear here once you&apos;re on a paid plan.</p>
         </div>
       </div>
     </div>

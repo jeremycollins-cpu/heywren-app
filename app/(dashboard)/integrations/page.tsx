@@ -113,21 +113,21 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">1</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">Click "Connect" on the integration above</p>
-                <p className="text-xs text-amber-700 mt-0.5">You'll be redirected to Slack or Microsoft's authorization page</p>
+                <p className="text-sm font-medium text-amber-900">Click &quot;Connect&quot; on the integration above</p>
+                <p className="text-xs text-amber-700 mt-0.5">You&apos;ll be redirected to Slack or Microsoft&apos;s authorization page</p>
               </div>
             </div>
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">2</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">If you see "Approval required" or "Request to install" — submit the request</p>
-                <p className="text-xs text-amber-700 mt-0.5">Add a message like: "I need HeyWren to track my commitments and follow-ups." Your admin will be notified.</p>
+                <p className="text-sm font-medium text-amber-900">If you see &quot;Approval required&quot; or &quot;Request to install&quot; — submit the request</p>
+                <p className="text-xs text-amber-700 mt-0.5">Add a message like: &quot;I need HeyWren to track my commitments and follow-ups.&quot; Your admin will be notified.</p>
               </div>
             </div>
             <div className="flex gap-3">
               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">3</span>
               <div>
-                <p className="text-sm font-medium text-amber-900">Once approved, come back and click "Connect" again</p>
+                <p className="text-sm font-medium text-amber-900">Once approved, come back and click &quot;Connect&quot; again</p>
                 <p className="text-xs text-amber-700 mt-0.5">After your admin approves the app, connecting will work instantly</p>
               </div>
             </div>
