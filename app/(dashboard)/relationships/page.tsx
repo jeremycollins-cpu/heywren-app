@@ -1,6 +1,6 @@
 // app/(dashboard)/relationships/page.tsx
-// Relationship Health v3 — Card grid with health scores, trend arrows, alerts
-// Matches demo layout with 2-column cards
+// Relationship Health v4 — SECURITY FIX: All queries filtered by team_id
+// Card grid with health scores, trend arrows, alerts
 
 'use client'
 
@@ -65,9 +65,29 @@ export default function RelationshipsPage() {
     async function load() {
       const supabase = createClient()
 
+      // ── SECURITY: Get user's team_id first ──
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) {
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const teamId = profile?.current_team_id
+      if (!teamId) {
+        setLoading(false)
+        return
+      }
+
       const { data: emailData } = await supabase
         .from('outlook_messages')
         .select('from_email, from_name, received_at')
+        .eq('team_id', teamId)
         .order('received_at', { ascending: false })
         .limit(1000)
 
