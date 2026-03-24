@@ -55,6 +55,24 @@ export interface Integration {
   updated_at: string
 }
 
+export type CommitmentUrgency = 'low' | 'medium' | 'high' | 'critical'
+export type CommitmentTone = 'casual' | 'professional' | 'urgent' | 'demanding'
+export type CommitmentType = 'deliverable' | 'meeting' | 'follow_up' | 'decision' | 'review' | 'request'
+
+export interface CommitmentStakeholder {
+  name: string
+  role: 'owner' | 'assignee' | 'stakeholder'
+}
+
+export interface CommitmentMetadata {
+  urgency?: CommitmentUrgency
+  tone?: CommitmentTone
+  commitmentType?: CommitmentType
+  stakeholders?: CommitmentStakeholder[]
+  originalQuote?: string
+  channelName?: string
+}
+
 export interface Commitment {
   id: string
   team_id: string
@@ -64,9 +82,11 @@ export interface Commitment {
   description?: string
   source: CommitmentSource
   source_ref?: string
+  source_url?: string
   status: CommitmentStatus
   priority_score: number
   due_date?: string
+  metadata?: CommitmentMetadata
   created_at: string
   updated_at: string
   completed_at?: string

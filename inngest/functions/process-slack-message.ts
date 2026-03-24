@@ -142,10 +142,25 @@ export const processSlackMessage = inngest.createFunction(
       return { success: false, error: 'No creator_id available' }
     }
 
+    // ── Build Slack permalink for deep linking ──
+    // Format: https://slack.com/archives/{channel_id}/p{ts_without_dot}
+    const channelId = event.data.channel_id
+    const messageTs = event.data.ts
+    const slackPermalink = channelId && messageTs
+      ? `https://slack.com/archives/${channelId}/p${messageTs.replace('.', '')}`
+      : null
+
     // ── Create commitment records (with CORRECT columns and enums) ──
     const insertResults = await step.run('insert-commitments', async () => {
       return Promise.all(
         commitments.map(async (commitment) => {
+          const metadata: Record<string, unknown> = {}
+          if (commitment.urgency) metadata.urgency = commitment.urgency
+          if (commitment.tone) metadata.tone = commitment.tone
+          if (commitment.commitmentType) metadata.commitmentType = commitment.commitmentType
+          if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
+          if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
+
           const { data, error } = await supabase
             .from('commitments')
             .insert({
@@ -157,6 +172,8 @@ export const processSlackMessage = inngest.createFunction(
               priority_score: calculatePriorityScore(commitment),
               source: 'slack',                // commitment_source enum
               source_ref: messageData.id,     // NOT 'source_message_id'
+              source_url: slackPermalink,
+              metadata,
             })
             .select('id')
             .single()
