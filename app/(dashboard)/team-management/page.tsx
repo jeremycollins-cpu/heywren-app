@@ -59,7 +59,11 @@ export default function TeamManagementPage() {
           )
           .eq('team_id', profile.current_team_id)
 
-        setMembers(teamMembers || [])
+        const normalized = (teamMembers || []).map((m: any) => ({
+          ...m,
+          profiles: Array.isArray(m.profiles) ? m.profiles[0] : m.profiles,
+        }))
+        setMembers(normalized)
       } catch (err) {
         console.error('Error fetching team data:', err)
         toast.error('Failed to load team members')
