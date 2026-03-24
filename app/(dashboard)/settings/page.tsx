@@ -246,7 +246,7 @@ export default function SettingsPage() {
       {/* Privacy Settings */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-          <Lock className="w-5 h-5" />
+          <Lock aria-hidden="true" className="w-5 h-5" />
           Privacy & Security
         </h2>
 
@@ -286,7 +286,7 @@ export default function SettingsPage() {
       {/* Team Settings */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-          <Users className="w-5 h-5" />
+          <Users aria-hidden="true" className="w-5 h-5" />
           Team
         </h2>
 
@@ -326,7 +326,7 @@ export default function SettingsPage() {
       {/* Connected Integrations */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-          <Mail className="w-5 h-5" />
+          <Mail aria-hidden="true" className="w-5 h-5" />
           Connected Integrations
         </h2>
 
