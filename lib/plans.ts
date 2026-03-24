@@ -14,9 +14,11 @@ export function planLevel(plan: PlanKey): number {
   return PLAN_TIERS.indexOf(plan)
 }
 
-/** Returns true when `userPlan` is at least `requiredPlan`. */
+/** Returns true when `userPlan` is at least `requiredPlan`.
+ *  Trial users get full Pro-level access during their trial period. */
 export function hasAccess(userPlan: PlanKey, requiredPlan: PlanKey): boolean {
-  return planLevel(userPlan) >= planLevel(requiredPlan)
+  const effectivePlan: PlanKey = userPlan === 'trial' ? 'pro' : userPlan
+  return planLevel(effectivePlan) >= planLevel(requiredPlan)
 }
 
 /** The minimum plan needed to unlock `requiredPlan`. */
