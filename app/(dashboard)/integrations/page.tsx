@@ -197,14 +197,48 @@ function IntegrationsContent() {
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
 
-  const supabase = createClient()
-
   useEffect(() => {
-    const fetchIntegrations = async () => {
+    async function fetchIntegrations() {
+      const supabase = createClient()
+
       try {
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) {
+          setLoading(false)
+          return
+        }
+
+        // Resolve team_id: try profile first, fall back to team_members
+        let teamId: string | null = null
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+
+        teamId = profile?.current_team_id || null
+
+        if (!teamId) {
+          const { data: membership } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', userData.user.id)
+            .limit(1)
+            .single()
+
+          teamId = membership?.team_id || null
+        }
+
+        if (!teamId) {
+          setLoading(false)
+          return
+        }
+
         const { data } = await supabase
           .from('integrations')
-          .select('*')
+          .select('id, provider, created_at, config')
+          .eq('team_id', teamId)
           .order('created_at', { ascending: false })
 
         setIntegrations(data || [])
@@ -221,9 +255,10 @@ function IntegrationsContent() {
     if (searchParams.get('status') === 'success') {
       toast.success('Integration connected successfully!')
     }
-  }, [supabase, searchParams])
+  }, [])
 
   const handleSlackConnect = async () => {
+    const supabase = createClient()
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
       toast.error('Please log in first')
@@ -250,6 +285,7 @@ function IntegrationsContent() {
   }
 
   const handleOutlookConnect = async () => {
+    const supabase = createClient()
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
       toast.error('Please log in first')
@@ -274,6 +310,7 @@ function IntegrationsContent() {
   }
 
   const handleDisconnect = async (id: string) => {
+    const supabase = createClient()
     const { error } = await supabase
       .from('integrations')
       .delete()

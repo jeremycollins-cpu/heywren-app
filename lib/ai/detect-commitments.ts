@@ -194,6 +194,18 @@ Only include items with confidence >= 0.5.`,
 }
 
 // ============================================================
+// Priority score calculation (0-100)
+// Combines priority level + confidence + time signals
+// ============================================================
+export function calculatePriorityScore(commitment: DetectedCommitment): number {
+  const priorityBase = { high: 75, medium: 50, low: 25 }
+  const base = priorityBase[commitment.priority] || 50
+  const confidenceBoost = (commitment.confidence - 0.5) * 30 // -15 to +15
+  const hasDueDate = commitment.dueDate ? 10 : 0
+  return Math.max(0, Math.min(100, Math.round(base + confidenceBoost + hasDueDate)))
+}
+
+// ============================================================
 // MAIN EXPORT: 3-tier pipeline
 // Tier 1 (free) → Tier 2 (Haiku $0.0003) → Tier 3 (Sonnet $0.003)
 // ============================================================

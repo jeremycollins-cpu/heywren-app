@@ -1,30 +1,215 @@
 'use client'
 
-import { useState } from 'react'
-import { FileText, Plus, CheckCircle2, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { FileText, Plus, CheckCircle2, Trash2, X, Zap, ToggleLeft, ToggleRight } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface Playbook {
   id: string
+  team_id: string
+  created_by: string
   name: string
-  description: string
-  trigger: string
-  action: string
+  description: string | null
+  trigger_type: string
+  trigger_config: Record<string, unknown> | null
+  action_type: string
+  action_config: Record<string, unknown> | null
   enabled: boolean
+  run_count: number
+  last_run_at: string | null
+  created_at: string
+  updated_at: string
 }
 
-const mockPlaybooks: Playbook[] = []
+const TRIGGER_LABELS: Record<string, string> = {
+  commitment_created: 'When a commitment is created',
+  commitment_overdue: 'When a commitment becomes overdue',
+  commitment_stale: 'When a commitment goes stale (7+ days)',
+  meeting_upcoming: 'Before a meeting starts',
+  nudge_ignored: 'When a nudge is ignored',
+  daily_schedule: 'Every day at a set time',
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  send_nudge: 'Send a nudge reminder',
+  send_slack: 'Send a Slack message',
+  send_email: 'Send an email',
+  create_draft: 'Create a draft follow-up',
+  escalate: 'Escalate to manager',
+  reassign: 'Reassign the commitment',
+}
+
+const TRIGGER_TYPES = Object.keys(TRIGGER_LABELS)
+const ACTION_TYPES = Object.keys(ACTION_LABELS)
 
 export default function PlaybooksPage() {
-  const [playbooks, setPlaybooks] = useState(mockPlaybooks)
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([])
+  const [loading, setLoading] = useState(true)
+  const [teamId, setTeamId] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
-  const togglePlaybook = (id: string) => {
-    setPlaybooks(playbooks.map(p =>
-      p.id === id ? { ...p, enabled: !p.enabled } : p
-    ))
+  // Modal state
+  const [showModal, setShowModal] = useState(false)
+  const [formName, setFormName] = useState('')
+  const [formDescription, setFormDescription] = useState('')
+  const [formTrigger, setFormTrigger] = useState(TRIGGER_TYPES[0])
+  const [formAction, setFormAction] = useState(ACTION_TYPES[0])
+  const [submitting, setSubmitting] = useState(false)
+
+  // Delete confirmation
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) {
+        setLoading(false)
+        return
+      }
+
+      setUserId(userData.user.id)
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      const tid = profile?.current_team_id
+      if (!tid) {
+        setLoading(false)
+        return
+      }
+
+      setTeamId(tid)
+
+      const { data, error } = await supabase
+        .from('playbooks')
+        .select('*')
+        .eq('team_id', tid)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching playbooks:', error)
+        toast.error('Failed to load playbooks')
+      }
+
+      if (data) setPlaybooks(data)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+
+    if (!teamId || !userId) {
+      toast.error('Not authenticated')
+      return
+    }
+
+    if (!formName.trim()) {
+      toast.error('Please enter a playbook name')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      const supabase = createClient()
+
+      const { data, error } = await supabase
+        .from('playbooks')
+        .insert({
+          team_id: teamId,
+          created_by: userId,
+          name: formName.trim(),
+          description: formDescription.trim() || null,
+          trigger_type: formTrigger,
+          trigger_config: {},
+          action_type: formAction,
+          action_config: {},
+          enabled: true,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setPlaybooks([data, ...playbooks])
+      setShowModal(false)
+      setFormName('')
+      setFormDescription('')
+      setFormTrigger(TRIGGER_TYPES[0])
+      setFormAction(ACTION_TYPES[0])
+      toast.success('Playbook created')
+    } catch (err) {
+      console.error('Error creating playbook:', err)
+      toast.error('Failed to create playbook')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const deletePlaybook = (id: string) => {
-    setPlaybooks(playbooks.filter(p => p.id !== id))
+  async function togglePlaybook(id: string, currentEnabled: boolean) {
+    const supabase = createClient()
+    const newEnabled = !currentEnabled
+
+    // Optimistic update
+    setPlaybooks(prev => prev.map(p => p.id === id ? { ...p, enabled: newEnabled } : p))
+
+    const { error } = await supabase
+      .from('playbooks')
+      .update({ enabled: newEnabled, updated_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (error) {
+      // Revert on failure
+      setPlaybooks(prev => prev.map(p => p.id === id ? { ...p, enabled: currentEnabled } : p))
+      console.error('Error toggling playbook:', error)
+      toast.error('Failed to update playbook')
+    } else {
+      toast.success(newEnabled ? 'Playbook enabled' : 'Playbook disabled')
+    }
+  }
+
+  async function deletePlaybook(id: string) {
+    const supabase = createClient()
+
+    const { error } = await supabase
+      .from('playbooks')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting playbook:', error)
+      toast.error('Failed to delete playbook')
+    } else {
+      setPlaybooks(prev => prev.filter(p => p.id !== id))
+      toast.success('Playbook deleted')
+    }
+    setDeletingId(null)
+  }
+
+  // Stats
+  const totalPlaybooks = playbooks.length
+  const activeCount = playbooks.filter(p => p.enabled).length
+  const totalActions = playbooks.reduce((sum, p) => sum + (p.run_count || 0), 0)
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-lg"></div>)}
+          </div>
+          {[1, 2].map(i => <div key={i} className="h-40 bg-gray-100 rounded-lg"></div>)}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -36,7 +221,10 @@ export default function PlaybooksPage() {
             Rules that automate how HeyWren handles your commitments — define once, enforce forever
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+        >
           <Plus className="w-5 h-5" />
           New Playbook
         </button>
@@ -46,15 +234,15 @@ export default function PlaybooksPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <p className="text-sm text-gray-600 mb-1">Total Playbooks</p>
-          <p className="text-3xl font-bold text-gray-900">{playbooks.length}</p>
+          <p className="text-3xl font-bold text-gray-900">{totalPlaybooks}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <p className="text-sm text-gray-600 mb-1">Active</p>
-          <p className="text-3xl font-bold text-green-600">{playbooks.filter(p => p.enabled).length}</p>
+          <p className="text-3xl font-bold text-green-600">{activeCount}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <p className="text-sm text-gray-600 mb-1">Actions Automated</p>
-          <p className="text-3xl font-bold text-indigo-600">847</p>
+          <p className="text-3xl font-bold text-indigo-600">{totalActions}</p>
         </div>
       </div>
 
@@ -69,62 +257,100 @@ export default function PlaybooksPage() {
             <p className="text-gray-500 max-w-md mb-6">
               Create automation rules to handle repetitive workflows. Define triggers based on calendar, email, or tool events and set actions like notifications or automated messages.
             </p>
-            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            >
               <Plus className="w-5 h-5" />
               Create Your First Playbook
             </button>
           </div>
         ) : (
           playbooks.map((playbook) => (
-          <div
-            key={playbook.id}
-            className={`border rounded-lg p-6 transition-all ${
-              playbook.enabled
-                ? 'bg-white border-gray-200 hover:shadow-md'
-                : 'bg-gray-50 border-gray-200'
-            }`}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-2 h-2 rounded-full ${playbook.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
-                  <h3 className="font-semibold text-gray-900">{playbook.name}</h3>
-                </div>
-                <p className="text-sm text-gray-600">{playbook.description}</p>
-              </div>
-              <div className="flex items-center gap-2 ml-4">
-                <button
-                  onClick={() => togglePlaybook(playbook.id)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition"
-                >
-                  <div className={`w-5 h-5 rounded flex items-center justify-center ${playbook.enabled ? 'bg-green-600' : 'bg-gray-400'}`}>
-                    {playbook.enabled && <CheckCircle2 className="w-4 h-4 text-white" />}
+            <div
+              key={playbook.id}
+              className={`border rounded-lg p-6 transition-all ${
+                playbook.enabled
+                  ? 'bg-white border-gray-200 hover:shadow-md'
+                  : 'bg-gray-50 border-gray-200'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`w-2 h-2 rounded-full ${playbook.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <h3 className="font-semibold text-gray-900">{playbook.name}</h3>
+                    {playbook.run_count > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <Zap className="w-3 h-3" />
+                        {playbook.run_count} run{playbook.run_count !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
-                </button>
-                <button
-                  onClick={() => deletePlaybook(playbook.id)}
-                  className="p-2 hover:bg-red-50 rounded-lg transition text-red-600"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                  {playbook.description && (
+                    <p className="text-sm text-gray-600">{playbook.description}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <button
+                    onClick={() => togglePlaybook(playbook.id, playbook.enabled)}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition"
+                    title={playbook.enabled ? 'Disable playbook' : 'Enable playbook'}
+                  >
+                    {playbook.enabled ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                  {deletingId === playbook.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => deletePlaybook(playbook.id)}
+                        className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(null)}
+                        className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeletingId(playbook.id)}
+                      className="p-2 hover:bg-red-50 rounded-lg transition text-red-600"
+                      title="Delete playbook"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Trigger</p>
-                <div className="bg-gray-50 rounded p-3 text-sm text-gray-700">
-                  {playbook.trigger}
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Trigger</p>
+                  <div className="bg-gray-50 rounded p-3 text-sm text-gray-700">
+                    {TRIGGER_LABELS[playbook.trigger_type] || playbook.trigger_type}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Action</p>
+                  <div className="bg-indigo-50 rounded p-3 text-sm text-indigo-700">
+                    {ACTION_LABELS[playbook.action_type] || playbook.action_type}
+                  </div>
                 </div>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Action</p>
-                <div className="bg-indigo-50 rounded p-3 text-sm text-indigo-700">
-                  {playbook.action}
-                </div>
-              </div>
+
+              {playbook.last_run_at && (
+                <p className="text-xs text-gray-400 mt-3">
+                  Last run: {new Date(playbook.last_run_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </p>
+              )}
             </div>
-          </div>
           ))
         )}
       </div>
@@ -136,12 +362,106 @@ export default function PlaybooksPage() {
           Create custom automation rules to handle repetitive workflows and ensure consistent follow-through.
         </p>
         <ul className="text-sm text-indigo-800 space-y-1">
-          <li>✓ Define triggers based on calendar, email, or tool events</li>
-          <li>✓ Set actions like notifications, scheduling, or automated messages</li>
-          <li>✓ Track execution metrics for each playbook</li>
-          <li>✓ No-code rule builder — anyone can create playbooks</li>
+          <li>&#10003; Define triggers based on calendar, email, or tool events</li>
+          <li>&#10003; Set actions like notifications, scheduling, or automated messages</li>
+          <li>&#10003; Track execution metrics for each playbook</li>
+          <li>&#10003; No-code rule builder — anyone can create playbooks</li>
         </ul>
       </div>
+
+      {/* Create Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !submitting && setShowModal(false)}
+          />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">New Playbook</h2>
+              <button
+                onClick={() => !submitting && setShowModal(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. Nudge overdue commitments"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  disabled={submitting}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="What does this playbook do?"
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+                  disabled={submitting}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trigger</label>
+                <select
+                  value={formTrigger}
+                  onChange={(e) => setFormTrigger(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  disabled={submitting}
+                >
+                  {TRIGGER_TYPES.map(t => (
+                    <option key={t} value={t}>{TRIGGER_LABELS[t]}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Action</label>
+                <select
+                  value={formAction}
+                  onChange={(e) => setFormAction(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  disabled={submitting}
+                >
+                  {ACTION_TYPES.map(a => (
+                    <option key={a} value={a}>{ACTION_LABELS[a]}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                  disabled={submitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting || !formName.trim()}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Creating...' : 'Create Playbook'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 // Process max 100 messages per request to stay within 300s timeout
 const MAX_MESSAGES_PER_RUN = 100
@@ -205,6 +205,7 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
             })
@@ -395,6 +396,7 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
             })
@@ -423,17 +425,190 @@ export async function POST(request: NextRequest) {
     if (nextLink) await sleep(500)
   }
 
+  // ================================================================
+  // PHASE 3: Fetch calendar events from Graph API
+  // ================================================================
+  let calendarEventsScanned = 0
+  let calendarEventsNew = 0
+  let calendarCommitments = 0
+
+  if (Date.now() - startTime < TIME_BUDGET_MS) {
+    const now = new Date()
+    const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString()
+    const endDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() // 2 weeks ahead
+
+    const calendarUrl =
+      `https://graph.microsoft.com/v1.0/me/calendarview` +
+      `?startDateTime=${startDate}&endDateTime=${endDate}` +
+      `&$select=id,subject,organizer,attendees,start,end,location,bodyPreview,isCancelled` +
+      `&$orderby=start/dateTime desc&$top=50`
+
+    let calNextLink: string | null = calendarUrl
+
+    while (calNextLink) {
+      if (Date.now() - startTime > TIME_BUDGET_MS) {
+        errors.push('Time budget reached during calendar sync. Click sync again to continue.')
+        break
+      }
+
+      const { data: calData, token: updatedToken } = await graphFetch(
+        calNextLink, msToken, supabase, integrationId, refreshToken
+      )
+      msToken = updatedToken
+
+      if (calData.error) {
+        errors.push('Calendar API error: ' + (calData.error.message || calData.error.code || JSON.stringify(calData.error)))
+        break
+      }
+
+      const events = calData.value || []
+      console.log('Calendar page: ' + events.length + ' events')
+
+      const calBatch: Array<{ id: string; text: string; dbId: string }> = []
+
+      for (const event of events) {
+        calendarEventsScanned++
+
+        const subject = event.subject || '(no subject)'
+        const bodyPreview = event.bodyPreview || ''
+        const isCancelled = event.isCancelled || false
+
+        // Skip cancelled events
+        if (isCancelled) continue
+
+        const organizerName = event.organizer?.emailAddress?.name || ''
+        const organizerEmail = event.organizer?.emailAddress?.address || ''
+        const attendees = (event.attendees || []).map((a: any) => ({
+          name: a.emailAddress?.name || '',
+          email: a.emailAddress?.address || '',
+          response: a.status?.response || 'none',
+        }))
+        const startTime = event.start?.dateTime || ''
+        const endTime = event.end?.dateTime || ''
+        const location = event.location?.displayName || ''
+
+        // Check if already stored
+        const { data: existing } = await supabase
+          .from('outlook_calendar_events')
+          .select('id, processed')
+          .eq('team_id', teamId)
+          .eq('event_id', event.id)
+          .maybeSingle()
+
+        if (existing && existing.processed) continue
+
+        let dbId: string
+
+        if (existing && !existing.processed) {
+          dbId = existing.id
+        } else {
+          const { data: eventData, error: evErr } = await supabase
+            .from('outlook_calendar_events')
+            .insert({
+              team_id: teamId,
+              event_id: event.id,
+              subject,
+              organizer_name: organizerName,
+              organizer_email: organizerEmail,
+              attendees,
+              start_time: startTime,
+              end_time: endTime,
+              location,
+              body_preview: bodyPreview,
+              is_cancelled: isCancelled,
+              processed: false,
+            })
+            .select()
+            .single()
+
+          if (evErr) {
+            console.error('Failed to store calendar event:', evErr.message)
+            continue
+          }
+          dbId = eventData.id
+        }
+
+        calendarEventsNew++
+
+        // Build text for AI analysis
+        const attendeeList = attendees
+          .map((a: { name: string; email: string }) => a.name || a.email)
+          .join(', ')
+
+        const eventText = [
+          'Calendar Event: ' + subject,
+          'Organizer: ' + organizerName + ' <' + organizerEmail + '>',
+          'Attendees: ' + attendeeList,
+          'When: ' + startTime + ' to ' + endTime,
+          location ? 'Location: ' + location : '',
+          '',
+          bodyPreview,
+        ].filter(Boolean).join('\n')
+
+        calBatch.push({ id: event.id, text: eventText, dbId })
+      }
+
+      // Process calendar batch through AI
+      if (calBatch.length > 0) {
+        try {
+          const batchInput = calBatch.map((b) => ({ id: b.id, text: b.text }))
+          const batchResults = await detectCommitmentsBatch(batchInput)
+
+          for (const item of calBatch) {
+            const commitments = batchResults.get(item.id) || []
+
+            for (const commitment of commitments) {
+              const { error: commitErr } = await supabase.from('commitments').insert({
+                team_id: teamId,
+                creator_id: userId,
+                title: commitment.title || 'Untitled commitment',
+                description: commitment.description || null,
+                status: 'open',
+                priority_score: calculatePriorityScore(commitment),
+                source: 'calendar',
+                source_ref: item.dbId,
+              })
+              if (commitErr) {
+                console.error('CALENDAR COMMITMENT INSERT FAILED:', JSON.stringify({
+                  message: commitErr.message, details: commitErr.details,
+                  hint: commitErr.hint, code: commitErr.code,
+                }))
+              } else {
+                calendarCommitments++
+                totalCommitments++
+              }
+            }
+
+            await supabase
+              .from('outlook_calendar_events')
+              .update({ processed: true, commitments_found: commitments.length })
+              .eq('id', item.dbId)
+          }
+        } catch (batchErr) {
+          console.error('Calendar batch AI error:', (batchErr as Error).message)
+          errors.push('Calendar AI error: ' + (batchErr as Error).message)
+        }
+      }
+
+      calNextLink = calData['@odata.nextLink'] || null
+      if (calNextLink) await sleep(500)
+    }
+  }
+
   const duration = Math.round((Date.now() - startTime) / 1000)
   const aiStats = getDetectionStats()
 
-  console.log('OUTLOOK BACKFILL DONE: ' + totalEmails + ' total, ' + totalNewEmails + ' new, ' +
-    totalCommitments + ' commitments, duration: ' + duration + 's')
+  console.log('OUTLOOK BACKFILL DONE: ' + totalEmails + ' emails, ' + totalNewEmails + ' new emails, ' +
+    calendarEventsScanned + ' calendar events, ' + totalCommitments + ' commitments, duration: ' + duration + 's')
 
   return NextResponse.json({
     success: true,
     summary: {
       emails_scanned: totalEmails + processedMessages,
       new_emails_processed: totalNewEmails,
+      calendar_events_scanned: calendarEventsScanned,
+      calendar_events_new: calendarEventsNew,
+      calendar_commitments: calendarCommitments,
       commitments_detected: totalCommitments,
       pages_processed: processedPages,
       ai_stats: {
