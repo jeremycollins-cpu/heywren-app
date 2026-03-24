@@ -153,7 +153,7 @@ export default function CommitmentsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading commitments">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           {[1,2,3].map(i => <div key={i} className="h-48 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
@@ -175,7 +175,7 @@ export default function CommitmentsPage() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span className="text-sm font-medium">{error}</span>
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
         </div>
@@ -186,7 +186,7 @@ export default function CommitmentsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
+      <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
         {[
           { key: 'active' as const, label: 'Active', count: openCommitments.length },
           { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
@@ -194,6 +194,8 @@ export default function CommitmentsPage() {
         ].map(tab => (
           <button
             key={tab.key}
+            role="tab"
+            aria-selected={activeTab === tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.key

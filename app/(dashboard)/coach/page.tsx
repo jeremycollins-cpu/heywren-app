@@ -207,7 +207,7 @@ export default function CoachPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading coaching insights">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           {[1,2,3].map(i => <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
@@ -231,7 +231,7 @@ export default function CoachPage() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg px-4 py-3 text-sm">
+        <div role="alert" className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg px-4 py-3 text-sm">
           {error}
         </div>
       )}
@@ -262,7 +262,7 @@ export default function CoachPage() {
         {insights.map((insight, i) => {
           const config = priorityConfig[insight.priority]
           return (
-            <div key={i} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-6`}>
+            <article key={i} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-6`}>
               <div className="mb-3">
                 <span className={`px-2 py-0.5 rounded text-xs font-bold ${config.badge}`}>
                   {insight.priority}
@@ -276,7 +276,7 @@ export default function CoachPage() {
                   <span className="text-indigo-600 dark:text-indigo-300">{insight.action}</span>
                 </span>
               </div>
-            </div>
+            </article>
           )
         })}
       </div>

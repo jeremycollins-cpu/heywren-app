@@ -77,7 +77,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         <div
           className="fixed inset-0 bg-black/40 glass lg:hidden z-40 animate-fade-in"
           onClick={onToggle}
-          aria-label="Close sidebar"
+          aria-hidden="true"
         />
       )}
 
@@ -98,37 +98,41 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
               aria-label="Close sidebar"
             >
-              <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <X aria-hidden="true" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          <nav aria-label="Main navigation" className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+            <ul role="list" className="space-y-0.5">
             {mainLinks.map(({ href, label, icon: Icon }) => {
               const active = isActive(href)
               return (
+                <li key={href}>
                 <Link
-                  key={href}
                   href={href}
                   onClick={() => open && onToggle()}
+                  aria-current={active ? 'page' : undefined}
                   className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     active
                       ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                  <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
                     active
                       ? 'text-indigo-600 dark:text-indigo-400'
                       : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                   }`} />
                   <span className="truncate">{label}</span>
                   {active && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" />
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
                   )}
                 </Link>
+                </li>
               )
             })}
+            </ul>
 
             {/* Admin Section */}
             {isAdmin && (
@@ -136,31 +140,35 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                 <p className="px-3 text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
                   Administration
                 </p>
+                <ul role="list" className="space-y-0.5">
                 {adminLinks.map(({ href, label, icon: Icon }) => {
                   const active = isActive(href)
                   return (
+                    <li key={href}>
                     <Link
-                      key={href}
                       href={href}
                       onClick={() => open && onToggle()}
+                      aria-current={active ? 'page' : undefined}
                       className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                         active
                           ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                           : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                      <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
                         active
                           ? 'text-indigo-600 dark:text-indigo-400'
                           : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                       }`} />
                       <span className="truncate">{label}</span>
                       {active && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" />
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
                       )}
                     </Link>
+                    </li>
                   )
                 })}
+                </ul>
               </div>
             )}
           </nav>
@@ -171,7 +179,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               onClick={onHelpClick}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 font-medium text-[13px]"
             >
-              <HelpCircle className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <HelpCircle aria-hidden="true" className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="truncate">Help & Tips</span>
             </button>
           </div>

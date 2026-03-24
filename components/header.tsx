@@ -84,7 +84,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
         aria-label="Toggle menu"
       >
-        <Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        <Menu aria-hidden="true" className="w-5 h-5 text-gray-600 dark:text-gray-400" />
       </button>
 
       <div className="flex-1" />
@@ -123,7 +123,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
           {showDropdown && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+              <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} aria-hidden="true" />
               <div
                 className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-surface-dark-secondary rounded-brand border border-gray-200 dark:border-border-dark z-50 py-1 animate-scale-in"
                 style={{ boxShadow: 'var(--shadow-md)' }}
@@ -139,7 +139,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   role="menuitem"
                 >
-                  <Settings className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <Settings aria-hidden="true" className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                   Settings
                 </Link>
                 <Link
@@ -148,7 +148,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   role="menuitem"
                 >
-                  <CreditCard className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <CreditCard aria-hidden="true" className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                   Billing
                 </Link>
                 <div className="border-t border-gray-100 dark:border-border-dark mt-1 pt-1">
@@ -160,7 +160,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                     className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                     role="menuitem"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut aria-hidden="true" className="w-4 h-4" />
                     Sign out
                   </button>
                 </div>

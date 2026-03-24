@@ -332,7 +332,7 @@ export default function BriefingsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading briefings">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-1/2"></div>
@@ -354,7 +354,7 @@ export default function BriefingsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800 dark:text-red-400">
+        <div role="alert" className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 text-sm text-red-800 dark:text-red-400">
           <span className="font-medium">Error:</span> {error}
         </div>
       )}
@@ -389,21 +389,25 @@ export default function BriefingsPage() {
                 {/* Card header — always visible */}
                 <div
                   className="p-6 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedBriefing(isExpanded ? null : briefing.id) } }}
                   onClick={() => setExpandedBriefing(isExpanded ? null : briefing.id)}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <Briefcase className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                        <Briefcase aria-hidden="true" className="w-5 h-5 text-indigo-600 flex-shrink-0" />
                         <h3 className="font-semibold text-gray-900 dark:text-white">{briefing.subject}</h3>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 flex-wrap">
                         <div className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
+                          <Clock aria-hidden="true" className="w-4 h-4" />
                           {formatMeetingTime(briefing.startTime, briefing.endTime)}
                         </div>
                         <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4" />
+                          <Users aria-hidden="true" className="w-4 h-4" />
                           {briefing.attendees.length} attendee{briefing.attendees.length !== 1 ? 's' : ''}
                         </div>
                         {briefing.location && (
@@ -421,8 +425,8 @@ export default function BriefingsPage() {
                         </div>
                       </div>
                       {isExpanded
-                        ? <ChevronUp className="w-5 h-5 text-gray-400" />
-                        : <ChevronDown className="w-5 h-5 text-gray-400" />
+                        ? <ChevronUp aria-hidden="true" className="w-5 h-5 text-gray-400" />
+                        : <ChevronDown aria-hidden="true" className="w-5 h-5 text-gray-400" />
                       }
                     </div>
                   </div>
@@ -435,7 +439,7 @@ export default function BriefingsPage() {
                     {/* Attendees with health scores */}
                     <div>
                       <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                        <Users className="w-4 h-4 text-indigo-600" />
+                        <Users aria-hidden="true" className="w-4 h-4 text-indigo-600" />
                         Attendees
                         {avgHealth > 0 && (
                           <span className="text-xs text-gray-400 font-normal ml-1">Avg. health: {avgHealth}</span>
@@ -501,7 +505,7 @@ export default function BriefingsPage() {
                     {briefing.matchedCommitments.length > 0 && (
                       <div>
                         <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-indigo-600" />
+                          <FileText aria-hidden="true" className="w-4 h-4 text-indigo-600" />
                           Relevant Open Commitments
                         </h4>
                         <div className="space-y-2">
@@ -539,7 +543,7 @@ export default function BriefingsPage() {
                     {/* Talking points */}
                     <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
                       <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                        <MessageSquare className="w-4 h-4" />
+                        <MessageSquare aria-hidden="true" className="w-4 h-4" />
                         Suggested Talking Points
                       </h4>
                       <div className="space-y-2">
@@ -564,19 +568,19 @@ export default function BriefingsPage() {
         <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
           <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">What's Included</h3>
           <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
-            <li className="flex items-center gap-2"><Heart className="w-3.5 h-3.5" /> Relationship health scores per attendee</li>
-            <li className="flex items-center gap-2"><FileText className="w-3.5 h-3.5" /> Open commitments relevant to this meeting</li>
-            <li className="flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> Suggested talking points</li>
-            <li className="flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Recent interaction history</li>
+            <li className="flex items-center gap-2"><Heart aria-hidden="true" className="w-3.5 h-3.5" /> Relationship health scores per attendee</li>
+            <li className="flex items-center gap-2"><FileText aria-hidden="true" className="w-3.5 h-3.5" /> Open commitments relevant to this meeting</li>
+            <li className="flex items-center gap-2"><MessageSquare aria-hidden="true" className="w-3.5 h-3.5" /> Suggested talking points</li>
+            <li className="flex items-center gap-2"><Users aria-hidden="true" className="w-3.5 h-3.5" /> Recent interaction history</li>
           </ul>
         </div>
         <div className="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-6">
           <h3 className="font-semibold text-purple-900 dark:text-purple-300 mb-2">How It Works</h3>
           <ul className="text-sm text-purple-800 dark:text-purple-300 space-y-2">
-            <li className="flex items-center gap-2"><Clock className="w-3.5 h-3.5" /> Scans your next 7 days of meetings</li>
-            <li className="flex items-center gap-2"><Briefcase className="w-3.5 h-3.5" /> Matches attendees to open commitments</li>
-            <li className="flex items-center gap-2"><Heart className="w-3.5 h-3.5" /> Calculates health from email patterns</li>
-            <li className="flex items-center gap-2"><FileText className="w-3.5 h-3.5" /> Generates context you can act on</li>
+            <li className="flex items-center gap-2"><Clock aria-hidden="true" className="w-3.5 h-3.5" /> Scans your next 7 days of meetings</li>
+            <li className="flex items-center gap-2"><Briefcase aria-hidden="true" className="w-3.5 h-3.5" /> Matches attendees to open commitments</li>
+            <li className="flex items-center gap-2"><Heart aria-hidden="true" className="w-3.5 h-3.5" /> Calculates health from email patterns</li>
+            <li className="flex items-center gap-2"><FileText aria-hidden="true" className="w-3.5 h-3.5" /> Generates context you can act on</li>
           </ul>
         </div>
       </div>

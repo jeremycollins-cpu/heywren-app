@@ -147,7 +147,7 @@ export default function RelationshipsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading relationships">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-2 gap-4">
@@ -191,8 +191,8 @@ export default function RelationshipsPage() {
 
       {/* Alert banner */}
       {needsAttention.length > 0 && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 flex items-start gap-3">
-          <span className="text-yellow-600 text-lg">⚠</span>
+        <div role="alert" className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-yellow-600 text-lg" aria-hidden="true">⚠</span>
           <div className="text-sm text-yellow-800 dark:text-yellow-200">
             <span className="font-semibold">{needsAttention.length} relationship{needsAttention.length > 1 ? 's' : ''} need{needsAttention.length === 1 ? 's' : ''} attention:</span>{' '}
             {needsAttention.slice(0, 2).map(c => c.name).join(', ')}
@@ -226,7 +226,7 @@ export default function RelationshipsPage() {
 
                 {/* Health Score Ring */}
                 <div className="relative w-12 h-12">
-                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+                  <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48" role="img" aria-label={`Health score: ${contact.healthScore}`}>
                     <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="3" className="text-gray-200 dark:text-gray-700" />
                     <circle
                       cx="24" cy="24" r="20" fill="none"

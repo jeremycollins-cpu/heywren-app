@@ -200,7 +200,7 @@ export default function PlaybooksPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" role="status" aria-live="polite" aria-busy="true" aria-label="Loading playbooks">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -225,7 +225,7 @@ export default function PlaybooksPage() {
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
         >
-          <Plus className="w-5 h-5" />
+          <Plus aria-hidden="true" className="w-5 h-5" />
           New Playbook
         </button>
       </div>
@@ -261,7 +261,7 @@ export default function PlaybooksPage() {
               onClick={() => setShowModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
             >
-              <Plus className="w-5 h-5" />
+              <Plus aria-hidden="true" className="w-5 h-5" />
               Create Your First Playbook
             </button>
           </div>
@@ -282,7 +282,7 @@ export default function PlaybooksPage() {
                     <h3 className="font-semibold text-gray-900 dark:text-white">{playbook.name}</h3>
                     {playbook.run_count > 0 && (
                       <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                        <Zap className="w-3 h-3" />
+                        <Zap aria-hidden="true" className="w-3 h-3" />
                         {playbook.run_count} run{playbook.run_count !== 1 ? 's' : ''}
                       </span>
                     )}
@@ -295,12 +295,12 @@ export default function PlaybooksPage() {
                   <button
                     onClick={() => togglePlaybook(playbook.id, playbook.enabled)}
                     className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
-                    title={playbook.enabled ? 'Disable playbook' : 'Enable playbook'}
+                    aria-label={playbook.enabled ? 'Disable playbook' : 'Enable playbook'}
                   >
                     {playbook.enabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
+                      <ToggleRight aria-hidden="true" className="w-6 h-6 text-green-600" />
                     ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                      <ToggleLeft aria-hidden="true" className="w-6 h-6 text-gray-400" />
                     )}
                   </button>
                   {deletingId === playbook.id ? (
@@ -322,9 +322,9 @@ export default function PlaybooksPage() {
                     <button
                       onClick={() => setDeletingId(playbook.id)}
                       className="p-2 hover:bg-red-50 rounded-lg transition text-red-600"
-                      title="Delete playbook"
+                      aria-label="Delete playbook"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Trash2 aria-hidden="true" className="w-5 h-5" />
                     </button>
                   )}
                 </div>
@@ -371,39 +371,44 @@ export default function PlaybooksPage() {
 
       {/* Create Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="new-playbook-title">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => !submitting && setShowModal(false)}
+            aria-hidden="true"
           />
           <div className="relative bg-white dark:bg-surface-dark-secondary rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">New Playbook</h2>
+              <h2 id="new-playbook-title" className="text-xl font-bold text-gray-900 dark:text-white">New Playbook</h2>
               <button
                 onClick={() => !submitting && setShowModal(false)}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                aria-label="Close dialog"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X aria-hidden="true" className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                <label htmlFor="playbook-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
                 <input
+                  id="playbook-name"
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Nudge overdue commitments"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
                   disabled={submitting}
+                  aria-required="true"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <label htmlFor="playbook-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
                 <textarea
+                  id="playbook-description"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder="What does this playbook do?"
@@ -414,8 +419,9 @@ export default function PlaybooksPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trigger</label>
+                <label htmlFor="playbook-trigger" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trigger</label>
                 <select
+                  id="playbook-trigger"
                   value={formTrigger}
                   onChange={(e) => setFormTrigger(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
@@ -428,8 +434,9 @@ export default function PlaybooksPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Action</label>
+                <label htmlFor="playbook-action" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Action</label>
                 <select
+                  id="playbook-action"
                   value={formAction}
                   onChange={(e) => setFormAction(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition dark:bg-surface-dark dark:text-white"
