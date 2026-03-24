@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureTeamForUser } from '@/lib/team/ensure-team'
 
 function getAdminClient() {
   return createClient(
@@ -56,103 +57,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: data.error || 'Failed to get access token' }, { status: 400 })
     }
 
-    const supabase = getAdminClient()
-
-    // Look up team: team_members → profiles → create if needed
-    let teamId: string | null = null
-
-    const { data: members } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', userId)
-
-    if (members && members.length > 0) {
-      teamId = members[0].team_id
-    }
-
-    if (!teamId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userId)
-        .single()
-
-      if (profile?.current_team_id) {
-        teamId = profile.current_team_id
-      }
-    }
-
-    if (!teamId) {
-      // Try domain matching first to join an existing team
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('id', userId)
-        .single()
-
-      const userEmail = userProfile?.email || ''
-      const domain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : null
-
-      if (domain) {
-        const { data: domainTeam } = await supabase
-          .from('teams')
-          .select('id')
-          .eq('domain', domain)
-          .limit(1)
-          .single()
-
-        if (domainTeam) {
-          teamId = domainTeam.id
-          await supabase
-            .from('team_members')
-            .upsert(
-              { team_id: teamId, user_id: userId, role: 'member' },
-              { onConflict: 'team_id,user_id' }
-            )
-          await supabase
-            .from('profiles')
-            .update({ current_team_id: teamId })
-            .eq('id', userId)
-        }
-      }
-    }
-
-    if (!teamId) {
-      // No existing team found — create a new one
-      const slug = `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-      const { data: newTeam, error: teamError } = await supabase
-        .from('teams')
-        .insert({ name: 'My Team', slug })
-        .select()
-        .single()
-
-      if (teamError) {
-        console.error('Failed to create team during Slack OAuth:', teamError)
-      }
-
-      if (newTeam) {
-        teamId = newTeam.id
-        const { error: memberError } = await supabase
-          .from('team_members')
-          .insert({ team_id: teamId, user_id: userId, role: 'owner' })
-        if (memberError) {
-          console.error('Failed to create team member during Slack OAuth:', memberError)
-        }
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({ current_team_id: teamId })
-          .eq('id', userId)
-        if (profileError) {
-          console.error('Failed to update profile during Slack OAuth:', profileError)
-        }
-      }
-    }
-
-    if (!teamId) {
-      return NextResponse.json({ error: 'Could not resolve team' }, { status: 400 })
-    }
+    // Resolve team using shared utility (handles all fallbacks + fixes inconsistencies)
+    const { teamId } = await ensureTeamForUser(userId)
 
     // Upsert the integration (update if exists)
+    const supabase = getAdminClient()
     const { error: upsertError } = await supabase.from('integrations').upsert(
       {
         team_id: teamId,
