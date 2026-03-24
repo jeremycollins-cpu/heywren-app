@@ -1,6 +1,6 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 const MAX_MESSAGES_PER_RUN = 100
 const TIME_BUDGET_MS = 240000
@@ -165,6 +165,7 @@ async function syncTeamOutlook(
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
             })
@@ -406,6 +407,7 @@ async function syncTeamOutlook(
                 title: commitment.title || 'Untitled commitment',
                 description: commitment.description || null,
                 status: 'open',
+                priority_score: calculatePriorityScore(commitment),
                 source: 'calendar',
                 source_ref: item.dbId,
               })

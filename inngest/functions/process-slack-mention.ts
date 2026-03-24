@@ -4,7 +4,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitments } from '@/lib/ai/detect-commitments'
+import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 // ─── Admin Supabase client (bypasses RLS) ───────────────────────────────────
 
@@ -265,6 +265,7 @@ export const processSlackMention = inngest.createFunction(
               title: commitment.title,
               description: commitment.description || null,
               status: 'open', // NOT 'pending' — matches commitment_status enum
+              priority_score: calculatePriorityScore(commitment),
               source: 'slack', // matches commitment_source enum
               source_ref: messageRecord?.id || ts, // NOT 'source_message_id'
             })

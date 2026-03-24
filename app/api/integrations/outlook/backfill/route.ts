@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 // Process max 100 messages per request to stay within 300s timeout
 const MAX_MESSAGES_PER_RUN = 100
@@ -205,6 +205,7 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
             })
@@ -395,6 +396,7 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: calculatePriorityScore(commitment),
               source: 'outlook',
               source_ref: item.dbId,
             })
@@ -562,6 +564,7 @@ export async function POST(request: NextRequest) {
                 title: commitment.title || 'Untitled commitment',
                 description: commitment.description || null,
                 status: 'open',
+                priority_score: calculatePriorityScore(commitment),
                 source: 'calendar',
                 source_ref: item.dbId,
               })

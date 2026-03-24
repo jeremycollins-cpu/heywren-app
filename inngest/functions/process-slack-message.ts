@@ -5,7 +5,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitments } from '@/lib/ai/detect-commitments'
+import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 function getAdminClient() {
   return createClient(
@@ -154,6 +154,7 @@ export const processSlackMessage = inngest.createFunction(
               title: commitment.title,
               description: commitment.description || null,
               status: 'open',                 // NOT 'pending' — correct enum
+              priority_score: calculatePriorityScore(commitment),
               source: 'slack',                // commitment_source enum
               source_ref: messageData.id,     // NOT 'source_message_id'
             })
