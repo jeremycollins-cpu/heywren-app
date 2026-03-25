@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureTeamForUser } from '@/lib/team/ensure-team'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -142,85 +143,37 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ─── 6. DETERMINE FLOW: JOIN vs CREATE ──────────────────────────────
-    // Server-side domain match as fallback when joiningTeamId wasn't passed via Stripe metadata
-    // (e.g. sessionStorage was lost between signup → plan → checkout)
-    const FREE_EMAIL_DOMAINS = new Set([
-      'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk',
-      'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
-      'aol.com', 'icloud.com', 'me.com', 'mac.com',
-      'protonmail.com', 'proton.me', 'tutanota.com',
-      'zoho.com', 'yandex.com', 'mail.com', 'gmx.com',
-      'fastmail.com', 'hey.com', 'pm.me',
-    ])
+    // ─── 6. RESOLVE TEAM (shared utility handles domain match + create) ──
+    // ensureTeamForUser handles: team_members lookup → profiles → domain match → create
+    // It also guarantees both team_members and profiles.current_team_id are consistent
+    const teamResult = await ensureTeamForUser(userId, {
+      companyName,
+      joiningTeamId: joiningTeamId || null,
+    })
 
-    let resolvedJoiningTeamId = joiningTeamId
+    const teamId = teamResult.teamId
+    const flow: 'joined' | 'created' = teamResult.flow === 'created' ? 'created' : 'joined'
 
-    if (!resolvedJoiningTeamId && domain && !FREE_EMAIL_DOMAINS.has(domain)) {
-      // Look for an existing team with a matching domain
-      const { data: domainTeam } = await supabaseAdmin
-        .from('teams')
-        .select('id, name')
-        .eq('domain', domain)
-        .limit(1)
-        .single()
+    // ─── 6b. SET STRIPE BILLING FIELDS ON TEAM ─────────────────────────
+    // The shared utility doesn't know about Stripe, so we update billing fields here
+    if (customerId || subscriptionId) {
+      const stripeFields: Record<string, any> = {}
+      if (customerId) stripeFields.stripe_customer_id = customerId
+      if (subscriptionId) stripeFields.stripe_subscription_id = subscriptionId
+      stripeFields.subscription_plan = plan
+      stripeFields.subscription_status = 'trialing'
 
-      if (domainTeam) {
-        console.log('Domain match found for', domain, '→ team:', domainTeam.id, domainTeam.name)
-        resolvedJoiningTeamId = domainTeam.id
+      const sub = typeof checkoutSession.subscription === 'object'
+        ? checkoutSession.subscription
+        : null
+      if (sub?.trial_end) {
+        stripeFields.trial_ends_at = new Date(sub.trial_end * 1000).toISOString()
       }
-    }
 
-    let teamId: string
-    let flow: 'joined' | 'created'
-
-    if (resolvedJoiningTeamId) {
-      // ─── FLOW B: JOIN EXISTING TEAM ─────────────────────────────────
-      // Verify the team actually exists
-      const { data: existingTeam, error: teamLookupError } = await supabaseAdmin
+      await supabaseAdmin
         .from('teams')
-        .select('id, name')
-        .eq('id', resolvedJoiningTeamId)
-        .single()
-
-      if (teamLookupError || !existingTeam) {
-        console.error('Joining team not found:', resolvedJoiningTeamId, teamLookupError)
-        // Fall through to create a new team instead — don't fail the signup
-        const result = await createNewTeam(userId, companyName, domain, customerId, subscriptionId, plan)
-        teamId = result.teamId
-        flow = 'created'
-      } else {
-        // Add as member of existing team
-        const { error: memberError } = await supabaseAdmin
-          .from('team_members')
-          .upsert({
-            team_id: existingTeam.id,
-            user_id: userId,
-            role: 'member',
-          }, {
-            onConflict: 'team_id,user_id',
-          })
-
-        if (memberError) {
-          console.error('Failed to add team member:', memberError)
-          // Try insert without upsert as fallback
-          await supabaseAdmin
-            .from('team_members')
-            .insert({
-              team_id: existingTeam.id,
-              user_id: userId,
-              role: 'member',
-            })
-        }
-
-        teamId = existingTeam.id
-        flow = 'joined'
-      }
-    } else {
-      // ─── FLOW A: CREATE NEW TEAM ──────────────────────────────────
-      const result = await createNewTeam(userId, companyName, domain, customerId, subscriptionId, plan)
-      teamId = result.teamId
-      flow = 'created'
+        .update(stripeFields)
+        .eq('id', teamId)
     }
 
     // ─── 7. UPSERT PROFILE ─────────────────────────────────────────────
@@ -290,56 +243,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// ─── HELPER: Create a new team ──────────────────────────────────────────────
-async function createNewTeam(
-  userId: string,
-  companyName: string,
-  domain: string | null,
-  customerId: string | undefined,
-  subscriptionId: string | undefined,
-  plan: string
-): Promise<{ teamId: string }> {
-  const slug = companyName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '') + '-' + Date.now().toString(36)
-
-  const { data: newTeam, error: teamError } = await supabaseAdmin
-    .from('teams')
-    .insert({
-      name: companyName,
-      slug,
-      owner_id: userId,
-      domain: domain || null,
-      stripe_customer_id: customerId || null,
-      stripe_subscription_id: subscriptionId || null,
-      subscription_plan: plan,
-      subscription_status: 'trialing',
-    })
-    .select('id')
-    .single()
-
-  if (teamError || !newTeam) {
-    console.error('Team creation failed:', teamError)
-    throw new Error('Failed to create team')
-  }
-
-  // Add creator as team owner
-  const { error: memberError } = await supabaseAdmin
-    .from('team_members')
-    .insert({
-      team_id: newTeam.id,
-      user_id: userId,
-      role: 'owner',
-    })
-
-  if (memberError) {
-    console.error('Team member creation failed (non-critical):', memberError)
-  }
-
-  return { teamId: newTeam.id }
 }
 
 // Detect whether profiles table uses 'full_name' or 'display_name'

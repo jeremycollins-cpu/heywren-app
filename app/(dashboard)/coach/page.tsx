@@ -27,9 +27,12 @@ import Link from 'next/link'
 interface CoachingInsight {
   id: string
   category: 'responsiveness' | 'tone' | 'follow_through' | 'relationship' | 'workload' | 'communication_style'
+  categoryLabel?: string
   priority: 'critical' | 'high' | 'medium' | 'growth'
   title: string
   description: string
+  evidence?: string
+  evidenceAttribution?: string
   action: string
   metric?: { label: string; value: string; trend?: 'up' | 'down' | 'stable' }
   researchBasis?: string
@@ -413,34 +416,24 @@ export default function CoachPage() {
         </div>
       )}
 
-      {/* Pending Insights */}
-      <div className="space-y-4">
+      {/* Strategic Coaching Insights */}
+      <div className="space-y-5">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Strategic Coaching Insights</h2>
         {pendingInsights.map(insight => {
           const config = priorityConfig[insight.priority]
-          const PriorityIcon = config.icon
-          const catConfig = categoryConfig[insight.category]
-          const CategoryIcon = catConfig?.icon || Sparkles
+          const isCritical = insight.priority === 'critical' || insight.priority === 'high'
 
           return (
-            <article key={insight.id} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${config.border} rounded-xl p-5`}>
+            <article key={insight.id} className={`bg-white dark:bg-surface-dark-secondary rounded-xl p-6 transition ${
+              isCritical
+                ? 'border-2 border-dashed border-red-300 dark:border-red-700'
+                : 'border border-gray-200 dark:border-border-dark'
+            }`}>
+              {/* Category label + dismiss */}
               <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {catConfig && (
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                      <CategoryIcon className="w-3 h-3" />
-                      {catConfig.label}
-                    </span>
-                  )}
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${config.badge}`}>
-                    {insight.priority}
-                  </span>
-                  {insight.metric && (
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      {insight.metric.value} {insight.metric.label}
-                      <TrendArrow trend={insight.metric.trend} />
-                    </span>
-                  )}
-                </div>
+                <span className={`px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wide ${config.badge}`}>
+                  {insight.categoryLabel || insight.priority}
+                </span>
                 <button
                   onClick={() => dismissInsight(insight.id)}
                   className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded"
@@ -450,25 +443,55 @@ export default function CoachPage() {
                 </button>
               </div>
 
-              <h3 className="font-bold text-gray-900 dark:text-white text-base mb-2">{insight.title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{insight.description}</p>
+              {/* Title */}
+              <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-3">{insight.title}</h3>
 
-              {/* Action recommendation */}
-              <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-lg p-3 mb-3">
-                <div className="flex items-start gap-2">
-                  <PriorityIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200">{insight.action}</p>
+              {/* Description */}
+              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-4">{insight.description}</p>
+
+              {/* Evidence / YOUR OWN WORDS quote */}
+              {insight.evidence && (
+                <div className="mb-4">
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mb-1.5">
+                    {insight.evidenceAttribution ? 'Your own words' : 'Evidence from this week'}
+                  </div>
+                  <div className="border-l-3 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-r-lg px-4 py-3">
+                    <p className="text-sm text-gray-700 dark:text-gray-300 italic leading-relaxed">
+                      &ldquo;{insight.evidence}&rdquo;
+                    </p>
+                    {insight.evidenceAttribution && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        — {insight.evidenceAttribution}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              {/* Research basis */}
-              {insight.researchBasis && (
-                <p className="text-xs italic text-gray-400 dark:text-gray-500 mb-3 pl-1">
-                  {insight.researchBasis}
-                </p>
               )}
 
-              <div className="flex items-center gap-2">
+              {/* Action recommendation — highlighted box */}
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 border-l-3 border-indigo-500 rounded-r-lg px-4 py-3 mb-4">
+                <p className="text-sm leading-relaxed">
+                  <span className="font-bold text-indigo-800 dark:text-indigo-300">Action: </span>
+                  <span className="text-indigo-900 dark:text-indigo-200">{insight.action}</span>
+                </p>
+              </div>
+
+              {/* Metric + Research */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {insight.metric && (
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="font-semibold text-gray-900 dark:text-white">{insight.metric.value}</span>
+                      {insight.metric.label}
+                      <TrendArrow trend={insight.metric.trend} />
+                    </span>
+                  )}
+                  {insight.researchBasis && (
+                    <p className="text-xs italic text-gray-400 dark:text-gray-500">
+                      {insight.researchBasis}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={() => acceptInsight(insight.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition"

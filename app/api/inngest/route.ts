@@ -12,6 +12,7 @@ import { syncOutlook } from '@/inngest/functions/sync-outlook'
 import { generateDrafts } from '@/inngest/functions/generate-drafts'
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
+import { scanAwaitingReplies } from '@/inngest/functions/scan-awaiting-replies'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -24,5 +25,6 @@ export const { GET, POST, PUT } = serve({
     generateDrafts,       // 7 AM PT daily — AI follow-up draft generation
     scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
     detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
+    scanAwaitingReplies,  // 7 AM PT daily — "The Waiting Room" scan for sent items with no reply
   ],
 })

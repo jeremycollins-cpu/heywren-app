@@ -8,8 +8,10 @@ export interface Commitment {
   status: string
   source: string | null
   source_ref: string | null
+  source_url?: string | null
   created_at: string
   updated_at: string
+  metadata?: Record<string, any> | null
 }
 
 export interface SlackMention {
