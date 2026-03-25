@@ -83,8 +83,8 @@ export async function POST() {
   // Look for the user's Slack user ID in the integration config
   const slackUserId = integration.config?.authed_user_id || integration.config?.bot_user_id || null
 
-  // Scan window: last 14 days
-  const scanWindow = new Date(Date.now() - 14 * 86400000).toISOString()
+  // Scan window: last 30 days
+  const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
 
   // Get all Slack messages in the scan window
   const { data: messages, error: msgError } = await adminDb
