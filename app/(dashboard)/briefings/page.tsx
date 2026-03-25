@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2 } from 'lucide-react'
+import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2, Sparkles, Loader2, Tag } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 
 // ── Types ──
@@ -43,6 +43,12 @@ interface Briefing {
   bodyPreview: string | null
   matchedCommitments: MatchedCommitment[]
   talkingPoints: string[]
+  // AI-generated briefing summary
+  aiSummary: string | null
+  keyTopics: string[]
+  recentContext: string[]
+  suggestedPrep: string | null
+  summaryLoading: boolean
 }
 
 // ── Health score helpers (same logic as relationships page) ──
@@ -138,40 +144,53 @@ function generateTalkingPoints(
 }
 
 // ── Matching logic: find commitments related to attendees or meeting subject ──
+// Strict matching: only match by attendee names, company names from external domains,
+// or strong subject keywords (not short/common words)
 
 function findMatchingCommitments(
   commitments: MatchedCommitment[],
   attendees: Attendee[],
   subject: string
 ): MatchedCommitment[] {
-  const subjectWords = (subject || '').toLowerCase().split(/\s+/).filter(w => w.length > 3)
   const attendeeNames = attendees.map(a => (a.name || '').toLowerCase()).filter(Boolean)
+  const attendeeFirstNames = attendeeNames.map(n => n.split(/\s+/)[0]).filter(n => n.length > 3)
   const attendeeEmails = attendees.map(a => (a.email || '').toLowerCase()).filter(Boolean)
+
+  // Extract external company names from attendee domains (e.g. "atlanticwaste" from atlanticwaste.com)
+  const companyNames = [...new Set(
+    attendeeEmails
+      .map(e => e.split('@')[1]?.split('.')[0])
+      .filter(d => d && d.length > 3 && !['gmail', 'yahoo', 'outlook', 'hotmail', 'routeware'].includes(d))
+  )]
+
+  // Only use strong subject keywords (5+ chars, not common words)
+  const STOP_WORDS = new Set(['meeting', 'discussion', 'review', 'update', 'weekly', 'monthly', 'daily', 'leadership', 'check', 'about', 'their', 'these', 'other', 'which', 'where', 'there', 'would', 'could', 'should', 'every', 'after', 'before'])
+  const subjectKeywords = (subject || '').toLowerCase().split(/[\s:+\-–—,]+/)
+    .filter(w => w.length >= 5 && !STOP_WORDS.has(w))
 
   return commitments.filter(c => {
     const titleLower = (c.title || '').toLowerCase()
     const descLower = (c.description || '').toLowerCase()
     const combined = titleLower + ' ' + descLower
 
-    // Check if any attendee name appears in the commitment
+    // Match by attendee full name
     for (const name of attendeeNames) {
-      if (name.length > 2 && combined.includes(name)) return true
-      // Also check first/last name parts
-      const parts = name.split(/\s+/)
-      for (const part of parts) {
-        if (part.length > 3 && combined.includes(part)) return true
-      }
+      if (name.length > 4 && combined.includes(name)) return true
     }
 
-    // Check if any attendee email prefix appears
-    for (const email of attendeeEmails) {
-      const prefix = email.split('@')[0]
-      if (prefix.length > 3 && combined.includes(prefix)) return true
+    // Match by attendee first name (only if 4+ chars to avoid false positives)
+    for (const firstName of attendeeFirstNames) {
+      if (combined.includes(firstName)) return true
     }
 
-    // Check if subject words match
-    for (const word of subjectWords) {
-      if (combined.includes(word)) return true
+    // Match by external company name (e.g. "atlantic waste", "atlanticwaste")
+    for (const company of companyNames) {
+      if (combined.includes(company)) return true
+    }
+
+    // Match by strong subject keywords only
+    for (const keyword of subjectKeywords) {
+      if (combined.includes(keyword)) return true
     }
 
     return false
@@ -352,10 +371,54 @@ export default function BriefingsPage() {
           bodyPreview: event.body_preview,
           matchedCommitments: matched,
           talkingPoints,
+          aiSummary: null,
+          keyTopics: [],
+          recentContext: [],
+          suggestedPrep: null,
+          summaryLoading: false,
         }
       })
 
       setBriefings(briefingList)
+
+      // Fetch AI summaries for the first 3 meetings (don't block page load)
+      briefingList.slice(0, 3).forEach(async (briefing) => {
+        try {
+          setBriefings(prev => prev.map(b =>
+            b.id === briefing.id ? { ...b, summaryLoading: true } : b
+          ))
+          const res = await fetch('/api/briefing-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: briefing.subject,
+              attendees: briefing.attendees.map(a => ({ name: a.name, email: a.email })),
+              bodyPreview: briefing.bodyPreview,
+            }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            setBriefings(prev => prev.map(b =>
+              b.id === briefing.id ? {
+                ...b,
+                aiSummary: data.summary,
+                keyTopics: data.keyTopics || [],
+                recentContext: data.recentContext || [],
+                suggestedPrep: data.suggestedPrep,
+                summaryLoading: false,
+              } : b
+            ))
+          } else {
+            setBriefings(prev => prev.map(b =>
+              b.id === briefing.id ? { ...b, summaryLoading: false } : b
+            ))
+          }
+        } catch {
+          setBriefings(prev => prev.map(b =>
+            b.id === briefing.id ? { ...b, summaryLoading: false } : b
+          ))
+        }
+      })
       setLoading(false)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load briefings'
@@ -479,6 +542,54 @@ export default function BriefingsPage() {
                 {/* Expanded view */}
                 {isExpanded && (
                   <div className="px-6 pb-6 space-y-5 border-t border-gray-100 dark:border-gray-700 pt-5">
+
+                    {/* AI Meeting Summary */}
+                    {(briefing.aiSummary || briefing.summaryLoading) && (
+                      <div className="bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-2 flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-indigo-600" />
+                          Meeting Brief
+                        </h4>
+                        {briefing.summaryLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Generating meeting summary...
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-sm text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                              {briefing.aiSummary}
+                            </p>
+                            {briefing.keyTopics.length > 0 && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Tag className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                                {briefing.keyTopics.map((topic, i) => (
+                                  <span key={i} className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-800/40 text-indigo-700 dark:text-indigo-300 rounded-full">
+                                    {topic}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {briefing.recentContext.length > 0 && (
+                              <div className="space-y-1 pt-1 border-t border-indigo-200/50 dark:border-indigo-700/50">
+                                <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Recent context</p>
+                                {briefing.recentContext.map((ctx, i) => (
+                                  <div key={i} className="flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-300">
+                                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full mt-1.5 flex-shrink-0" />
+                                    {ctx}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {briefing.suggestedPrep && (
+                              <div className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-100/50 dark:bg-indigo-800/20 rounded px-3 py-1.5">
+                                <strong>Prep:</strong> {briefing.suggestedPrep}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Attendees with health scores */}
                     <div>
