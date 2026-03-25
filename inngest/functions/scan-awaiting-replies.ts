@@ -349,11 +349,132 @@ export async function scanTeamAwaitingReplies(
     .in('status', ['dismissed', 'replied'])
     .lt('updated_at', thirtyDaysAgo)
 
+  // ── Slack Scanning ──
+  // Find messages the user sent in DMs/group DMs/channels that got no reply
+  let slackAwaiting = 0
+  try {
+    const slackIntegration = await supabase
+      .from('integrations')
+      .select('config')
+      .eq('team_id', teamId)
+      .eq('provider', 'slack')
+      .maybeSingle()
+
+    if (slackIntegration?.data) {
+      const slackUserId = slackIntegration.data.config?.authed_user_id || slackIntegration.data.config?.bot_user_id
+      const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
+
+      if (slackUserId) {
+        // Get all stored Slack messages in the scan window
+        const { data: slackMessages } = await supabase
+          .from('slack_messages')
+          .select('id, channel_id, user_id, message_text, message_ts, thread_ts, created_at')
+          .eq('team_id', teamId)
+          .gte('created_at', scanWindow)
+          .order('created_at', { ascending: false })
+          .limit(500)
+
+        if (slackMessages && slackMessages.length > 0) {
+          // Find messages the user sent that are in DMs/group DMs
+          const userMessages = slackMessages.filter(m =>
+            m.user_id === slackUserId &&
+            (m.channel_id?.startsWith('D') || m.channel_id?.startsWith('G')) &&
+            (m.message_text || '').trim().length >= 15
+          )
+
+          // Track which channels/threads got replies after user's message
+          const repliedThreads = new Set<string>()
+          for (const msg of slackMessages) {
+            if (msg.user_id !== slackUserId) {
+              if (msg.thread_ts) repliedThreads.add(msg.thread_ts)
+              repliedThreads.add(msg.message_ts)
+            }
+          }
+
+          // Check for replies after each user message in the same channel
+          const channelReplies = new Map<string, number[]>()
+          for (const msg of slackMessages) {
+            if (msg.user_id !== slackUserId) {
+              if (!channelReplies.has(msg.channel_id)) channelReplies.set(msg.channel_id, [])
+              channelReplies.get(msg.channel_id)!.push(new Date(msg.created_at).getTime())
+            }
+          }
+
+          // Get existing to avoid duplicates
+          const { data: existingSlack } = await supabase
+            .from('awaiting_replies')
+            .select('source_message_id')
+            .eq('team_id', teamId)
+            .eq('source', 'slack')
+
+          const existingSlackIds = new Set((existingSlack || []).map(e => e.source_message_id))
+
+          const slackToInsert: any[] = []
+          for (const msg of userMessages) {
+            if (existingSlackIds.has(msg.message_ts)) continue
+
+            // Check if anyone replied after this message in the same channel
+            const msgTime = new Date(msg.created_at).getTime()
+            const daysSince = Math.floor((Date.now() - msgTime) / 86400000)
+
+            // Skip if less than 1 day old
+            if (daysSince < 1) continue
+
+            const replies = channelReplies.get(msg.channel_id) || []
+            const hasReplyAfter = replies.some(t => t > msgTime)
+            if (hasReplyAfter) continue
+
+            // No reply — this is awaiting
+            const text = msg.message_text || ''
+            const hasQuestion = /\?|can you|could you|would you|please|need/i.test(text)
+            let urgency = 'medium'
+            if (daysSince > 3 && hasQuestion) urgency = 'high'
+            else if (hasQuestion) urgency = 'medium'
+            else urgency = 'low'
+
+            const permalink = msg.channel_id && msg.message_ts
+              ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
+              : null
+
+            slackToInsert.push({
+              team_id: teamId,
+              user_id: userId,
+              sender_email: userEmail || null,
+              source: 'slack',
+              source_message_id: msg.message_ts,
+              permalink,
+              channel_id: msg.channel_id,
+              to_recipients: 'DM participant',
+              to_name: 'DM',
+              subject: null,
+              body_preview: text.slice(0, 500),
+              sent_at: msg.created_at,
+              urgency,
+              category: hasQuestion ? 'question' : 'follow_up',
+              wait_reason: hasQuestion ? 'Question sent with no reply' : 'Message sent with no reply',
+              days_waiting: daysSince,
+            })
+          }
+
+          if (slackToInsert.length > 0) {
+            const { error: slackInsertErr } = await supabase
+              .from('awaiting_replies')
+              .upsert(slackToInsert, { onConflict: 'team_id,source_message_id' })
+            if (!slackInsertErr) slackAwaiting = slackToInsert.length
+          }
+        }
+      }
+    }
+  } catch (slackErr) {
+    console.error('Slack awaiting scan error:', (slackErr as Error).message)
+  }
+
   return {
     success: true,
     teamId,
     scanned: totalScanned,
-    awaiting: totalAwaiting,
+    awaiting: totalAwaiting + slackAwaiting,
+    slackAwaiting,
     duration: Date.now() - startTime,
   }
 }
