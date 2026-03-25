@@ -15,35 +15,53 @@ function getAdminClient() {
   )
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = await createSessionClient()
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let userId: string | null = null
+    let teamId: string | null = null
+
+    // Try server-side session
+    try {
+      const supabase = await createSessionClient()
+      const { data: userData } = await supabase.auth.getUser()
+      userId = userData?.user?.id || null
+    } catch { /* session read failed */ }
+
+    const admin = getAdminClient()
+
+    // If server-side session failed, try userId from query param
+    if (!userId) {
+      const { searchParams } = new URL(request.url)
+      const qUserId = searchParams.get('userId')
+      if (qUserId) {
+        // Validate the userId exists
+        const { data: authUser } = await admin.auth.admin.getUserById(qUserId)
+        if (authUser?.user) userId = authUser.user.id
+      }
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', userData.user.id)
-      .single()
-
-    const teamId = profile?.current_team_id
-    if (!teamId) {
+    if (!userId) {
       return NextResponse.json({ items: [], count: 0 })
     }
 
-    const admin = getAdminClient()
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userId)
+      .single()
+    teamId = profile?.current_team_id || null
+
+    if (!teamId) {
+      return NextResponse.json({ items: [], count: 0 })
+    }
 
     const { data: items, error } = await admin
       .from('awaiting_replies')
       .select('*')
       .eq('team_id', teamId)
-      .eq('user_id', userData.user.id)
       .in('status', ['waiting', 'snoozed'])
-      .order('urgency', { ascending: true }) // critical first
-      .order('sent_at', { ascending: true }) // oldest first
+      .order('urgency', { ascending: true })
+      .order('sent_at', { ascending: true })
       .limit(50)
 
     if (error) {

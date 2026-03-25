@@ -77,7 +77,7 @@ export default function SyncPage() {
             const statusData = await res.json()
             teamId = statusData.teamId
             integrationData = (statusData.integrations || []).map((i: any) => ({
-              provider: i.provider, created_at: i.created_at,
+              provider: i.provider, created_at: i.created_at || new Date().toISOString(),
             }))
           }
         } catch { /* ignore */ }
@@ -87,10 +87,10 @@ export default function SyncPage() {
       if (teamId && integrationData.length === 0) {
         const { data: intData } = await supabase
           .from('integrations')
-          .select('id, provider, created_at')
+          .select('id, provider')
           .eq('team_id', teamId)
         integrationData = (intData || []).map((i: any) => ({
-          provider: i.provider, created_at: i.created_at,
+          provider: i.provider, created_at: i.created_at || new Date().toISOString(),
         }))
       }
 

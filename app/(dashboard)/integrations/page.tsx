@@ -10,8 +10,8 @@ import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 interface Integration {
   id: string
   provider: string
-  created_at: string
-  config: Record<string, any>
+  created_at?: string
+  config?: Record<string, any>
 }
 
 const availableIntegrations = [
@@ -253,7 +253,7 @@ function IntegrationsContent() {
         if (teamId) {
           const { data: intData } = await supabase
             .from('integrations')
-            .select('id, provider, created_at, config')
+            .select('id, provider, config')
             .eq('team_id', teamId)
           setIntegrations(intData || [])
         }
@@ -531,7 +531,7 @@ function IntegrationsContent() {
                     <div>
                       <p className="font-medium text-gray-900 text-sm capitalize">{integration.provider}</p>
                       <p className="text-xs text-gray-500">
-                        Connected {new Date(integration.created_at).toLocaleDateString()}
+                        Connected {integration.created_at ? new Date(integration.created_at).toLocaleDateString() : ''}
                       </p>
                     </div>
                   </div>

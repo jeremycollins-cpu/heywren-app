@@ -115,7 +115,7 @@ export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'for_you' | 'all_team' | 'completed'>('for_you')
+  const [activeTab, setActiveTab] = useState<'active' | 'for_you' | 'completed'>('active')
 
   // Search & filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -265,10 +265,10 @@ export default function CommitmentsPage() {
   const completedCommitments = commitments.filter(c => c.status === 'completed')
   const forYouCommitments = openCommitments.filter(isPersonallyRelevant)
 
-  const baseList = activeTab === 'for_you'
-    ? forYouCommitments
-    : activeTab === 'all_team'
+  const baseList = activeTab === 'active'
     ? openCommitments
+    : activeTab === 'for_you'
+    ? forYouCommitments
     : completedCommitments
 
   const filteredAndSorted = useMemo(() => {
@@ -332,7 +332,7 @@ export default function CommitmentsPage() {
     }
 
     // In active tabs, always float likely_complete items to the top
-    if (activeTab === 'for_you' || activeTab === 'all_team') {
+    if (activeTab === 'active' || activeTab === 'for_you') {
       result.sort((a, b) => {
         const aLikely = a.status === 'likely_complete' ? 0 : 1
         const bLikely = b.status === 'likely_complete' ? 0 : 1
@@ -376,8 +376,8 @@ export default function CommitmentsPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{forYouCommitments.length}</p>
-            <p className="text-xs text-gray-500">for you</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{openCommitments.length}</p>
+            <p className="text-xs text-gray-500">active</p>
           </div>
           <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
           <div className="text-right">
@@ -519,8 +519,8 @@ export default function CommitmentsPage() {
       {/* Tabs */}
       <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
         {[
+          { key: 'active' as const, label: 'Active', count: openCommitments.length },
           { key: 'for_you' as const, label: 'For You', count: forYouCommitments.length },
-          { key: 'all_team' as const, label: 'All Team', count: openCommitments.length },
           { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
         ].map(tab => (
           <button
@@ -552,7 +552,7 @@ export default function CommitmentsPage() {
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2 ml-auto">
-            {(activeTab === 'for_you' || activeTab === 'all_team') && (
+            {(activeTab === 'active' || activeTab === 'for_you') && (
               <>
                 <button
                   onClick={bulkComplete}
@@ -596,7 +596,7 @@ export default function CommitmentsPage() {
             {hasActiveFilters ? '\u{1F50D}' : activeTab === 'for_you' ? '\u2705' : activeTab === 'completed' ? '\u{1F4CB}' : '\u{1F4AC}'}
           </div>
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
-            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'for_you' ? 'Nothing needs your attention right now' : activeTab === 'completed' ? 'No completed commitments yet' : 'No active team commitments'}
+            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'active' ? 'No active commitments' : activeTab === 'for_you' ? 'Nothing needs your attention right now' : 'No completed commitments yet'}
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
             {hasActiveFilters
@@ -619,7 +619,7 @@ export default function CommitmentsPage() {
       ) : (
         <div className="space-y-3">
           {/* Likely complete banner */}
-          {(activeTab === 'for_you' || activeTab === 'all_team') && likelyCompleteCommitments.length > 0 && (
+          {(activeTab === 'active' || activeTab === 'for_you') && likelyCompleteCommitments.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
               <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
@@ -629,7 +629,7 @@ export default function CommitmentsPage() {
           )}
 
           {/* Select all row */}
-          {(activeTab === 'for_you' || activeTab === 'all_team') && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
+          {(activeTab === 'active' || activeTab === 'for_you') && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
             <div className="flex items-center gap-2 px-2">
               <input
                 type="checkbox"
@@ -670,7 +670,7 @@ export default function CommitmentsPage() {
               }`}>
                 {/* Row 1: Checkbox + title + actions */}
                 <div className="flex items-start gap-3 mb-2">
-                  {(activeTab === 'for_you' || activeTab === 'all_team') && (
+                  {(activeTab === 'active' || activeTab === 'for_you') && (
                     <input
                       type="checkbox"
                       checked={isSelected}
