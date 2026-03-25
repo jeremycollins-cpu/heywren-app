@@ -53,9 +53,8 @@ export async function GET() {
     // Get integrations using admin client (bypasses RLS)
     const { data: integrations, error } = await supabaseAdmin
       .from('integrations')
-      .select('id, provider, created_at, config')
+      .select('id, provider, config')
       .eq('team_id', teamId)
-      .order('created_at', { ascending: false })
 
     if (error) {
       console.error('Error fetching integrations:', error)
