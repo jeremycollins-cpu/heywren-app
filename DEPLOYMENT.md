@@ -33,11 +33,11 @@ supabase db push
 1. Go to https://api.slack.com/apps
 2. Create New App or select existing
 3. Configure OAuth & Permissions:
-   - Scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `team:read`, `users:read`, `users:read.email`
-   - Redirect URLs: `https://yourdomain.com/api/integrations/slack/callback`
+   - Bot Token Scopes: `app_mentions:read`, `channels:history`, `channels:read`, `channels:join`, `groups:read`, `groups:history`, `im:read`, `im:history`, `mpim:read`, `mpim:history`, `chat:write`, `team:read`, `users:read`, `users:read.email`
+   - Redirect URLs: `https://yourdomain.com/api/integrations/slack/connect`
 4. Enable Event Subscriptions:
    - Request URL: `https://yourdomain.com/api/integrations/slack/events`
-   - Subscribe to: `message.channels`, `app_mention`
+   - Subscribe to: `message.channels`, `message.groups`, `message.im`, `message.mpim`, `app_mention`
 5. Enable Socket Mode (for development)
 6. Get credentials:
    - Client ID (SLACK_CLIENT_ID)
