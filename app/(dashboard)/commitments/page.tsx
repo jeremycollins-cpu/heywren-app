@@ -150,7 +150,19 @@ export default function CommitmentsPage() {
           .eq('id', userData.user.id)
           .single()
 
-        const teamId = profile?.current_team_id
+        let teamId = profile?.current_team_id || null
+
+        // Fallback: get team from team_members
+        if (!teamId) {
+          const { data: membership } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', userData.user.id)
+            .limit(1)
+            .single()
+          teamId = membership?.team_id || null
+        }
+
         if (!teamId) { setLoading(false); return }
 
         // Store user's name for personal relevance matching
