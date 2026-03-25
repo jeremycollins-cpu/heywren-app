@@ -46,19 +46,52 @@ export default function SyncPage() {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData?.user) return
 
-      // Use the server-side status API as the single source of truth
-      // It uses the admin client to bypass RLS and has fallbacks for team resolution
-      const intStatusRes = await fetch('/api/integrations/status', { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : { integrations: [], teamId: null })
+      let integrationData: Integration[] = []
+      let teamId: string | null = null
 
-      const integrationData = (intStatusRes.integrations || []).map((i: any) => ({
-        provider: i.provider,
-        created_at: i.created_at,
-      }))
+      // Try server-side status API first
+      try {
+        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+        if (res.ok) {
+          const statusData = await res.json()
+          integrationData = (statusData.integrations || []).map((i: any) => ({
+            provider: i.provider, created_at: i.created_at,
+          }))
+          teamId = statusData.teamId
+        }
+      } catch { /* fall through to client-side */ }
+
+      // Client-side fallback when server-side session fails
+      if (integrationData.length === 0) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+        teamId = profile?.current_team_id || null
+
+        if (!teamId) {
+          const { data: membership } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', userData.user.id)
+            .limit(1)
+            .single()
+          teamId = membership?.team_id || null
+        }
+
+        if (teamId) {
+          const { data: intData } = await supabase
+            .from('integrations')
+            .select('id, provider, created_at')
+            .eq('team_id', teamId)
+          integrationData = (intData || []).map((i: any) => ({
+            provider: i.provider, created_at: i.created_at,
+          }))
+        }
+      }
+
       setIntegrations(integrationData as Integration[])
-
-      // Use teamId from the status API (which has admin-level fallbacks)
-      const teamId = intStatusRes.teamId
 
       if (teamId) {
         const { data: commitments } = await supabase

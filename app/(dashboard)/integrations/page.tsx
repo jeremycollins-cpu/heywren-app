@@ -226,12 +226,50 @@ function IntegrationsContent() {
   useEffect(() => {
     async function fetchIntegrations() {
       try {
-        // Use server-side API to bypass RLS issues
-        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
-        if (res.ok) {
-          const data = await res.json()
-          setIntegrations(data.integrations || [])
+        let found: Integration[] = []
+
+        // Try server-side API first
+        try {
+          const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+          if (res.ok) {
+            const data = await res.json()
+            found = data.integrations || []
+          }
+        } catch { /* fall through */ }
+
+        // Client-side fallback when server-side session fails
+        if (found.length === 0) {
+          const supabase = createClient()
+          const { data: userData } = await supabase.auth.getUser()
+          if (userData?.user) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('current_team_id')
+              .eq('id', userData.user.id)
+              .single()
+
+            let teamId = profile?.current_team_id
+            if (!teamId) {
+              const { data: membership } = await supabase
+                .from('team_members')
+                .select('team_id')
+                .eq('user_id', userData.user.id)
+                .limit(1)
+                .single()
+              teamId = membership?.team_id
+            }
+
+            if (teamId) {
+              const { data: intData } = await supabase
+                .from('integrations')
+                .select('id, provider, created_at, config')
+                .eq('team_id', teamId)
+              found = intData || []
+            }
+          }
         }
+
+        setIntegrations(found)
       } catch (err) {
         console.error('Error fetching integrations:', err)
       } finally {
