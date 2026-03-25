@@ -51,6 +51,7 @@ const categoryLabels: Record<string, string> = {
 }
 
 export default function WaitingRoomPage() {
+  const supabase = createClient()
   const [items, setItems] = useState<WaitingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
@@ -58,7 +59,11 @@ export default function WaitingRoomPage() {
 
   const fetchItems = useCallback(async () => {
     try {
-      const res = await fetch('/api/awaiting-replies')
+      // Pass userId as fallback for server-side session issues
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id
+      const url = userId ? `/api/awaiting-replies?userId=${userId}` : '/api/awaiting-replies'
+      const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setItems(data.items || [])

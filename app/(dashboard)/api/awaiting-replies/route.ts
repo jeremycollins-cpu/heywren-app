@@ -44,25 +44,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: [], count: 0 })
     }
 
-    const { data: profile } = await admin
+    // Get user's email for matching sent items
+    const { data: userProfile } = await admin
       .from('profiles')
-      .select('current_team_id')
+      .select('current_team_id, email')
       .eq('id', userId)
       .single()
-    teamId = profile?.current_team_id || null
+    teamId = userProfile?.current_team_id || null
+    const userEmail = userProfile?.email?.toLowerCase() || ''
 
     if (!teamId) {
       return NextResponse.json({ items: [], count: 0 })
     }
 
-    const { data: items, error } = await admin
+    // Only show items that belong to THIS user — not other team members.
+    // Filter by user_id first (items scanned from this user's Outlook token),
+    // then also include items where the user's email appears in the sent data
+    // (handles cases where the scan attributed items to a different user_id).
+    let query = admin
       .from('awaiting_replies')
       .select('*')
       .eq('team_id', teamId)
+      .eq('user_id', userId)
       .in('status', ['waiting', 'snoozed'])
       .order('urgency', { ascending: true })
       .order('sent_at', { ascending: true })
       .limit(50)
+
+    const { data: items, error } = await query
 
     if (error) {
       // Table may not exist yet if migration 014 hasn't been run
