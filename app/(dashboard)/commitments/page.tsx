@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -128,6 +128,12 @@ export default function CommitmentsPage() {
   // Bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkActioning, setBulkActioning] = useState(false)
+
+  // Quick add
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickTitle, setQuickTitle] = useState('')
+  const [quickUrgency, setQuickUrgency] = useState<'high' | 'medium' | 'low'>('medium')
+  const [quickSubmitting, setQuickSubmitting] = useState(false)
 
   // User identity for personal relevance matching
   const [userName, setUserName] = useState<string>('')
@@ -274,6 +280,38 @@ export default function CommitmentsPage() {
     }
   }
 
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!quickTitle.trim()) return
+    setQuickSubmitting(true)
+    try {
+      const res = await fetch('/api/commitments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: quickTitle.trim(),
+          urgency: quickUrgency,
+          userId,
+        }),
+      })
+      if (res.ok) {
+        const { commitment } = await res.json()
+        setCommitments(prev => [commitment, ...prev])
+        setQuickTitle('')
+        setQuickUrgency('medium')
+        setShowQuickAdd(false)
+        toast.success('Commitment added!')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to create')
+      }
+    } catch {
+      toast.error('Failed to create commitment')
+    } finally {
+      setQuickSubmitting(false)
+    }
+  }
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -393,11 +431,62 @@ export default function CommitmentsPage() {
         </div>
       )}
 
+      {/* Quick Add Form */}
+      {showQuickAdd && (
+        <form onSubmit={handleQuickAdd} className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-4 flex items-center gap-3">
+          <input
+            type="text"
+            value={quickTitle}
+            onChange={e => setQuickTitle(e.target.value)}
+            placeholder="What do you need to follow up on?"
+            autoFocus
+            className="flex-1 px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+          <div className="flex items-center gap-1">
+            {(['high', 'medium', 'low'] as const).map(u => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setQuickUrgency(u)}
+                className={`px-2 py-1 text-[11px] font-medium rounded-full transition ${
+                  quickUrgency === u
+                    ? u === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : u === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                    : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}
+              >
+                {u.charAt(0).toUpperCase() + u.slice(1)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="submit"
+            disabled={!quickTitle.trim() || quickSubmitting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
+          >
+            <Send className="w-3.5 h-3.5" />
+            {quickSubmitting ? 'Adding...' : 'Add'}
+          </button>
+          <button type="button" onClick={() => setShowQuickAdd(false)} className="text-gray-400 hover:text-gray-600">
+            <X className="w-4 h-4" />
+          </button>
+        </form>
+      )}
+
       {/* Header with stats */}
       <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Every promise tracked from origin to resolution</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Every promise tracked from origin to resolution</p>
+          </div>
+          <button
+            onClick={() => setShowQuickAdd(!showQuickAdd)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition"
+          >
+            <Plus className="w-4 h-4" />
+            Add Task
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">

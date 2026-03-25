@@ -112,10 +112,14 @@ export default function WrenChat() {
       if (!res.ok) throw new Error('Chat failed')
 
       const data = await res.json()
+      let messageContent = data.message
+      if (data.createdTask) {
+        messageContent += `\n\n✅ Task created: "${data.createdTask.title}"`
+      }
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: data.message,
+        content: messageContent,
         timestamp: new Date(),
       }
       setMessages(prev => [...prev, assistantMsg])

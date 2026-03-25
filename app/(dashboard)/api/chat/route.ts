@@ -142,6 +142,9 @@ CAPABILITIES:
 - Analyze communication patterns and relationships
 - Prep for meetings by pulling relevant commitments/context
 - Answer questions about the user's tracked data
+- CREATE TASKS: When the user asks to add a task, reminder, or commitment, respond with EXACTLY this JSON block on its own line (the system will detect and create it):
+  [CREATE_TASK]{"title":"the task title","urgency":"high|medium|low"}[/CREATE_TASK]
+  Then follow with a brief confirmation message. Examples of task requests: "remind me to...", "add a task to...", "I need to follow up on...", "create a commitment for...", "don't let me forget to..."
 
 When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budget" not "Follow up on emails."`
 
@@ -156,12 +159,47 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
       })),
     })
 
-    const assistantMessage = response.content[0]?.type === 'text'
+    let assistantMessage = response.content[0]?.type === 'text'
       ? response.content[0].text
       : 'Sorry, I couldn\'t generate a response.'
 
+    // Detect and execute CREATE_TASK commands
+    let createdTask = null
+    const taskMatch = assistantMessage.match(/\[CREATE_TASK\](.*?)\[\/CREATE_TASK\]/)
+    if (taskMatch) {
+      try {
+        const taskData = JSON.parse(taskMatch[1])
+        const { error: taskErr, data: newTask } = await admin
+          .from('commitments')
+          .insert({
+            team_id: teamId,
+            creator_id: userData.user.id,
+            assignee_id: userData.user.id,
+            title: taskData.title,
+            status: 'open',
+            source: 'manual',
+            priority_score: taskData.urgency === 'high' ? 0.9 : taskData.urgency === 'low' ? 0.3 : 0.6,
+            metadata: {
+              urgency: taskData.urgency || 'medium',
+              commitmentType: 'deliverable',
+              createdVia: 'wren_chat',
+            },
+          })
+          .select('id, title')
+          .single()
+
+        if (!taskErr && newTask) {
+          createdTask = newTask
+        }
+      } catch { /* task creation failed silently */ }
+
+      // Remove the tag from the displayed message
+      assistantMessage = assistantMessage.replace(/\[CREATE_TASK\].*?\[\/CREATE_TASK\]\n?/, '').trim()
+    }
+
     return NextResponse.json({
       message: assistantMessage,
+      createdTask,
       usage: {
         input_tokens: response.usage?.input_tokens,
         output_tokens: response.usage?.output_tokens,
