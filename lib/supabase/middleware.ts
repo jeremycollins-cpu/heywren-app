@@ -52,22 +52,51 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Check if user has completed onboarding
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('onboarding_completed')
-    .eq('id', session.user.id)
-    .single()
+  try {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('onboarding_completed, current_team_id')
+      .eq('id', session.user.id)
+      .single()
 
-  // If the query errored (e.g. column doesn't exist because migration 009 isn't applied),
-  // skip the onboarding check rather than trapping the user in a redirect loop.
-  if (profileError) {
+    // If the query errored, skip the onboarding check entirely
+    if (profileError) {
+      return response
+    }
+
+    // If onboarding is explicitly completed, let them through
+    if (profile?.onboarding_completed) {
+      return response
+    }
+
+    // Even if onboarding_completed is false, check if user has a team with
+    // integrations — that means they've effectively onboarded and the flag
+    // just wasn't set (server-side session bug). Don't trap them in a loop.
+    if (profile?.current_team_id) {
+      const { data: integrations } = await supabase
+        .from('integrations')
+        .select('id')
+        .eq('team_id', profile.current_team_id)
+        .limit(1)
+
+      if (integrations && integrations.length > 0) {
+        // User has integrations — they've onboarded. Fix the flag silently.
+        await supabase
+          .from('profiles')
+          .update({ onboarding_completed: true })
+          .eq('id', session.user.id)
+        return response
+      }
+    }
+
+    // No integrations and onboarding not completed → redirect to onboarding
+    if (!profile || !profile.onboarding_completed) {
+      const redirectUrl = new URL('/onboarding/profile', request.url)
+      return NextResponse.redirect(redirectUrl)
+    }
+  } catch {
+    // Any error → don't redirect, let the user through
     return response
-  }
-
-  // If profile doesn't exist yet or onboarding not completed, redirect to onboarding
-  if (!profile || !profile.onboarding_completed) {
-    const redirectUrl = new URL('/onboarding/profile', request.url)
-    return NextResponse.redirect(redirectUrl)
   }
 
   return response

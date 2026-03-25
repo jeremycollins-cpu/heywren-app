@@ -46,49 +46,52 @@ export default function SyncPage() {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData?.user) return
 
+      const userId = userData.user.id
       let integrationData: Integration[] = []
       let teamId: string | null = null
 
-      // Try server-side status API first
-      try {
-        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
-        if (res.ok) {
-          const statusData = await res.json()
-          integrationData = (statusData.integrations || []).map((i: any) => ({
-            provider: i.provider, created_at: i.created_at,
-          }))
-          teamId = statusData.teamId
-        }
-      } catch { /* fall through to client-side */ }
+      // Strategy 1: Get team from profiles
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userId)
+        .single()
+      teamId = profile?.current_team_id || null
 
-      // Client-side fallback when server-side session fails
-      if (integrationData.length === 0) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', userData.user.id)
+      // Strategy 2: Get team from team_members
+      if (!teamId) {
+        const { data: membership } = await supabase
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', userId)
+          .limit(1)
           .single()
-        teamId = profile?.current_team_id || null
+        teamId = membership?.team_id || null
+      }
 
-        if (!teamId) {
-          const { data: membership } = await supabase
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', userData.user.id)
-            .limit(1)
-            .single()
-          teamId = membership?.team_id || null
-        }
+      // Strategy 3: Try server-side API as last resort (has admin fallbacks)
+      if (!teamId) {
+        try {
+          const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+          if (res.ok) {
+            const statusData = await res.json()
+            teamId = statusData.teamId
+            integrationData = (statusData.integrations || []).map((i: any) => ({
+              provider: i.provider, created_at: i.created_at,
+            }))
+          }
+        } catch { /* ignore */ }
+      }
 
-        if (teamId) {
-          const { data: intData } = await supabase
-            .from('integrations')
-            .select('id, provider, created_at')
-            .eq('team_id', teamId)
-          integrationData = (intData || []).map((i: any) => ({
-            provider: i.provider, created_at: i.created_at,
-          }))
-        }
+      // Fetch integrations if we have a team but no integrations yet
+      if (teamId && integrationData.length === 0) {
+        const { data: intData } = await supabase
+          .from('integrations')
+          .select('id, provider, created_at')
+          .eq('team_id', teamId)
+        integrationData = (intData || []).map((i: any) => ({
+          provider: i.provider, created_at: i.created_at,
+        }))
       }
 
       setIntegrations(integrationData as Integration[])
