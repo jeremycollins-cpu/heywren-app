@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
 
-// Process max 100 messages per request to stay within 300s timeout
-const MAX_MESSAGES_PER_RUN = 100
+// Process max 500 messages per request to stay within 300s timeout
+const MAX_MESSAGES_PER_RUN = 500
 const TIME_BUDGET_MS = 240000 // Stop at 240s, leaving 60s buffer
 
 function getAdminClient() {
