@@ -1,13 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   GraduationCap, Send, ChevronUp, Sparkles, CheckCircle2,
   Clock, XCircle, Copy, Search, Filter, ArrowUpDown, Zap,
   MessageSquare, Mail, AlertTriangle, Target, Users,
+  Paperclip, X, Image as ImageIcon, FileText,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+interface Attachment {
+  url: string
+  name: string
+  type: string
+  size: number
+}
 
 interface CommunitySignal {
   id: string
@@ -21,6 +29,7 @@ interface CommunitySignal {
   validation_confidence: number | null
   validation_reason: string | null
   extracted_pattern: string | null
+  attachments: Attachment[] | null
   vote_count: number
   author_name: string
   created_at: string
@@ -62,6 +71,8 @@ export default function TeachWrenPage() {
   const [patternCount, setPatternCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [teamId, setTeamId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Form state
   const [showForm, setShowForm] = useState(false)
@@ -72,6 +83,7 @@ export default function TeachWrenPage() {
   const [expectedBehavior, setExpectedBehavior] = useState('')
   const [sourcePlatform, setSourcePlatform] = useState<string>('email')
   const [submitting, setSubmitting] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
@@ -82,10 +94,19 @@ export default function TeachWrenPage() {
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser()
-      if (data?.user) setUserId(data.user.id)
+      if (data?.user) {
+        setUserId(data.user.id)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', data.user.id)
+          .single()
+        if (profile?.current_team_id) setTeamId(profile.current_team_id)
+      }
       await fetchSignals()
     }
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchSignals = async () => {
@@ -113,6 +134,47 @@ export default function TeachWrenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterType, filterStatus, sortMode])
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const validFiles = files.filter(f => {
+      if (f.size > 5 * 1024 * 1024) {
+        toast.error(`${f.name} is too large (max 5MB)`)
+        return false
+      }
+      return true
+    })
+    setPendingFiles(prev => [...prev, ...validFiles].slice(0, 5))
+    if (e.target) e.target.value = ''
+  }
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const uploadFiles = async (): Promise<Attachment[]> => {
+    if (pendingFiles.length === 0 || !teamId) return []
+    const attachments: Attachment[] = []
+    for (const file of pendingFiles) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+      const filePath = `${teamId}/${fileName}`
+      const { error } = await supabase.storage
+        .from('signal-attachments')
+        .upload(filePath, file)
+      if (error) {
+        console.error('Upload error:', error)
+        if (error.message?.includes('not found') || error.message?.includes('bucket')) continue
+        toast.error(`Failed to upload ${file.name}`)
+        continue
+      }
+      const { data: urlData } = supabase.storage
+        .from('signal-attachments')
+        .getPublicUrl(filePath)
+      attachments.push({ url: urlData.publicUrl, name: file.name, type: file.type, size: file.size })
+    }
+    return attachments
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim() || !description.trim() || !expectedBehavior.trim()) {
@@ -122,6 +184,8 @@ export default function TeachWrenPage() {
 
     setSubmitting(true)
     try {
+      const attachments = await uploadFiles()
+
       const res = await fetch('/api/community-signals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,6 +196,7 @@ export default function TeachWrenPage() {
           exampleContent: exampleContent.trim() || null,
           expectedBehavior: expectedBehavior.trim(),
           sourcePlatform,
+          attachments: attachments.length > 0 ? attachments : null,
         }),
       })
 
@@ -141,6 +206,7 @@ export default function TeachWrenPage() {
         setDescription('')
         setExampleContent('')
         setExpectedBehavior('')
+        setPendingFiles([])
         setShowForm(false)
         await fetchSignals()
       } else {
@@ -336,6 +402,58 @@ export default function TeachWrenPage() {
             />
           </div>
 
+          {/* Attachments */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Attachments (optional)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Screenshots, emails, or documents that show what HeyWren missed. Max 5 files, 5MB each.
+            </p>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx,.txt,.eml"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pendingFiles.length >= 5}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition disabled:opacity-50"
+            >
+              <Paperclip className="w-4 h-4" />
+              Attach files
+            </button>
+
+            {pendingFiles.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {pendingFiles.map((file, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-white/5 rounded-lg">
+                    {file.type.startsWith('image/') ? (
+                      <ImageIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    )}
+                    <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1">{file.name}</span>
+                    <span className="text-[10px] text-gray-400">{(file.size / 1024).toFixed(0)}KB</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(i)}
+                      className="text-gray-400 hover:text-red-500 transition"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Platform */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Platform</label>
@@ -515,6 +633,28 @@ export default function TeachWrenPage() {
                       <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 italic">
                         AI: {signal.validation_reason}
                       </p>
+                    )}
+
+                    {/* Attachments */}
+                    {signal.attachments && signal.attachments.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {signal.attachments.map((att, i) => (
+                          <a
+                            key={i}
+                            href={att.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-white/5 rounded text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition"
+                          >
+                            {att.type?.startsWith('image/') ? (
+                              <ImageIcon className="w-3 h-3 text-blue-500" />
+                            ) : (
+                              <FileText className="w-3 h-3 text-gray-400" />
+                            )}
+                            <span className="truncate max-w-[120px]">{att.name}</span>
+                          </a>
+                        ))}
+                      </div>
                     )}
 
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
