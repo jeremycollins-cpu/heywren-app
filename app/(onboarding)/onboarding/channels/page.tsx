@@ -36,7 +36,7 @@ export default function ChannelsSetupPage() {
       }
 
       // Use server-side API for integration check (bypasses RLS)
-      const intRes = await fetch('/api/integrations/status')
+      const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
       const intData = intRes.ok ? await intRes.json() : { integrations: [] }
       const integrations = intData.integrations || []
 

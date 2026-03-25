@@ -80,7 +80,7 @@ export default function DashboardLayout({
         }
 
         // Use server-side API to check integrations (bypasses RLS)
-        const res = await fetch('/api/integrations/status')
+        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
           if (!data.integrations || data.integrations.length === 0) {
