@@ -146,7 +146,7 @@ export default function WeeklyPage() {
         if (commitmentsError) throw commitmentsError
 
         // Fetch integrations via server-side API (bypasses RLS)
-        const intStatusRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const intStatusRes = await fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] })
         const intData = intStatusRes.integrations || []
 
         const sevenDaysAgo = new Date()

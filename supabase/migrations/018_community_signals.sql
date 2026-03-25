@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS community_signals (
   validation_reason TEXT,                -- AI explanation of why it was validated/rejected
   extracted_pattern TEXT,                -- The detection pattern extracted by AI (e.g. "vendor follow-ups should be high urgency")
 
+  -- Attachments (screenshots, documents, etc.)
+  attachments JSONB DEFAULT '[]'::jsonb,
+
   -- Community engagement
   vote_count INTEGER NOT NULL DEFAULT 0,
   comment_count INTEGER NOT NULL DEFAULT 0,

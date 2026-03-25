@@ -57,7 +57,7 @@ export default function SyncPage() {
 
       // Fetch integrations via server-side API (bypasses RLS) + commitments client-side
       const [intStatusRes, commitResult] = await Promise.all([
-        fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] }),
+        fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] }),
         supabase.from('commitments').select('status, created_at, source').eq('team_id', teamId),
       ])
 

@@ -264,7 +264,7 @@ export default function BriefingsPage() {
 
       if (!events || events.length === 0) {
         // Check if Outlook is connected via server-side API (bypasses RLS)
-        const intRes = await fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] })
+        const intRes = await fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] })
         const hasOutlook = intRes.integrations?.some((i: any) => i.provider === 'outlook')
 
         if (hasOutlook) {

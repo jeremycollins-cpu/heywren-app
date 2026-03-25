@@ -295,6 +295,17 @@ export async function POST(request: NextRequest) {
         channels.push({ id: dm.id, name: 'DM-' + (dm.user || dm.id), type: 'dm' })
       }
     }
+
+    // Group DMs (multi-party IMs) — where a lot of important commitments happen
+    const mpimData = await slackGet(
+      'https://slack.com/api/conversations.list?types=mpim&limit=200',
+      slackToken
+    )
+    if (mpimData.ok) {
+      for (const mpim of (mpimData.channels || [])) {
+        channels.push({ id: mpim.id, name: mpim.name || 'Group-DM-' + mpim.id, type: 'mpim' })
+      }
+    }
   }
 
   if (channels.length === 0) {

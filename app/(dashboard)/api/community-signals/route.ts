@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { signalType, title, description, exampleContent, expectedBehavior, sourcePlatform } = body
+  const { signalType, title, description, exampleContent, expectedBehavior, sourcePlatform, attachments } = body
 
   if (!signalType || !title || !description || !expectedBehavior) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
       example_content: exampleContent || null,
       expected_behavior: expectedBehavior,
       source_platform: sourcePlatform || null,
+      attachments: attachments || null,
     })
     .select()
     .single()

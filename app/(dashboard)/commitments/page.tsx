@@ -32,6 +32,8 @@ interface Commitment {
   source_ref: string | null
   source_url: string | null
   metadata: CommitmentMetadata | null
+  creator_id: string | null
+  assignee_id: string | null
   created_at: string
   updated_at: string
 }
@@ -113,7 +115,7 @@ export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'active' | 'completed' | 'mentions'>('active')
+  const [activeTab, setActiveTab] = useState<'for_you' | 'all_team' | 'completed'>('for_you')
 
   // Search & filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -127,6 +129,11 @@ export default function CommitmentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkActioning, setBulkActioning] = useState(false)
 
+  // User identity for personal relevance matching
+  const [userName, setUserName] = useState<string>('')
+  const [userEmail, setUserEmail] = useState<string>('')
+  const [userId, setUserId] = useState<string>('')
+
   useEffect(() => {
     async function load() {
       try {
@@ -134,20 +141,27 @@ export default function CommitmentsPage() {
         const { data: userData } = await supabase.auth.getUser()
         if (!userData?.user) { setLoading(false); return }
 
+        setUserId(userData.user.id)
+        setUserEmail(userData.user.email || '')
+
         const { data: profile } = await supabase
           .from('profiles')
-          .select('current_team_id')
+          .select('current_team_id, full_name')
           .eq('id', userData.user.id)
           .single()
 
         const teamId = profile?.current_team_id
         if (!teamId) { setLoading(false); return }
 
+        // Store user's name for personal relevance matching
+        const name = profile?.full_name || userData.user.email?.split('@')[0] || ''
+        setUserName(name)
+
+        // Fetch ALL team commitments — personal filtering happens client-side
         const { data } = await supabase
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
-          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .order('created_at', { ascending: false })
 
         if (data) setCommitments(data)
@@ -161,6 +175,39 @@ export default function CommitmentsPage() {
     }
     load()
   }, [])
+
+  // Determine if a commitment is personally relevant to the current user
+  const isPersonallyRelevant = (c: Commitment): boolean => {
+    // 1. User is the assignee
+    if (c.assignee_id === userId) return true
+
+    const nameLower = userName.toLowerCase()
+    const firstName = nameLower.split(' ')[0]
+    if (!firstName || firstName.length < 2) return false
+
+    // 2. User's name appears in stakeholders
+    const stakeholders = c.metadata?.stakeholders
+    if (Array.isArray(stakeholders)) {
+      for (const s of stakeholders) {
+        if (!s.name) continue
+        const sLower = s.name.toLowerCase()
+        if (sLower === nameLower || sLower.includes(firstName) || nameLower.includes(sLower)) {
+          return true
+        }
+      }
+    }
+
+    // 3. User is mentioned by name in title or description
+    const titleLower = c.title.toLowerCase()
+    const descLower = (c.description || '').toLowerCase()
+    if (titleLower.includes(firstName) || descLower.includes(firstName)) return true
+
+    // 4. User is mentioned by name in the original quote
+    const quoteLower = (c.metadata?.originalQuote || '').toLowerCase()
+    if (quoteLower.includes(firstName)) return true
+
+    return false
+  }
 
   async function updateStatus(id: string, newStatus: string) {
     const supabase = createClient()
@@ -216,13 +263,13 @@ export default function CommitmentsPage() {
   const openCommitments = commitments.filter(c => c.status !== 'completed' && c.status !== 'dismissed')
   const likelyCompleteCommitments = commitments.filter(c => c.status === 'likely_complete')
   const completedCommitments = commitments.filter(c => c.status === 'completed')
-  const slackMentions = commitments.filter(c => c.source === 'slack')
+  const forYouCommitments = openCommitments.filter(isPersonallyRelevant)
 
-  const baseList = activeTab === 'active'
+  const baseList = activeTab === 'for_you'
+    ? forYouCommitments
+    : activeTab === 'all_team'
     ? openCommitments
-    : activeTab === 'completed'
-    ? completedCommitments
-    : slackMentions
+    : completedCommitments
 
   const filteredAndSorted = useMemo(() => {
     let result = [...baseList]
@@ -284,8 +331,8 @@ export default function CommitmentsPage() {
         result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     }
 
-    // In the Active tab, always float likely_complete items to the top
-    if (activeTab === 'active') {
+    // In active tabs, always float likely_complete items to the top
+    if (activeTab === 'for_you' || activeTab === 'all_team') {
       result.sort((a, b) => {
         const aLikely = a.status === 'likely_complete' ? 0 : 1
         const bLikely = b.status === 'likely_complete' ? 0 : 1
@@ -329,8 +376,8 @@ export default function CommitmentsPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{openCommitments.length}</p>
-            <p className="text-xs text-gray-500">active</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{forYouCommitments.length}</p>
+            <p className="text-xs text-gray-500">for you</p>
           </div>
           <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
           <div className="text-right">
@@ -472,9 +519,9 @@ export default function CommitmentsPage() {
       {/* Tabs */}
       <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
         {[
-          { key: 'active' as const, label: 'Active', count: openCommitments.length },
+          { key: 'for_you' as const, label: 'For You', count: forYouCommitments.length },
+          { key: 'all_team' as const, label: 'All Team', count: openCommitments.length },
           { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
-          { key: 'mentions' as const, label: '@HeyWren Mentions', count: slackMentions.length },
         ].map(tab => (
           <button
             key={tab.key}
@@ -505,7 +552,7 @@ export default function CommitmentsPage() {
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2 ml-auto">
-            {activeTab === 'active' && (
+            {(activeTab === 'for_you' || activeTab === 'all_team') && (
               <>
                 <button
                   onClick={bulkComplete}
@@ -546,16 +593,16 @@ export default function CommitmentsPage() {
       {filteredAndSorted.length === 0 ? (
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
           <div className="text-3xl mb-3" aria-hidden="true">
-            {hasActiveFilters ? '\u{1F50D}' : activeTab === 'active' ? '\u2705' : activeTab === 'completed' ? '\u{1F4CB}' : '\u{1F4AC}'}
+            {hasActiveFilters ? '\u{1F50D}' : activeTab === 'for_you' ? '\u2705' : activeTab === 'completed' ? '\u{1F4CB}' : '\u{1F4AC}'}
           </div>
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
-            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'active' ? 'No active commitments' : activeTab === 'completed' ? 'No completed commitments yet' : 'No @HeyWren mentions yet'}
+            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'for_you' ? 'Nothing needs your attention right now' : activeTab === 'completed' ? 'No completed commitments yet' : 'No active team commitments'}
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
             {hasActiveFilters
               ? 'Try adjusting your search or filter criteria.'
-              : activeTab === 'active'
-                ? 'Commitments will appear here as Wren detects them from your connected Slack and Outlook.'
+              : activeTab === 'for_you'
+                ? 'Commitments where you are mentioned, assigned, or involved will appear here.'
                 : activeTab === 'completed'
                   ? 'Mark commitments as complete to track your follow-through rate.'
                   : 'Tag @HeyWren in any Slack conversation to capture commitments directly.'}
@@ -572,7 +619,7 @@ export default function CommitmentsPage() {
       ) : (
         <div className="space-y-3">
           {/* Likely complete banner */}
-          {activeTab === 'active' && likelyCompleteCommitments.length > 0 && (
+          {(activeTab === 'for_you' || activeTab === 'all_team') && likelyCompleteCommitments.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
               <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
@@ -582,7 +629,7 @@ export default function CommitmentsPage() {
           )}
 
           {/* Select all row */}
-          {activeTab === 'active' && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
+          {(activeTab === 'for_you' || activeTab === 'all_team') && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
             <div className="flex items-center gap-2 px-2">
               <input
                 type="checkbox"
@@ -623,7 +670,7 @@ export default function CommitmentsPage() {
               }`}>
                 {/* Row 1: Checkbox + title + actions */}
                 <div className="flex items-start gap-3 mb-2">
-                  {activeTab === 'active' && (
+                  {(activeTab === 'for_you' || activeTab === 'all_team') && (
                     <input
                       type="checkbox"
                       checked={isSelected}

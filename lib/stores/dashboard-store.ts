@@ -86,7 +86,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .order('created_at', { ascending: false })
           .limit(10),
         // Use server-side API for integrations (bypasses RLS)
-        fetch('/api/integrations/status').then(r => r.ok ? r.json() : { integrations: [] }),
+        fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] }),
       ])
 
       if (commitResult.error) throw commitResult.error

@@ -44,7 +44,7 @@ function LoginContent() {
         localStorage.removeItem('heywren_needs_onboarding')
 
         // Check integrations via server-side API (bypasses RLS)
-        const intRes = await fetch('/api/integrations/status')
+        const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
         if (intRes.ok) {
           const intData = await intRes.json()
           if (!intData.integrations || intData.integrations.length === 0) {
@@ -56,7 +56,7 @@ function LoginContent() {
 
       // Check if user has completed onboarding even without the flag
       if (data?.user) {
-        const intRes = await fetch('/api/integrations/status')
+        const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
         if (intRes.ok) {
           const intData = await intRes.json()
           if (!intData.integrations || intData.integrations.length === 0) {

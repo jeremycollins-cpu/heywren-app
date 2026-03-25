@@ -227,7 +227,7 @@ function IntegrationsContent() {
     async function fetchIntegrations() {
       try {
         // Use server-side API to bypass RLS issues
-        const res = await fetch('/api/integrations/status')
+        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
           setIntegrations(data.integrations || [])
@@ -263,7 +263,10 @@ function IntegrationsContent() {
       'channels:join',
       'groups:read',
       'groups:history',
+      'im:read',
       'im:history',
+      'mpim:read',
+      'mpim:history',
       'chat:write',
       'users:read',
       'team:read',

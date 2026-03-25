@@ -95,14 +95,30 @@ export default function IdeasPage() {
 
       try {
         setLoading(true)
-        const { data: requests, error } = await supabase
+
+        // Try team-scoped query first; fall back to all requests if team_id column doesn't exist
+        let requests: any[] | null = null
+        const { data: teamScoped, error: teamErr } = await supabase
           .from('feature_requests')
           .select('*')
           .eq('team_id', teamId)
           .order('vote_count', { ascending: false })
           .order('created_at', { ascending: false })
 
-        if (error) throw error
+        if (teamErr && teamErr.message?.includes('team_id')) {
+          // team_id column doesn't exist yet — load all requests
+          const { data: allRequests, error: allErr } = await supabase
+            .from('feature_requests')
+            .select('*')
+            .order('vote_count', { ascending: false })
+            .order('created_at', { ascending: false })
+          if (allErr) throw allErr
+          requests = allRequests
+        } else if (teamErr) {
+          throw teamErr
+        } else {
+          requests = teamScoped
+        }
 
         if (userId) {
           const { data: votes } = await supabase
@@ -251,21 +267,46 @@ export default function IdeasPage() {
       const { data: user } = await supabase.auth.getUser()
       const authorName = user?.user?.user_metadata?.full_name || user?.user?.email || 'Anonymous'
 
-      const { data: newRequest, error } = await supabase
+      // Build insert payload — only include optional columns if they're likely to exist
+      const insertPayload: Record<string, unknown> = {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        author_id: userId,
+        author_name: authorName,
+      }
+      if (teamId) insertPayload.team_id = teamId
+      if (attachments.length > 0) insertPayload.attachments = attachments
+
+      let newRequest: any = null
+      const { data, error } = await supabase
         .from('feature_requests')
-        .insert({
-          title: title.trim(),
-          description: description.trim(),
-          category,
-          author_id: userId,
-          author_name: authorName,
-          team_id: teamId,
-          attachments: attachments.length > 0 ? attachments : [],
-        })
+        .insert(insertPayload)
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        // If team_id or attachments columns don't exist, retry without them
+        if (error.message?.includes('team_id') || error.message?.includes('attachments')) {
+          const { data: fallbackData, error: fallbackErr } = await supabase
+            .from('feature_requests')
+            .insert({
+              title: title.trim(),
+              description: description.trim(),
+              category,
+              author_id: userId,
+              author_name: authorName,
+            })
+            .select()
+            .single()
+          if (fallbackErr) throw fallbackErr
+          newRequest = fallbackData
+        } else {
+          throw error
+        }
+      } else {
+        newRequest = data
+      }
 
       setTitle('')
       setDescription('')
