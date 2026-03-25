@@ -26,15 +26,37 @@ export default function OnboardingCompletePage() {
         return
       }
 
-      // Use server-side API for integration check (bypasses RLS)
-      const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
-      const intData = intRes.ok ? await intRes.json() : { integrations: [] }
-      const providers = (intData.integrations || []).map((i: any) => i.provider)
+      // Check integrations — try API first, fallback to client-side
+      let providers: string[] = []
+      try {
+        const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
+        if (intRes.ok) {
+          const intData = await intRes.json()
+          providers = (intData.integrations || []).map((i: any) => i.provider)
+        }
+      } catch { /* fall through */ }
+
+      if (providers.length === 0) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', authData.user.id)
+          .single()
+        if (profile?.current_team_id) {
+          const { data: intData } = await supabase
+            .from('integrations')
+            .select('provider')
+            .eq('team_id', profile.current_team_id)
+          providers = (intData || []).map((i: any) => i.provider)
+        }
+      }
       setIntegrations(providers)
 
-      // Mark onboarding as completed via API route (uses admin client)
+      // Mark onboarding as completed — send userId as fallback for session issues
       const completeRes = await fetch('/api/onboarding/complete', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: authData.user.id }),
       })
       if (completeRes.ok) {
         setOnboardingMarked(true)

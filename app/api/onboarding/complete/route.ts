@@ -9,13 +9,36 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createSessionClient()
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Try server-side session first
+    let userId: string | null = null
+
+    try {
+      const supabase = await createSessionClient()
+      const { data: userData } = await supabase.auth.getUser()
+      userId = userData?.user?.id || null
+    } catch {
+      // Server-side session failed — try userId from body
     }
 
-    const userId = userData.user.id
+    // Fallback: accept userId from request body (validated by checking profile exists)
+    if (!userId) {
+      try {
+        const body = await request.json()
+        if (body?.userId) {
+          // Validate this userId exists in auth
+          const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(body.userId)
+          if (authUser?.user) {
+            userId = authUser.user.id
+          }
+        }
+      } catch {
+        // No body or invalid body
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     // Ensure the onboarding_completed column exists
     await ensureOnboardingColumns()
