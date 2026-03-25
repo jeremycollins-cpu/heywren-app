@@ -178,7 +178,7 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
             title: taskData.title,
             status: 'open',
             source: 'manual',
-            priority_score: taskData.urgency === 'high' ? 0.9 : taskData.urgency === 'low' ? 0.3 : 0.6,
+            priority_score: taskData.urgency === 'high' ? 90 : taskData.urgency === 'low' ? 30 : 60,
             metadata: {
               urgency: taskData.urgency || 'medium',
               commitmentType: 'deliverable',

@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
         description: description?.trim() || null,
         status: 'open',
         source: 'manual',
-        priority_score: urgency === 'high' ? 0.9 : urgency === 'medium' ? 0.6 : 0.3,
+        priority_score: urgency === 'high' ? 90 : urgency === 'medium' ? 60 : 30,
         due_date: dueDate || null,
         metadata: {
           urgency: urgency || 'medium',
