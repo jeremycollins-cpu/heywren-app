@@ -137,7 +137,7 @@ async function graphFetch(
   return { data: await res.json(), token: currentToken }
 }
 
-async function scanTeamAwaitingReplies(
+export async function scanTeamAwaitingReplies(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
   userId: string

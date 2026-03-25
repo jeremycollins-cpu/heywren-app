@@ -77,6 +77,38 @@ export async function GET() {
   }
 }
 
+// POST: Trigger an on-demand scan of sent items
+export async function POST() {
+  try {
+    const supabase = await createSessionClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userData.user.id)
+      .single()
+
+    const teamId = profile?.current_team_id
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
+
+    // Import and run the scan
+    const { scanTeamAwaitingReplies } = await import('@/inngest/functions/scan-awaiting-replies')
+    const admin = getAdminClient()
+    const result = await scanTeamAwaitingReplies(admin, teamId, userData.user.id)
+
+    return NextResponse.json(result)
+  } catch (err: any) {
+    console.error('Awaiting replies scan error:', err)
+    return NextResponse.json({ error: err.message || 'Scan failed' }, { status: 500 })
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createSessionClient()
