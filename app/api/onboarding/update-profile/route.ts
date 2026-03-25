@@ -96,13 +96,6 @@ export async function POST(request: NextRequest) {
  * Tries full_name first (matches migration 001), falls back to display_name.
  */
 async function detectNameColumn(): Promise<string> {
-  const { error } = await supabaseAdmin
-    .from('profiles')
-    .select('full_name')
-    .limit(1)
-
-  if (error && error.message?.includes('full_name')) {
-    return 'display_name'
-  }
-  return 'full_name'
+  // Production uses display_name (confirmed by schema audit)
+  return 'display_name'
 }

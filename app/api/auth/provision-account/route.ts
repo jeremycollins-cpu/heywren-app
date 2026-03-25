@@ -245,15 +245,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Detect whether profiles table uses 'full_name' or 'display_name'
+// Production uses display_name (confirmed by schema audit)
 async function detectNameColumn(): Promise<string> {
-  const { error } = await supabaseAdmin
-    .from('profiles')
-    .select('full_name')
-    .limit(1)
-
-  if (error && error.message?.includes('full_name')) {
-    return 'display_name'
-  }
-  return 'full_name'
+  return 'display_name'
 }

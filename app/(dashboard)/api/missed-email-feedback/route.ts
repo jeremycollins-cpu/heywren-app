@@ -55,6 +55,7 @@ export async function POST(req: Request) {
       .from('missed_emails')
       .update({ status: 'dismissed' })
       .eq('id', missed_email_id)
+      .eq('user_id', user.id)
   }
 
   return NextResponse.json({ success: true })
@@ -79,11 +80,12 @@ export async function GET() {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
-  // Get feedback counts
+  // Get feedback counts — scoped to current user only
   const { data: feedback } = await supabase
     .from('missed_email_feedback')
     .select('feedback, from_domain')
     .eq('team_id', profile.current_team_id)
+    .eq('user_id', user.id)
 
   const validCount = (feedback || []).filter(f => f.feedback === 'valid').length
   const invalidCount = (feedback || []).filter(f => f.feedback === 'invalid').length
