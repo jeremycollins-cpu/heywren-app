@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
         refresh_token: data.refresh_token || null,
         config: {
           bot_id: data.bot_user_id,
+          authed_user_id: data.authed_user?.id || null,
           slack_team_id: data.team?.id,
           slack_team_name: data.team?.name,
         },

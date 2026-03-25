@@ -371,8 +371,38 @@ export async function scanTeamAwaitingReplies(
       .maybeSingle()
 
     if (slackIntegration?.data) {
-      const slackUserId = slackIntegration.data.config?.authed_user_id || slackIntegration.data.config?.bot_user_id
+      let slackUserId = slackIntegration.data.config?.authed_user_id || null
       const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
+
+      // If we don't have the authed user's Slack ID, try to find it from stored messages
+      // by looking for the most frequent sender that's NOT a bot
+      if (!slackUserId) {
+        const { data: recentMsgs } = await supabase
+          .from('slack_messages')
+          .select('user_id')
+          .eq('team_id', teamId)
+          .gte('created_at', scanWindow)
+          .limit(200)
+
+        if (recentMsgs && recentMsgs.length > 0) {
+          // Count messages per user_id, pick the most frequent human sender
+          const counts = new Map<string, number>()
+          for (const m of recentMsgs) {
+            if (!m.user_id || m.user_id === 'unknown') continue
+            // Bot IDs typically start with B, skip them
+            if (m.user_id.startsWith('B')) continue
+            counts.set(m.user_id, (counts.get(m.user_id) || 0) + 1)
+          }
+          // The user who connected Slack is likely the most active sender
+          let maxCount = 0
+          for (const [uid, count] of counts) {
+            if (count > maxCount) {
+              maxCount = count
+              slackUserId = uid
+            }
+          }
+        }
+      }
 
       if (slackUserId) {
         // Get all stored Slack messages in the scan window

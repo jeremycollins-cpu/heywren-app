@@ -81,7 +81,7 @@ export async function POST() {
   }
 
   // Look for the user's Slack user ID in the integration config
-  const slackUserId = integration.config?.authed_user_id || integration.config?.bot_user_id || null
+  let slackUserId = integration.config?.authed_user_id || null
 
   // Scan window: last 30 days
   const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
@@ -100,6 +100,19 @@ export async function POST() {
 
   if (!messages || messages.length === 0) {
     return NextResponse.json({ success: true, scanned: 0, missed: 0 })
+  }
+
+  // If we don't have the user's Slack ID, infer from most frequent sender
+  if (!slackUserId) {
+    const counts = new Map<string, number>()
+    for (const m of messages) {
+      if (!m.user_id || m.user_id === 'unknown' || m.user_id.startsWith('B')) continue
+      counts.set(m.user_id, (counts.get(m.user_id) || 0) + 1)
+    }
+    let maxCount = 0
+    for (const [uid, count] of counts) {
+      if (count > maxCount) { maxCount = count; slackUserId = uid }
+    }
   }
 
   // Find messages that need the user's attention:
