@@ -46,37 +46,35 @@ export default function SyncPage() {
       const { data: userData } = await supabase.auth.getUser()
       if (!userData?.user) return
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
-
-      if (!profile?.current_team_id) return
-      const teamId = profile.current_team_id
-
-      // Fetch integrations via server-side API (bypasses RLS) + commitments client-side
-      const [intStatusRes, commitResult] = await Promise.all([
-        fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] }),
-        supabase.from('commitments').select('status, created_at, source').eq('team_id', teamId),
-      ])
+      // Use the server-side status API as the single source of truth
+      // It uses the admin client to bypass RLS and has fallbacks for team resolution
+      const intStatusRes = await fetch('/api/integrations/status', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : { integrations: [], teamId: null })
 
       const integrationData = (intStatusRes.integrations || []).map((i: any) => ({
         provider: i.provider,
         created_at: i.created_at,
       }))
-
-      const commitments = commitResult.data || []
-
       setIntegrations(integrationData as Integration[])
 
-      const weekAgo = Date.now() - 7 * 86400000
-      setCommitmentStats({
-        total: commitments.length,
-        open: commitments.filter((c: { status: string }) => c.status === 'open' || c.status === 'overdue').length,
-        completed: commitments.filter((c: { status: string }) => c.status === 'completed').length,
-        thisWeek: commitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
-      })
+      // Use teamId from the status API (which has admin-level fallbacks)
+      const teamId = intStatusRes.teamId
+
+      if (teamId) {
+        const { data: commitments } = await supabase
+          .from('commitments')
+          .select('status, created_at, source')
+          .eq('team_id', teamId)
+
+        const allCommitments = commitments || []
+        const weekAgo = Date.now() - 7 * 86400000
+        setCommitmentStats({
+          total: allCommitments.length,
+          open: allCommitments.filter((c: { status: string }) => c.status === 'open' || c.status === 'overdue').length,
+          completed: allCommitments.filter((c: { status: string }) => c.status === 'completed').length,
+          thisWeek: allCommitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
+        })
+      }
     } catch (err) {
       console.error('Error loading data health:', err)
     } finally {
