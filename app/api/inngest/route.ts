@@ -14,6 +14,12 @@ import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
 import { scanAwaitingReplies } from '@/inngest/functions/scan-awaiting-replies'
 import { processMeetingTranscript } from '@/inngest/functions/process-meeting-transcript'
+import {
+  syncPlatformRecordings,
+  handleZoomRecordingCompleted,
+  handleGoogleMeetRecording,
+  scheduledPlatformSync,
+} from '@/inngest/functions/sync-platform-recordings'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -28,5 +34,9 @@ export const { GET, POST, PUT } = serve({
     detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
     scanAwaitingReplies,  // 7 AM PT daily — "The Waiting Room" scan for sent items with no reply
     processMeetingTranscript, // Meeting transcript → commitment extraction + "Hey Wren" detection
+    syncPlatformRecordings,      // On-demand sync: Zoom, Google Meet, Teams recording transcripts
+    handleZoomRecordingCompleted, // Webhook: Zoom recording completed → download transcript
+    handleGoogleMeetRecording,   // Webhook: Google Meet recording available → trigger sync
+    scheduledPlatformSync,       // Cron: every 30 min — sync all connected platform recordings
   ],
 })

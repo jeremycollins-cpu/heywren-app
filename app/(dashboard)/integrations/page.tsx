@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic } from 'lucide-react'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -39,6 +39,20 @@ const availableIntegrations = [
     ),
   },
   {
+    id: 'zoom',
+    name: 'Zoom',
+    description: 'Auto-sync cloud recording transcripts for commitment detection',
+    color: '#2D8CFF',
+    icon: <Video className="w-5 h-5 text-white" />,
+  },
+  {
+    id: 'google_meet',
+    name: 'Google Meet',
+    description: 'Pull meeting transcripts from Google Workspace recordings',
+    color: '#00897B',
+    icon: <Monitor className="w-5 h-5 text-white" />,
+  },
+  {
     id: 'meetings',
     name: 'Meeting Transcripts',
     description: 'Upload transcripts to detect commitments. Say "Hey Wren" in meetings!',
@@ -46,6 +60,15 @@ const availableIntegrations = [
     icon: <Mic className="w-5 h-5 text-white" />,
     isPage: true,
     pageUrl: '/meetings',
+  },
+  {
+    id: 'chrome-extension',
+    name: 'Chrome Extension',
+    description: 'Capture live captions from any meeting in your browser (Meet, Zoom, Teams)',
+    color: '#4f46e5',
+    icon: <Chrome className="w-5 h-5 text-white" />,
+    isPage: true,
+    pageUrl: '/settings?tab=extension',
   },
   {
     id: 'asana',
@@ -61,14 +84,6 @@ const availableIntegrations = [
     description: 'Track issues and sprints',
     color: '#0052CC',
     icon: <span className="text-white font-bold text-sm">J</span>,
-    comingSoon: true,
-  },
-  {
-    id: 'google-calendar',
-    name: 'Google Calendar',
-    description: 'Track meetings and events',
-    color: '#4285F4',
-    icon: <span className="text-white font-bold text-sm">G</span>,
     comingSoon: true,
   },
   {
@@ -284,6 +299,44 @@ function IntegrationsContent() {
     window.location.href = authUrl
   }
 
+  const handleZoomConnect = async () => {
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_ZOOM_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/zoom/connect`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+
+    const authUrl = `https://zoom.us/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
+    window.location.href = authUrl
+  }
+
+  const handleGoogleMeetConnect = async () => {
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/google/connect`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const scopes = [
+      'openid',
+      'profile',
+      'email',
+      'https://www.googleapis.com/auth/drive.readonly',
+    ].join(' ')
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}&access_type=offline&prompt=consent`
+    window.location.href = authUrl
+  }
+
   const handleDisconnect = async (id: string) => {
     try {
       const res = await fetch('/api/integrations/disconnect', {
@@ -317,6 +370,10 @@ function IntegrationsContent() {
       handleSlackConnect()
     } else if (integrationId === 'outlook') {
       handleOutlookConnect()
+    } else if (integrationId === 'zoom') {
+      handleZoomConnect()
+    } else if (integrationId === 'google_meet') {
+      handleGoogleMeetConnect()
     }
   }
 

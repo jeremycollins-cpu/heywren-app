@@ -1,6 +1,6 @@
 export type CommitmentSource = 'slack' | 'email' | 'meeting' | 'manual'
 export type CommitmentStatus = 'open' | 'in_progress' | 'completed' | 'overdue' | 'dropped' | 'likely_complete'
-export type IntegrationProvider = 'slack' | 'outlook' | 'google' | 'zoom' | 'teams'
+export type IntegrationProvider = 'slack' | 'outlook' | 'google' | 'zoom' | 'teams' | 'google_meet'
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error'
 export type TeamMemberRole = 'owner' | 'admin' | 'member'
 export type NudgeChannel = 'slack' | 'email' | 'in_app'
@@ -136,7 +136,7 @@ export interface DetectedCommitment {
   has_commitment: boolean
 }
 
-export type MeetingProvider = 'zoom' | 'teams' | 'google_meet' | 'manual'
+export type MeetingProvider = 'zoom' | 'teams' | 'google_meet' | 'manual' | 'chrome_extension'
 export type TranscriptStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 export interface MeetingTranscript {
@@ -160,6 +160,32 @@ export interface MeetingTranscript {
   metadata?: Record<string, any>
   created_at: string
   updated_at: string
+}
+
+export interface PlatformSyncCursor {
+  id: string
+  team_id: string
+  provider: 'zoom' | 'google_meet' | 'teams'
+  last_synced_at?: string
+  last_recording_id?: string
+  cursor_token?: string
+  sync_status: 'idle' | 'syncing' | 'error'
+  sync_error?: string
+  recordings_synced: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ExtensionToken {
+  id: string
+  team_id: string
+  user_id: string
+  token_hash: string
+  device_name?: string
+  last_used_at?: string
+  expires_at: string
+  revoked: boolean
+  created_at: string
 }
 
 export interface CommitmentStats {

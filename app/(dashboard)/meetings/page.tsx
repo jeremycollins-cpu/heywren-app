@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Mic, Upload, FileText, Clock, AlertCircle, CheckCircle2, Loader2, Bird } from 'lucide-react'
+import { Mic, Upload, FileText, Clock, AlertCircle, CheckCircle2, Loader2, Bird, Video, Monitor, Chrome, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface TranscriptRecord {
@@ -120,6 +120,21 @@ export default function MeetingsPage() {
         </button>
       </div>
 
+      {/* Platform Sync Callout */}
+      <div className="bg-gradient-to-r from-blue-50 to-teal-50 border border-blue-200 rounded-xl p-5 mb-0">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <RefreshCw className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-blue-900 text-sm">Auto-sync from Zoom, Google Meet &amp; Teams</h3>
+            <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+              Connect your meeting platforms in <a href="/integrations" className="underline font-medium">Integrations</a> to automatically pull recording transcripts. Or install the <strong>HeyWren Chrome Extension</strong> to capture live captions from any browser meeting.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Hey Wren Feature Callout */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-5">
         <div className="flex items-start gap-3">
@@ -231,10 +246,38 @@ export default function MeetingsPage() {
                   {statusIcon(t.transcript_status)}
                   <div>
                     <p className="font-medium text-gray-900 text-sm">{t.title || 'Untitled Meeting'}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {t.provider === 'manual' ? 'Manual upload' : t.provider}
-                      {t.start_time && ` \u2022 ${new Date(t.start_time).toLocaleDateString()}`}
-                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {t.provider === 'manual' && (
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                          <Upload className="w-3 h-3" /> Manual upload
+                        </span>
+                      )}
+                      {t.provider === 'zoom' && (
+                        <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full font-medium">
+                          <Video className="w-3 h-3" /> Zoom
+                        </span>
+                      )}
+                      {t.provider === 'google_meet' && (
+                        <span className="inline-flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-full font-medium">
+                          <Monitor className="w-3 h-3" /> Google Meet
+                        </span>
+                      )}
+                      {t.provider === 'teams' && (
+                        <span className="inline-flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium">
+                          <Monitor className="w-3 h-3" /> Teams
+                        </span>
+                      )}
+                      {t.provider === 'chrome_extension' && (
+                        <span className="inline-flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full font-medium">
+                          <Chrome className="w-3 h-3" /> Live capture
+                        </span>
+                      )}
+                      {t.start_time && (
+                        <span className="text-xs text-gray-400">
+                          {new Date(t.start_time).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-xs">
