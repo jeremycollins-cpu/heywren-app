@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     const userIds = teamMembers.map(m => m.user_id)
     const { data: profiles } = await admin
       .from('profiles')
-      .select('id, email, full_name, avatar_url')
+      .select('id, email, display_name, avatar_url')
       .in('id', userIds)
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p]))
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         user_id: m.user_id,
         role: m.role,
         email: p?.email || '',
-        full_name: p?.full_name || p?.email?.split('@')[0] || 'Unknown',
+        full_name: p?.display_name || p?.email?.split('@')[0] || 'Unknown',
         avatar_url: p?.avatar_url || null,
       }
     })

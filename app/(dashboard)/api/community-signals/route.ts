@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
   // Get user profile for author name and team
   const { data: profile } = await admin
     .from('profiles')
-    .select('full_name, current_team_id')
+    .select('display_name, current_team_id')
     .eq('id', user.id)
     .single()
 
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     .insert({
       team_id: profile.current_team_id,
       user_id: user.id,
-      author_name: profile.full_name || user.email?.split('@')[0] || 'Anonymous',
+      author_name: profile.display_name || user.email?.split('@')[0] || 'Anonymous',
       signal_type: signalType,
       title,
       description,

@@ -152,7 +152,7 @@ export default function CommitmentsPage() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('current_team_id, full_name')
+          .select('current_team_id, display_name')
           .eq('id', userData.user.id)
           .single()
 
@@ -172,7 +172,7 @@ export default function CommitmentsPage() {
         if (!teamId) { setLoading(false); return }
 
         // Store user's name for personal relevance matching
-        const name = profile?.full_name || userData.user.email?.split('@')[0] || ''
+        const name = profile?.display_name || userData.user.email?.split('@')[0] || ''
         setUserName(name)
 
         // Fetch ALL team commitments — personal filtering happens client-side
