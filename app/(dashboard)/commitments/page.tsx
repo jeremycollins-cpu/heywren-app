@@ -106,7 +106,7 @@ function getToneLabel(tone?: string): string | null {
   }
 }
 
-type FilterSource = 'all' | 'slack' | 'outlook' | 'manual'
+type FilterSource = 'all' | 'slack' | 'outlook' | 'recording' | 'manual'
 type FilterUrgency = 'all' | 'critical' | 'high' | 'medium' | 'low'
 type FilterHealth = 'all' | 'at_risk' | 'stalled' | 'active'
 type SortBy = 'newest' | 'oldest' | 'score' | 'urgency'
@@ -311,7 +311,9 @@ export default function CommitmentsPage() {
     // Source filter
     if (filterSource !== 'all') {
       result = result.filter(c => {
+        if (filterSource === 'slack') return c.source === 'slack'
         if (filterSource === 'outlook') return c.source === 'outlook' || c.source === 'email'
+        if (filterSource === 'recording') return c.source === 'recording' || c.source === 'meeting' || c.source === 'calendar'
         if (filterSource === 'manual') return !c.source || c.source === 'manual'
         return c.source === filterSource
       })
@@ -476,17 +478,23 @@ export default function CommitmentsPage() {
           <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Source</span>
-              {(['all', 'slack', 'outlook', 'manual'] as FilterSource[]).map(s => (
+              {([
+                { key: 'all' as FilterSource, label: 'All' },
+                { key: 'slack' as FilterSource, label: 'Chat' },
+                { key: 'outlook' as FilterSource, label: 'Email' },
+                { key: 'recording' as FilterSource, label: 'Calendar' },
+                { key: 'manual' as FilterSource, label: 'Manual' },
+              ]).map(({ key, label }) => (
                 <button
-                  key={s}
-                  onClick={() => setFilterSource(s)}
+                  key={key}
+                  onClick={() => setFilterSource(key)}
                   className={`px-2.5 py-1 text-xs font-medium rounded-full transition ${
-                    filterSource === s
+                    filterSource === key
                       ? 'bg-indigo-600 text-white'
                       : 'bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10'
                   }`}
                 >
-                  {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  {label}
                 </button>
               ))}
             </div>
