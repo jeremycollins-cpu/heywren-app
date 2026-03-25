@@ -2,9 +2,10 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useSearchParams } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink } from 'lucide-react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface Integration {
   id: string
@@ -38,6 +39,38 @@ const availableIntegrations = [
     ),
   },
   {
+    id: 'zoom',
+    name: 'Zoom',
+    description: 'Auto-sync cloud recording transcripts for commitment detection',
+    color: '#2D8CFF',
+    icon: <Video className="w-5 h-5 text-white" />,
+  },
+  {
+    id: 'google_meet',
+    name: 'Google Meet',
+    description: 'Pull meeting transcripts from Google Workspace recordings',
+    color: '#00897B',
+    icon: <Monitor className="w-5 h-5 text-white" />,
+  },
+  {
+    id: 'meetings',
+    name: 'Meeting Transcripts',
+    description: 'Upload transcripts to detect commitments. Say "Hey Wren" in meetings!',
+    color: '#7c3aed',
+    icon: <Mic className="w-5 h-5 text-white" />,
+    isPage: true,
+    pageUrl: '/meetings',
+  },
+  {
+    id: 'chrome-extension',
+    name: 'Chrome Extension',
+    description: 'Capture live captions from any meeting in your browser (Meet, Zoom, Teams)',
+    color: '#4f46e5',
+    icon: <Chrome className="w-5 h-5 text-white" />,
+    isPage: true,
+    pageUrl: '/settings?tab=extension',
+  },
+  {
     id: 'asana',
     name: 'Asana',
     description: 'Sync tasks and projects',
@@ -51,14 +84,6 @@ const availableIntegrations = [
     description: 'Track issues and sprints',
     color: '#0052CC',
     icon: <span className="text-white font-bold text-sm">J</span>,
-    comingSoon: true,
-  },
-  {
-    id: 'google-calendar',
-    name: 'Google Calendar',
-    description: 'Track meetings and events',
-    color: '#4285F4',
-    icon: <span className="text-white font-bold text-sm">G</span>,
     comingSoon: true,
   },
   {
@@ -196,6 +221,7 @@ function IntegrationsContent() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   useEffect(() => {
     async function fetchIntegrations() {
@@ -273,17 +299,60 @@ function IntegrationsContent() {
     window.location.href = authUrl
   }
 
-  const handleDisconnect = async (id: string) => {
+  const handleZoomConnect = async () => {
     const supabase = createClient()
-    const { error } = await supabase
-      .from('integrations')
-      .delete()
-      .eq('id', id)
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
 
-    if (!error) {
-      setIntegrations(integrations.filter((i) => i.id !== id))
-      toast.success('Integration disconnected')
-    } else {
+    const clientId = process.env.NEXT_PUBLIC_ZOOM_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/zoom/connect`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+
+    const authUrl = `https://zoom.us/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
+    window.location.href = authUrl
+  }
+
+  const handleGoogleMeetConnect = async () => {
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/google/connect`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const scopes = [
+      'openid',
+      'profile',
+      'email',
+      'https://www.googleapis.com/auth/drive.readonly',
+    ].join(' ')
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}&access_type=offline&prompt=consent`
+    window.location.href = authUrl
+  }
+
+  const handleDisconnect = async (id: string) => {
+    try {
+      const res = await fetch('/api/integrations/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+
+      if (res.ok) {
+        setIntegrations(integrations.filter((i) => i.id !== id))
+        toast.success('Integration disconnected')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to disconnect')
+      }
+    } catch {
       toast.error('Failed to disconnect')
     }
   }
@@ -292,20 +361,24 @@ function IntegrationsContent() {
     return integrations.some((i) => i.provider === provider)
   }
 
-  const handleConnect = (integrationId: string) => {
+  const handleConnect = (integrationId: string, pageUrl?: string) => {
+    if (pageUrl) {
+      router.push(pageUrl)
+      return
+    }
     if (integrationId === 'slack') {
       handleSlackConnect()
     } else if (integrationId === 'outlook') {
       handleOutlookConnect()
+    } else if (integrationId === 'zoom') {
+      handleZoomConnect()
+    } else if (integrationId === 'google_meet') {
+      handleGoogleMeetConnect()
     }
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading integrations...</p>
-      </div>
-    )
+    return <LoadingSkeleton variant="card" />
   }
 
   const liveIntegrations = availableIntegrations.filter(i => !i.comingSoon)
@@ -369,14 +442,14 @@ function IntegrationsContent() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleConnect(integration.id)}
+                    onClick={() => handleConnect(integration.id, (integration as any).pageUrl)}
                     className="w-full px-4 py-2 text-white rounded-lg transition font-medium text-sm"
                     style={{
                       background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                       boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
                     }}
                   >
-                    Connect
+                    {(integration as any).isPage ? 'Open' : 'Connect'}
                   </button>
                 )}
               </div>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeyWren</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #fafafa;
+      color: #1a1a2e;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      padding: 20px;
+      color: white;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .header p {
+      font-size: 12px;
+      opacity: 0.85;
+      margin-top: 4px;
+    }
+
+    .content {
+      padding: 16px;
+    }
+
+    /* Status section */
+    .status-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .status-card.connected {
+      border-color: #86efac;
+      background: #f0fdf4;
+    }
+
+    .status-card.recording {
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #d1d5db;
+    }
+
+    .status-dot.green { background: #22c55e; }
+    .status-dot.red {
+      background: #ef4444;
+      animation: pulse-dot 2s infinite;
+    }
+    .status-dot.yellow { background: #eab308; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-detail {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 6px;
+    }
+
+    /* Token input */
+    .token-section {
+      margin-bottom: 12px;
+    }
+
+    .token-section label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .token-input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .token-input-row input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: monospace;
+      outline: none;
+    }
+
+    .token-input-row input:focus {
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+    }
+
+    .btn-primary:hover { opacity: 0.9; }
+
+    .btn-danger {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+
+    .btn-danger:hover { background: #fee2e2; }
+
+    /* Help text */
+    .help-section {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 12px;
+    }
+
+    .help-section h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #3730a3;
+      margin-bottom: 6px;
+    }
+
+    .help-section p, .help-section li {
+      font-size: 11px;
+      color: #4338ca;
+      line-height: 1.5;
+    }
+
+    .help-section ol {
+      padding-left: 16px;
+      margin-top: 4px;
+    }
+
+    .footer {
+      padding: 12px 16px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+    }
+
+    .footer a {
+      font-size: 11px;
+      color: #6b7280;
+      text-decoration: none;
+    }
+
+    .footer a:hover { color: #4f46e5; }
+
+    /* API URL section */
+    .api-url-section {
+      margin-top: 8px;
+    }
+
+    .api-url-section summary {
+      font-size: 11px;
+      color: #9ca3af;
+      cursor: pointer;
+    }
+
+    .api-url-section input {
+      width: 100%;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 11px;
+      outline: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>HeyWren</h1>
+    <p>Meeting commitment tracker</p>
+  </div>
+
+  <div class="content">
+    <!-- Status -->
+    <div class="status-card" id="status-card">
+      <div class="status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Checking...</span>
+      </div>
+      <div class="status-detail" id="status-detail"></div>
+    </div>
+
+    <!-- Token Configuration -->
+    <div class="token-section" id="token-section">
+      <label>API Token</label>
+      <div class="token-input-row">
+        <input type="password" id="token-input" placeholder="Paste your HeyWren token" />
+        <button class="btn btn-primary" id="save-token">Save</button>
+      </div>
+    </div>
+
+    <!-- Connected state -->
+    <div id="connected-actions" style="display: none;">
+      <button class="btn btn-danger" id="disconnect-btn" style="width: 100%;">Disconnect</button>
+    </div>
+
+    <!-- Help -->
+    <div class="help-section">
+      <h3>How to get your token</h3>
+      <ol>
+        <li>Log in to your HeyWren dashboard</li>
+        <li>Go to Settings &rarr; Extensions</li>
+        <li>Click "Generate Extension Token"</li>
+        <li>Paste the token above</li>
+      </ol>
+    </div>
+
+    <!-- Advanced: API URL -->
+    <details class="api-url-section">
+      <summary>Advanced: API URL</summary>
+      <input type="text" id="api-url-input" placeholder="https://app.heywren.ai" />
+    </details>
+  </div>
+
+  <div class="footer">
+    <a href="https://app.heywren.ai/integrations" target="_blank">Open HeyWren Dashboard</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { getActiveCommunityPatterns } from './validate-community-signal'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -165,7 +166,11 @@ async function haiku_triage(text: string): Promise<boolean> {
 // TIER 3: Full Sonnet analysis — only for confirmed commitments
 // ~$0.003 per call, but only ~5-10% of messages reach here
 // ============================================================
-async function sonnet_analyze(text: string): Promise<DetectedCommitment[]> {
+async function sonnet_analyze(text: string, communityPatterns?: string[]): Promise<DetectedCommitment[]> {
+  const communityRulesBlock = communityPatterns && communityPatterns.length > 0
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these — from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
+
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
@@ -196,7 +201,7 @@ Guidelines:
 - originalQuote must be a direct excerpt from the source message, not a paraphrase.
 - stakeholders should include anyone mentioned as involved (the person committing, the person they're committing to, anyone CC'd or referenced).
 - If no commitments: {"commitments": []}
-- Only include items with confidence >= 0.5.`,
+- Only include items with confidence >= 0.5.${communityRulesBlock}`,
     messages: [{ role: 'user', content: `Analyze for commitments:\n\n"${text}"` }],
   })
 
@@ -252,9 +257,15 @@ export async function detectCommitments(
       return []
     }
 
-    // TIER 3: Sonnet full analysis ($0.003)
+    // TIER 3: Sonnet full analysis ($0.003) — with community-learned patterns
     _stats.tier3_analyzed++
-    const commitments = await sonnet_analyze(messageText)
+    let communityPatterns: string[] = []
+    try {
+      communityPatterns = await getActiveCommunityPatterns('slack')
+    } catch {
+      // Non-fatal — proceed without community patterns
+    }
+    const commitments = await sonnet_analyze(messageText, communityPatterns)
 
     if (commitments.length > 0) {
       console.log(

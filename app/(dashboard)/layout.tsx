@@ -9,6 +9,7 @@ import Header from '@/components/header'
 import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
 import HelpPanel from '@/components/help-panel'
 import FeatureDiscovery from '@/components/feature-discovery'
+import WrenChat from '@/components/wren-chat'
 import { PlanProvider } from '@/lib/contexts/plan-context'
 
 function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
@@ -154,6 +155,9 @@ export default function DashboardLayout({
 
       {/* Page-specific feature discovery popups */}
       {!walkthroughOpen && <FeatureDiscovery />}
+
+      {/* Hey Wren floating chat */}
+      <WrenChat />
     </div>
     </PlanProvider>
   )

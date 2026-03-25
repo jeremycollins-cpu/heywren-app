@@ -62,9 +62,15 @@ export async function GET() {
       return NextResponse.json({ integrations: [], teamId })
     }
 
-    return NextResponse.json({ integrations: integrations || [], teamId })
+    return NextResponse.json(
+      { integrations: integrations || [], teamId },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+    )
   } catch (err) {
     console.error('Integration status error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+// Prevent Next.js from caching this route
+export const dynamic = 'force-dynamic'

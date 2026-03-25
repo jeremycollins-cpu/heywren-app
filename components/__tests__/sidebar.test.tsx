@@ -74,6 +74,8 @@ jest.mock('lucide-react', () => {
     RefreshCw: createIcon('RefreshCw'),
     MessageSquareDashed: createIcon('MessageSquareDashed'),
     Hourglass: createIcon('Hourglass'),
+    Mic: createIcon('Mic'),
+    GraduationCap: createIcon('GraduationCap'),
   }
 })
 

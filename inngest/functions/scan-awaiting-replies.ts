@@ -137,7 +137,7 @@ async function graphFetch(
   return { data: await res.json(), token: currentToken }
 }
 
-async function scanTeamAwaitingReplies(
+export async function scanTeamAwaitingReplies(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
   userId: string
@@ -158,14 +158,46 @@ async function scanTeamAwaitingReplies(
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
 
-  // Get user's email for filtering
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('email')
-    .eq('id', userId)
-    .single()
+  // Determine who actually owns the Outlook token by calling Graph /me
+  // This prevents attributing one user's emails to another user
+  let tokenOwnerUserId = userId
+  let userEmail = ''
+  try {
+    const meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
+      headers: { Authorization: 'Bearer ' + msToken },
+    })
+    if (meRes.ok) {
+      const meData = await meRes.json()
+      const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
+      if (tokenEmail) {
+        // Look up which user in our system owns this email
+        const { data: tokenOwnerProfile } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .eq('email', tokenEmail)
+          .single()
 
-  const userEmail = profile?.email?.toLowerCase() || ''
+        if (tokenOwnerProfile) {
+          tokenOwnerUserId = tokenOwnerProfile.id
+          userEmail = tokenOwnerProfile.email?.toLowerCase() || tokenEmail
+        } else {
+          userEmail = tokenEmail
+        }
+      }
+    }
+  } catch {
+    // Fall back to the provided userId if /me call fails
+  }
+
+  // If we couldn't determine email from Graph, fall back to profile lookup
+  if (!userEmail) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', tokenOwnerUserId)
+      .single()
+    userEmail = profile?.email?.toLowerCase() || ''
+  }
 
   // Fetch sent items from last 14 days
   const scanWindow = new Date(Date.now() - 14 * 86400000).toISOString()
@@ -256,7 +288,7 @@ async function scanTeamAwaitingReplies(
 
       toInsert.push({
         team_id: teamId,
-        user_id: userId,
+        user_id: tokenOwnerUserId,
         source: 'outlook',
         source_message_id: msgId,
         conversation_id: conversationId,

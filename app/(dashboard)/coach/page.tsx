@@ -4,6 +4,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import {
   CheckCircle2,
   X,
@@ -237,42 +238,8 @@ export default function CoachPage() {
     localStorage.removeItem('coach-accepted')
   }
 
-  // Loading state — AI analysis in progress
   if (loading) {
-    return (
-      <div className="p-8 max-w-[1200px] mx-auto" role="status" aria-live="polite" aria-busy="true" aria-label="Analyzing communication patterns">
-        <div className="flex flex-col items-center justify-center py-16 space-y-6">
-          <div className="relative">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
-              <Sparkles className="w-8 h-8 text-white animate-pulse" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-gray-900 rounded-full flex items-center justify-center">
-              <div className="w-3 h-3 rounded-full bg-indigo-500 animate-ping" />
-            </div>
-          </div>
-          <div className="text-center space-y-2">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Analyzing your communication patterns...</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md">
-              Reviewing your commitments, response times, and stakeholder relationships to generate personalized coaching insights.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              Fetching data
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-              AI analysis
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
-              Generating insights
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="card" />
   }
 
   const activeInsights = insights.filter(i => !dismissedIds.has(i.id))

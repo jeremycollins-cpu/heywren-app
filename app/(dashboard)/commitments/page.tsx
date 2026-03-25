@@ -7,6 +7,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Search, Filter, CheckCircle2, X, ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface CommitmentStakeholder {
   name: string
@@ -146,6 +147,7 @@ export default function CommitmentsPage() {
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
+          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .order('created_at', { ascending: false })
 
         if (data) setCommitments(data)
@@ -307,14 +309,7 @@ export default function CommitmentsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading commitments">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          {[1,2,3].map(i => <div key={i} className="h-48 bg-gray-100 dark:bg-gray-800 rounded"></div>)}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   return (

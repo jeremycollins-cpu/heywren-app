@@ -40,12 +40,17 @@ export async function GET() {
       .from('awaiting_replies')
       .select('*')
       .eq('team_id', teamId)
+      .eq('user_id', userData.user.id)
       .in('status', ['waiting', 'snoozed'])
       .order('urgency', { ascending: true }) // critical first
       .order('sent_at', { ascending: true }) // oldest first
       .limit(50)
 
     if (error) {
+      // Table may not exist yet if migration 014 hasn't been run
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        return NextResponse.json({ items: [], count: 0 })
+      }
       console.error('Failed to fetch awaiting replies:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
@@ -73,6 +78,38 @@ export async function GET() {
   }
 }
 
+// POST: Trigger an on-demand scan of sent items
+export async function POST() {
+  try {
+    const supabase = await createSessionClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userData.user.id)
+      .single()
+
+    const teamId = profile?.current_team_id
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
+
+    // Import and run the scan
+    const { scanTeamAwaitingReplies } = await import('@/inngest/functions/scan-awaiting-replies')
+    const admin = getAdminClient()
+    const result = await scanTeamAwaitingReplies(admin, teamId, userData.user.id)
+
+    return NextResponse.json(result)
+  } catch (err: any) {
+    console.error('Awaiting replies scan error:', err)
+    return NextResponse.json({ error: err.message || 'Scan failed' }, { status: 500 })
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createSessionClient()
@@ -91,6 +128,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
 
+    // Verify user's team ownership
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userData.user.id)
+      .single()
+
+    const teamId = profile?.current_team_id
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
+
     const admin = getAdminClient()
 
     const updateFields: Record<string, any> = { status }
@@ -105,6 +154,8 @@ export async function PATCH(request: NextRequest) {
       .from('awaiting_replies')
       .update(updateFields)
       .eq('id', id)
+      .eq('team_id', teamId)
+      .eq('user_id', userData.user.id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

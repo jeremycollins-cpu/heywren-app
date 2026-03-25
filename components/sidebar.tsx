@@ -10,7 +10,7 @@ import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/pl
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
-  Lock, RefreshCw, MessageSquareDashed, Hourglass,
+  Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -78,7 +78,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .from('awaiting_replies')
               .select('id')
               .eq('team_id', teamId)
-              .eq('status', 'waiting'),
+              .eq('status', 'waiting')
+              .then(res => res.error ? { data: [] } : res),
           ])
 
           const commitments = commitResult.data || []
@@ -121,6 +122,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/coach', label: 'Coach', icon: Brain, tourId: 'nav-coach', badge: 0, badgeColor: '' },
         { href: '/relationships', label: 'Relationships', icon: Users, tourId: 'nav-relationships', badge: 0, badgeColor: '' },
         { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings', badge: 0, badgeColor: '' },
+        { href: '/meetings', label: 'Meetings', icon: Mic, tourId: 'nav-meetings', badge: 0, badgeColor: '' },
         { href: '/achievements', label: 'Achievements', icon: Trophy, tourId: 'nav-achievements', badge: 0, badgeColor: '' },
       ],
     },
@@ -146,6 +148,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       label: 'Community',
       links: [
         { href: '/ideas', label: 'Ideas', icon: Lightbulb, tourId: 'nav-ideas', badge: 0, badgeColor: '' },
+        { href: '/teach-wren', label: 'Teach Wren', icon: GraduationCap, tourId: 'nav-teach-wren', badge: 0, badgeColor: '' },
       ],
     },
   ]

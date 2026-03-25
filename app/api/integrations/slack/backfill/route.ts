@@ -159,8 +159,19 @@ export async function POST(request: NextRequest) {
               title: commitment.title || 'Untitled commitment',
               description: commitment.description || null,
               status: 'open',
+              priority_score: commitment.priority === 'high' ? 0.9 : commitment.priority === 'medium' ? 0.5 : 0.2,
               source: 'slack',
               source_ref: item.dbId,
+              metadata: {
+                urgency: commitment.urgency || null,
+                tone: commitment.tone || null,
+                commitmentType: commitment.commitmentType || null,
+                stakeholders: commitment.stakeholders || null,
+                originalQuote: commitment.originalQuote || null,
+                channelName: commitment.channelOrThread || null,
+                confidence: commitment.confidence,
+                assigneeName: commitment.assignee || null,
+              },
             })
             if (commitErr) {
               console.error('COMMITMENT INSERT FAILED:', JSON.stringify({
@@ -399,8 +410,19 @@ export async function POST(request: NextRequest) {
                   title: commitment.title || 'Untitled commitment',
                   description: commitment.description || null,
                   status: 'open',
+                  priority_score: commitment.priority === 'high' ? 0.9 : commitment.priority === 'medium' ? 0.5 : 0.2,
                   source: 'slack',
                   source_ref: item.dbId,
+                  metadata: {
+                    urgency: commitment.urgency || null,
+                    tone: commitment.tone || null,
+                    commitmentType: commitment.commitmentType || null,
+                    stakeholders: commitment.stakeholders || null,
+                    originalQuote: commitment.originalQuote || null,
+                    channelName: commitment.channelOrThread || null,
+                    confidence: commitment.confidence,
+                    assigneeName: commitment.assignee || null,
+                  },
                 })
                 if (commitErr) {
                   console.error('COMMITMENT INSERT FAILED:', JSON.stringify({

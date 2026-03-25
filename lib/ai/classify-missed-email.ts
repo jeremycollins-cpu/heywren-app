@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { getActiveCommunityPatterns } from './validate-community-signal'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -11,6 +12,7 @@ export interface MissedEmailClassification {
   questionSummary: string | null
   category: 'question' | 'request' | 'decision' | 'follow_up' | 'introduction'
   confidence: number
+  expectedResponseTime?: 'same_day' | 'next_day' | 'this_week' | 'no_rush' | null
   isVip?: boolean
 }
 
@@ -131,6 +133,16 @@ const QUESTION_PATTERNS = [
   /\bjust checking in\b/i,
   /\bcircling back\b/i,
   /\bwanted to check\b/i,
+  /\bwanted to follow up\b/i,
+  /\bI would like to schedule\b/i,
+  /\bI('d| would) like to (set up|arrange|book|plan)\b/i,
+  /\bI('d| would) appreciate your\b/i,
+  /\bconvenient time\b/i,
+  /\bwhen (works|is good) for you\b/i,
+  /\bare (they|the .+) (meeting|aligned|up to)\b/i,
+  /\bmeeting your expectations\b/i,
+  /\byour feedback\b/i,
+  /\bschedule a (quick |brief )?(call|meeting|chat|sync)\b/i,
 ]
 
 export interface EmailInput {
@@ -250,7 +262,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
 // ============================================================
 // TIER 3: Sonnet deep analysis — extract question & urgency
 // ============================================================
-async function sonnetAnalyze(email: EmailInput): Promise<MissedEmailClassification> {
+async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): Promise<MissedEmailClassification> {
   const daysSince = Math.floor(
     (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
   )
@@ -262,6 +274,10 @@ async function sonnetAnalyze(email: EmailInput): Promise<MissedEmailClassificati
     '',
     email.bodyPreview,
   ].join('\n')
+
+  const communityRulesBlock = communityPatterns && communityPatterns.length > 0
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -275,14 +291,31 @@ Return ONLY valid JSON (no markdown, no code fences):
   "reason": "Brief explanation of why this needs attention",
   "questionSummary": "The specific question or request being asked, or null",
   "category": "question|request|decision|follow_up|introduction",
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "expectedResponseTime": "same_day|next_day|this_week|no_rush|null"
 }
 
 Urgency guidelines:
-- critical: Direct question from a boss, client, or stakeholder about something time-sensitive; blocking someone's work
-- high: Clear question or request from a known person; decision needed; someone explicitly waiting
-- medium: Reasonable request or question that should be answered but isn't urgent
+- critical: Direct question from a boss, client, or stakeholder about something time-sensitive; blocking someone's work; meeting request for today/tomorrow
+- high: Clear question or request expecting a prompt reply; someone asking for your feedback/input; scheduling requests for "this week"; vendor/service-provider follow-ups checking on deliverables or satisfaction; someone explicitly waiting for a reply
+- medium: Reasonable request or question that should be answered within a few days
 - low: Nice-to-respond but not critical; introductions; optional requests
+
+IMPLICIT URGENCY SIGNALS (upgrade urgency even without explicit deadline words):
+- Meeting/call scheduling requests → at least "high" (they need your reply to book time)
+- "Please let me know" / "let me know when" / "a convenient time" → at least "high" (they are waiting)
+- Vendor/service-provider follow-ups (checking on work quality, deliverables, satisfaction) → at least "high" (business relationship requires responsiveness)
+- Someone asking for your feedback on their work → at least "high" (they may be blocked)
+- Follow-up emails referencing prior conversations or work → at least "high" (shows ongoing relationship, delayed reply is rude)
+- Multiple questions in one email → boost urgency (more effort = more expectation of reply)
+- "This week" / "when you have a moment" / "at your earliest convenience" → "high" (polite but expects prompt reply)
+- Direct, personalized emails from real people (not templates) → at minimum "medium"
+
+RESPONSE TIME ESTIMATION:
+- Meeting scheduling, feedback requests, vendor follow-ups → "same_day" or "next_day"
+- "This week" language → "this_week"
+- Open-ended / "when you get a chance" → "no_rush"
+- If the email has been sitting for longer than its expected response time, that makes it MORE urgent, not less
 
 ALWAYS mark as needsResponse: false for:
 - Sales/marketing/cold outreach emails
@@ -292,7 +325,7 @@ ALWAYS mark as needsResponse: false for:
 - Emails where the sender is clearly not expecting a personal reply
 - Mass-sent emails / mailing lists
 - Calendar invites with no question
-- Simple FYI/informational emails with no ask`,
+- Simple FYI/informational emails with no ask${communityRulesBlock}`,
     messages: [{ role: 'user', content: `Analyze this email:\n\n${emailText}` }],
   })
 
@@ -318,6 +351,42 @@ function extractJSON(text: string): string {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (jsonMatch) return jsonMatch[0]
   return text.trim()
+}
+
+// ============================================================
+// Urgency escalation — boost urgency when response is overdue
+// ============================================================
+
+const RESPONSE_TIME_HOURS: Record<string, number> = {
+  same_day: 8,
+  next_day: 24,
+  this_week: 96,  // ~4 business days
+  no_rush: 168,   // 7 days
+}
+
+function escalateForAge(result: MissedEmailClassification, receivedAt: string): void {
+  if (!result.needsResponse || !result.expectedResponseTime) return
+
+  const expectedHours = RESPONSE_TIME_HOURS[result.expectedResponseTime]
+  if (!expectedHours) return
+
+  const hoursSinceReceived = (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60 * 60)
+  if (hoursSinceReceived <= expectedHours) return
+
+  // Email has been waiting longer than expected — escalate urgency one level
+  const escalation: Record<string, 'critical' | 'high' | 'medium'> = {
+    low: 'medium',
+    medium: 'high',
+    high: 'critical',
+  }
+
+  if (result.urgency !== 'critical') {
+    const escalatedUrgency = escalation[result.urgency]
+    if (escalatedUrgency) {
+      result.reason = `${result.reason} (overdue — expected response within ${result.expectedResponseTime.replace('_', ' ')})`
+      result.urgency = escalatedUrgency
+    }
+  }
 }
 
 // ============================================================
@@ -382,9 +451,18 @@ export async function classifyMissedEmail(
       }
     }
 
-    // TIER 3: Sonnet full analysis
+    // TIER 3: Sonnet full analysis (with community-learned patterns)
     _stats.tier3_analyzed++
-    const result = await sonnetAnalyze(email)
+    let communityPatterns: string[] = []
+    try {
+      communityPatterns = await getActiveCommunityPatterns('email')
+    } catch {
+      // Non-fatal — proceed without community patterns
+    }
+    const result = await sonnetAnalyze(email, communityPatterns)
+
+    // Escalate urgency if email has been waiting longer than expected response time
+    escalateForAge(result, email.receivedAt)
 
     // VIPs always pass through if Sonnet says it needs response (lower threshold)
     const confidenceThreshold = vip ? 0.3 : 0.6
@@ -493,8 +571,18 @@ export async function classifyMissedEmailBatch(
 
   if (triaged.length === 0) return results
 
-  // Tier 3: Batch Sonnet analysis
+  // Tier 3: Batch Sonnet analysis (with community-learned patterns)
   _stats.tier3_analyzed += triaged.length
+
+  let communityPatterns: string[] = []
+  try {
+    communityPatterns = await getActiveCommunityPatterns('email')
+  } catch {
+    // Non-fatal — proceed without community patterns
+  }
+  const communityRulesBlock = communityPatterns.length > 0
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
 
   const numberedEmails = triaged
     .map((email, i) => {
@@ -523,16 +611,28 @@ Each email is numbered [1], [2], etc.
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "results": {
-    "1": {"needsResponse": true, "urgency": "high", "reason": "...", "questionSummary": "...", "category": "question", "confidence": 0.9},
-    "2": {"needsResponse": false, "urgency": "low", "reason": "Sales email", "questionSummary": null, "category": "question", "confidence": 0.95}
+    "1": {"needsResponse": true, "urgency": "high", "reason": "...", "questionSummary": "...", "category": "question", "confidence": 0.9, "expectedResponseTime": "same_day"},
+    "2": {"needsResponse": false, "urgency": "low", "reason": "Sales email", "questionSummary": null, "category": "question", "confidence": 0.95, "expectedResponseTime": null}
   }
 }
 
 Urgency guidelines:
-- critical: Direct question from boss/client/stakeholder; blocking someone's work; time-sensitive decision
-- high: Clear question or request from a known person; someone explicitly waiting for reply
-- medium: Reasonable request that should be answered but isn't urgent
+- critical: Direct question from boss/client/stakeholder; blocking someone's work; time-sensitive decision; meeting request for today/tomorrow
+- high: Clear question or request expecting a prompt reply; someone asking for your feedback/input; scheduling requests for "this week"; vendor/service-provider follow-ups checking on deliverables or satisfaction; someone explicitly waiting for a reply
+- medium: Reasonable request that should be answered within a few days
 - low: Nice-to-respond but not critical; introductions; optional requests
+
+IMPLICIT URGENCY SIGNALS (upgrade urgency even without explicit deadline words):
+- Meeting/call scheduling requests → at least "high" (they need your reply to book time)
+- "Please let me know" / "let me know when" / "a convenient time" → at least "high" (they are waiting)
+- Vendor/service-provider follow-ups → at least "high" (business relationship requires responsiveness)
+- Someone asking for your feedback on their work → at least "high" (they may be blocked)
+- Follow-up emails referencing prior conversations → at least "high" (delayed reply is rude)
+- Multiple questions in one email → boost urgency
+- "This week" / "at your earliest convenience" → "high" (polite but expects prompt reply)
+- Direct, personalized emails from real people → at minimum "medium"
+
+expectedResponseTime: "same_day" | "next_day" | "this_week" | "no_rush" | null
 
 ALWAYS mark needsResponse: false for:
 - Sales/marketing/cold outreach
@@ -540,7 +640,7 @@ ALWAYS mark needsResponse: false for:
 - Newsletters, digests, promotional content
 - Transactional emails (receipts, confirmations)
 - Mass-sent emails / mailing lists
-- Simple FYI/informational with no ask`,
+- Simple FYI/informational with no ask${communityRulesBlock}`,
       messages: [
         {
           role: 'user',
@@ -559,6 +659,9 @@ ALWAYS mark needsResponse: false for:
         const key = String(i + 1)
         const classification = batchResults[key]
         if (!classification) return
+
+        // Escalate urgency if email has been waiting longer than expected
+        escalateForAge(classification, email.receivedAt)
 
         const confidenceThreshold = email.vip ? 0.3 : 0.6
         if (classification.needsResponse && (classification.confidence || 0) >= confidenceThreshold) {
