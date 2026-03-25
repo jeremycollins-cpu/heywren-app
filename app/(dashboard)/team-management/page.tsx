@@ -62,54 +62,21 @@ export default function TeamManagementPage() {
       const { data: user } = await supabase.auth.getUser()
       if (!user?.user) return
 
-      // Get team ID with fallbacks
-      let teamId: string | null = null
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', user.user.id)
-        .single()
-      teamId = profile?.current_team_id || null
+      // Fetch team members via server API (uses admin client, bypasses RLS)
+      const res = await fetch(`/api/team-members?userId=${user.user.id}`, { cache: 'no-store' })
+      if (!res.ok) { setLoading(false); return }
+      const teamData = await res.json()
 
-      if (!teamId) {
-        const { data: membership } = await supabase
-          .from('team_members')
-          .select('team_id')
-          .eq('user_id', user.user.id)
-          .limit(1)
-          .single()
-        teamId = membership?.team_id || null
-      }
+      const teamId = teamData.teamId
+      setTeamName(teamData.teamName || 'Your Team')
 
-      if (!teamId) { setLoading(false); return }
-
-      // Get team name
-      const { data: team } = await supabase
-        .from('teams')
-        .select('name')
-        .eq('id', teamId)
-        .single()
-      setTeamName(team?.name || 'Your Team')
-
-      // Get team members — query team_members, then get profile data separately
-      const { data: teamMembers } = await supabase
-        .from('team_members')
-        .select('id, user_id, role')
-        .eq('team_id', teamId)
-
-      if (!teamMembers || teamMembers.length === 0) {
+      if (!teamData.members || teamData.members.length === 0) {
         setLoading(false)
         return
       }
 
-      // Get profiles for each member using admin-safe query
-      const memberUserIds = teamMembers.map(m => m.user_id)
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, avatar_url')
-        .in('id', memberUserIds)
-
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+      const profileMap = new Map<string, any>(teamData.members.map((m: any) => [m.user_id, m]))
+      const teamMembers: any[] = teamData.members
 
       // Get commitment stats per member
       const { data: commitments } = await supabase
