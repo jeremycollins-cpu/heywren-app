@@ -52,17 +52,27 @@ export default function OnboardingCompletePage() {
       }
       setIntegrations(providers)
 
-      // Mark onboarding as completed — send userId as fallback for session issues
-      const completeRes = await fetch('/api/onboarding/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: authData.user.id }),
-      })
-      if (completeRes.ok) {
-        setOnboardingMarked(true)
-      } else {
-        console.error('Failed to mark onboarding complete')
+      // Mark onboarding as completed — try both API and direct client-side update
+      let marked = false
+
+      // Try API first
+      try {
+        const completeRes = await fetch('/api/onboarding/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: authData.user.id }),
+        })
+        if (completeRes.ok) marked = true
+      } catch { /* fall through */ }
+
+      // Direct client-side update as fallback
+      if (!marked) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_completed: true, onboarding_step: 'complete' })
+          .eq('id', authData.user.id)
       }
+      setOnboardingMarked(true)
 
       setInitializing(false)
     } catch (err) {

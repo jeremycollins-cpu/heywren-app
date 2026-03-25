@@ -226,50 +226,37 @@ function IntegrationsContent() {
   useEffect(() => {
     async function fetchIntegrations() {
       try {
-        let found: Integration[] = []
+        const supabase = createClient()
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) { setLoading(false); return }
 
-        // Try server-side API first
-        try {
-          const res = await fetch('/api/integrations/status', { cache: 'no-store' })
-          if (res.ok) {
-            const data = await res.json()
-            found = data.integrations || []
-          }
-        } catch { /* fall through */ }
+        // Query integrations directly via client-side Supabase
+        let teamId: string | null = null
 
-        // Client-side fallback when server-side session fails
-        if (found.length === 0) {
-          const supabase = createClient()
-          const { data: userData } = await supabase.auth.getUser()
-          if (userData?.user) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('current_team_id')
-              .eq('id', userData.user.id)
-              .single()
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', userData.user.id)
+          .single()
+        teamId = profile?.current_team_id || null
 
-            let teamId = profile?.current_team_id
-            if (!teamId) {
-              const { data: membership } = await supabase
-                .from('team_members')
-                .select('team_id')
-                .eq('user_id', userData.user.id)
-                .limit(1)
-                .single()
-              teamId = membership?.team_id
-            }
-
-            if (teamId) {
-              const { data: intData } = await supabase
-                .from('integrations')
-                .select('id, provider, created_at, config')
-                .eq('team_id', teamId)
-              found = intData || []
-            }
-          }
+        if (!teamId) {
+          const { data: membership } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', userData.user.id)
+            .limit(1)
+            .single()
+          teamId = membership?.team_id || null
         }
 
-        setIntegrations(found)
+        if (teamId) {
+          const { data: intData } = await supabase
+            .from('integrations')
+            .select('id, provider, created_at, config')
+            .eq('team_id', teamId)
+          setIntegrations(intData || [])
+        }
       } catch (err) {
         console.error('Error fetching integrations:', err)
       } finally {
