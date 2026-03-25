@@ -57,30 +57,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: [], count: 0 })
     }
 
-    // Only show items that belong to THIS user — not other team members.
-    // Filter by user_id first (items scanned from this user's Outlook token),
-    // then also include items where the user's email appears in the sent data
-    // (handles cases where the scan attributed items to a different user_id).
-    let query = admin
-      .from('awaiting_replies')
-      .select('*')
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .in('status', ['waiting', 'snoozed'])
-      .order('urgency', { ascending: true })
-      .order('sent_at', { ascending: true })
-      .limit(50)
+    // Only show items that belong to THIS user.
+    // Primary filter: match by sender_email (most reliable — set from Graph /me).
+    // Fallback filter: match by user_id (for items before sender_email was added).
+    // This prevents User A from seeing User B's sent emails on the same team.
+    let allItems: any[] = []
 
-    const { data: items, error } = await query
+    if (userEmail) {
+      // Try sender_email match first (most accurate)
+      const { data: emailItems, error: emailErr } = await admin
+        .from('awaiting_replies')
+        .select('*')
+        .eq('team_id', teamId)
+        .eq('sender_email', userEmail)
+        .in('status', ['waiting', 'snoozed'])
+        .order('urgency', { ascending: true })
+        .order('sent_at', { ascending: true })
+        .limit(50)
 
-    if (error) {
-      // Table may not exist yet if migration 014 hasn't been run
-      if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        return NextResponse.json({ items: [], count: 0 })
+      if (!emailErr && emailItems && emailItems.length > 0) {
+        allItems = emailItems
       }
-      console.error('Failed to fetch awaiting replies:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Fallback: items without sender_email that match user_id
+    if (allItems.length === 0) {
+      const { data: idItems, error: idErr } = await admin
+        .from('awaiting_replies')
+        .select('*')
+        .eq('team_id', teamId)
+        .eq('user_id', userId)
+        .is('sender_email', null)
+        .in('status', ['waiting', 'snoozed'])
+        .order('urgency', { ascending: true })
+        .order('sent_at', { ascending: true })
+        .limit(50)
+
+      if (!idErr) allItems = idItems || []
+    }
+
+    const items = allItems
 
     // Update days_waiting on the fly
     const now = Date.now()

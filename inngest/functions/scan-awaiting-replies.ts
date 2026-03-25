@@ -289,6 +289,7 @@ export async function scanTeamAwaitingReplies(
       toInsert.push({
         team_id: teamId,
         user_id: tokenOwnerUserId,
+        sender_email: userEmail || null,
         source: 'outlook',
         source_message_id: msgId,
         conversation_id: conversationId,
