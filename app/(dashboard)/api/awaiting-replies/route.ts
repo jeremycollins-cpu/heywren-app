@@ -40,6 +40,7 @@ export async function GET() {
       .from('awaiting_replies')
       .select('*')
       .eq('team_id', teamId)
+      .eq('user_id', userData.user.id)
       .in('status', ['waiting', 'snoozed'])
       .order('urgency', { ascending: true }) // critical first
       .order('sent_at', { ascending: true }) // oldest first
@@ -127,6 +128,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
 
+    // Verify user's team ownership
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userData.user.id)
+      .single()
+
+    const teamId = profile?.current_team_id
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
+
     const admin = getAdminClient()
 
     const updateFields: Record<string, any> = { status }
@@ -141,6 +154,8 @@ export async function PATCH(request: NextRequest) {
       .from('awaiting_replies')
       .update(updateFields)
       .eq('id', id)
+      .eq('team_id', teamId)
+      .eq('user_id', userData.user.id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
