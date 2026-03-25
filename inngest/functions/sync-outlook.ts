@@ -460,11 +460,11 @@ async function syncTeamOutlook(
   }
 }
 
-// 6:00 AM PT = 1:00 PM UTC (PT is UTC-7 during PDT, UTC-8 during PST)
-// Using America/Los_Angeles timezone via Inngest's timezone support
+// Sync every 4 hours during business hours (6 AM, 10 AM, 2 PM, 6 PM PT)
+// so new emails are picked up within hours, not the next morning.
 export const syncOutlook = inngest.createFunction(
   { id: 'sync-outlook-daily' },
-  { cron: 'TZ=America/Los_Angeles 0 6 * * *' },
+  { cron: 'TZ=America/Los_Angeles 0 6,10,14,18 * * *' },
   async () => {
     const supabase = getAdminClient()
 

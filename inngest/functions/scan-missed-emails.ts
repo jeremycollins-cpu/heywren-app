@@ -128,6 +128,7 @@ async function scanTeamMissedEmails(
               question_summary: classification.questionSummary,
               category: classification.category,
               confidence: classification.confidence,
+              expected_response_time: classification.expectedResponseTime || null,
               status: 'pending',
             }, { onConflict: 'team_id,message_id' })
 
@@ -173,10 +174,11 @@ async function scanTeamMissedEmails(
   }
 }
 
-// Run at 6:30 AM PT — right after Outlook sync (6 AM PT)
+// Run 30 min after each Outlook sync (6:30 AM, 10:30 AM, 2:30 PM, 6:30 PM PT)
+// so new emails are classified within hours, not the next morning.
 export const scanMissedEmails = inngest.createFunction(
   { id: 'scan-missed-emails' },
-  { cron: 'TZ=America/Los_Angeles 30 6 * * *' },
+  { cron: 'TZ=America/Los_Angeles 30 6,10,14,18 * * *' },
   async () => {
     const supabase = getAdminClient()
 
