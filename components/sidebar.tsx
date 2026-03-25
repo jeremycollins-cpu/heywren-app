@@ -10,7 +10,7 @@ import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/pl
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
-  Lock, RefreshCw, MessageSquareDashed,
+  Lock, RefreshCw, MessageSquareDashed, Hourglass,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -25,13 +25,14 @@ interface BadgeCounts {
   draftQueue: number
   missedEmails: number
   missedChats: number
+  waitingRoom: number
   openCommitments: number
 }
 
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, openCommitments: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
 
@@ -52,7 +53,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         if (profile?.current_team_id) {
           const teamId = profile.current_team_id
 
-          const [commitResult, draftResult, missedResult, missedChatsResult] = await Promise.all([
+          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
             supabase
               .from('commitments')
               .select('status, created_at')
@@ -73,6 +74,11 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .select('id')
               .eq('team_id', teamId)
               .eq('status', 'pending'),
+            supabase
+              .from('awaiting_replies')
+              .select('id')
+              .eq('team_id', teamId)
+              .eq('status', 'waiting'),
           ])
 
           const commitments = commitResult.data || []
@@ -88,6 +94,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             draftQueue: draftResult.data?.length || 0,
             missedEmails: missedResult.data?.length || 0,
             missedChats: missedChatsResult.data?.length || 0,
+            waitingRoom: waitingResult.data?.length || 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
           })
         }
@@ -123,6 +130,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
+        { href: '/waiting-room', label: 'Waiting Room', icon: Hourglass, tourId: 'nav-waiting-room', badge: badges.waitingRoom, badgeColor: 'bg-amber-500' },
         { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff', badge: 0, badgeColor: '' },
       ],
     },
@@ -165,7 +173,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
 
-  const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats
+  const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
 
   return (
     <>
@@ -217,6 +225,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                 )}
                 {badges.missedChats > 0 && (
                   <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">{badges.missedChats} chats</span>
+                )}
+                {badges.waitingRoom > 0 && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">{badges.waitingRoom} waiting</span>
                 )}
               </div>
             </div>
