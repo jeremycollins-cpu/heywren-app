@@ -7,7 +7,7 @@
  *   - Creates a Supabase server client with cookie-based auth
  *   - Reads cookies from the incoming request
  *   - Sets cookies on the outgoing response
- *   - Calls getSession to refresh the user's session
+ *   - Calls getUser to authenticate the session
  *   - Returns a NextResponse.next() with the original headers
  */
 
@@ -15,7 +15,7 @@ import { NextRequest } from 'next/server'
 
 // ─── Mock @supabase/ssr ─────────────────────────────────────────────────────
 
-const mockGetSession = jest.fn().mockResolvedValue({ data: { session: null }, error: null })
+const mockGetUser = jest.fn().mockResolvedValue({ data: { user: null }, error: null })
 
 let capturedCookieConfig: any = null
 
@@ -24,7 +24,7 @@ jest.mock('@supabase/ssr', () => ({
     capturedCookieConfig = options.cookies
     return {
       auth: {
-        getSession: mockGetSession,
+        getUser: mockGetUser,
       },
     }
   }),
@@ -78,11 +78,11 @@ describe('updateSession', () => {
     )
   })
 
-  it('calls getSession to refresh the user session', async () => {
+  it('calls getUser to authenticate the session', async () => {
     const request = new NextRequest('http://localhost/')
     await updateSession(request)
 
-    expect(mockGetSession).toHaveBeenCalledTimes(1)
+    expect(mockGetUser).toHaveBeenCalledTimes(1)
   })
 
   it('passes request cookies to the Supabase client via getAll', async () => {
