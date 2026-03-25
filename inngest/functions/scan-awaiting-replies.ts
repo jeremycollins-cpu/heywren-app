@@ -289,16 +289,7 @@ async function scanTeamAwaitingReplies(
     nextLink = pageData['@odata.nextLink'] || null
   }
 
-  // Update days_waiting for existing records
-  await supabase.rpc('update_awaiting_days_waiting').catch(() => {
-    // RPC may not exist yet — update manually
-    supabase
-      .from('awaiting_replies')
-      .update({ days_waiting: 0 }) // Will be overwritten below
-      .eq('team_id', teamId)
-      .eq('status', 'waiting')
-      .then(() => {})
-  })
+  // Update days_waiting is handled by the enrichment in the API route (computed on read)
 
   // Mark items as replied if their conversation now has a response
   const { data: waitingItems } = await supabase

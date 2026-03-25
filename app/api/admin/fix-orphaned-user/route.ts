@@ -67,9 +67,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      success: true,
-      message: `User ${email} is now associated with team ${result.teamId} (${result.flow})`,
       ...result,
+      message: `User ${email} is now associated with team ${result.teamId} (${result.flow})`,
     })
   } catch (error: any) {
     console.error('Fix orphaned user error:', error)

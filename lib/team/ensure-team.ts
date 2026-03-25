@@ -163,7 +163,7 @@ export async function ensureTeamForUser(
  * Assigns a user to a team, ensuring both team_members and profiles are consistent.
  */
 async function assignUserToTeam(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   userId: string,
   teamId: string,
   role: 'owner' | 'admin' | 'member'
