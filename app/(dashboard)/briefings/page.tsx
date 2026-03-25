@@ -138,40 +138,62 @@ function generateTalkingPoints(
 }
 
 // ── Matching logic: find commitments related to attendees or meeting subject ──
+// STRICT matching: only match by full attendee names (5+ chars), external company
+// domains, or stakeholder metadata. NO short word matching from subject.
 
 function findMatchingCommitments(
   commitments: MatchedCommitment[],
   attendees: Attendee[],
   subject: string
 ): MatchedCommitment[] {
-  const subjectWords = (subject || '').toLowerCase().split(/\s+/).filter(w => w.length > 3)
-  const attendeeNames = attendees.map(a => (a.name || '').toLowerCase()).filter(Boolean)
-  const attendeeEmails = attendees.map(a => (a.email || '').toLowerCase()).filter(Boolean)
+  // Build strict match criteria
+  const attendeeFullNames = attendees
+    .map(a => (a.name || '').toLowerCase().trim())
+    .filter(n => n.length >= 5)
+
+  // Extract external company domains (not the user's own company)
+  const externalCompanies = [...new Set(
+    attendees
+      .map(a => {
+        const domain = (a.email || '').split('@')[1]?.split('.')[0]
+        return domain?.toLowerCase()
+      })
+      .filter((d): d is string =>
+        !!d && d.length >= 4 &&
+        !['gmail', 'yahoo', 'outlook', 'hotmail', 'live', 'icloud', 'routeware'].includes(d)
+      )
+  )]
+
+  // Only use very specific subject terms (8+ chars, not common meeting words)
+  const STOP_WORDS = new Set([
+    'meeting', 'discussion', 'review', 'update', 'weekly', 'monthly', 'daily',
+    'leadership', 'check', 'about', 'their', 'these', 'other', 'which', 'where',
+    'there', 'would', 'could', 'should', 'every', 'after', 'before', 'status',
+    'planning', 'alignment', 'overview', 'progress', 'session', 'standup',
+    'touchpoint', 'touchbase', 'recurring', 'follow', 'general',
+  ])
+  const subjectTerms = (subject || '').toLowerCase()
+    .split(/[\s:+\-–—,/()]+/)
+    .filter(w => w.length >= 8 && !STOP_WORDS.has(w))
 
   return commitments.filter(c => {
     const titleLower = (c.title || '').toLowerCase()
     const descLower = (c.description || '').toLowerCase()
     const combined = titleLower + ' ' + descLower
 
-    // Check if any attendee name appears in the commitment
-    for (const name of attendeeNames) {
-      if (name.length > 2 && combined.includes(name)) return true
-      // Also check first/last name parts
-      const parts = name.split(/\s+/)
-      for (const part of parts) {
-        if (part.length > 3 && combined.includes(part)) return true
-      }
+    // 1. Match by attendee FULL name (most reliable)
+    for (const fullName of attendeeFullNames) {
+      if (combined.includes(fullName)) return true
     }
 
-    // Check if any attendee email prefix appears
-    for (const email of attendeeEmails) {
-      const prefix = email.split('@')[0]
-      if (prefix.length > 3 && combined.includes(prefix)) return true
+    // 2. Match by external company name from attendee domain
+    for (const company of externalCompanies) {
+      if (combined.includes(company)) return true
     }
 
-    // Check if subject words match
-    for (const word of subjectWords) {
-      if (combined.includes(word)) return true
+    // 3. Match by very specific subject terms only (8+ chars)
+    for (const term of subjectTerms) {
+      if (combined.includes(term)) return true
     }
 
     return false
