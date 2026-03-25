@@ -66,7 +66,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .eq('status', 'pending'),
             supabase
               .from('missed_emails')
-              .select('id')
+              .select('id, subject')
               .eq('team_id', teamId)
               .eq('status', 'pending'),
             supabase
@@ -93,7 +93,10 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             overdue: overdueCount,
             urgent: urgentCount,
             draftQueue: draftResult.data?.length || 0,
-            missedEmails: missedResult.data?.length || 0,
+            missedEmails: new Set((missedResult.data || []).map((e: any) => {
+              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
+              return s || e.id
+            })).size,
             missedChats: missedChatsResult.data?.length || 0,
             waitingRoom: waitingResult.data?.length || 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
