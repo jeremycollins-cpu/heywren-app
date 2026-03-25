@@ -102,38 +102,77 @@ export async function POST() {
     return NextResponse.json({ success: true, scanned: 0, missed: 0 })
   }
 
-  // Find messages that mention the user but where the user never replied in the thread
-  // A "mention" is: message contains @user or the user's name, AND was sent by someone else
-  const mentionedMessages: typeof messages = []
+  // Find messages that need the user's attention:
+  // 1. @mentions in channels where user never replied in the thread
+  // 2. DM messages from others that user never responded to
+  // 3. Group DM messages directed at the user with no response
+  const missedMessages: typeof messages = []
   const threadReplies = new Set<string>()
+  const channelUserReplied = new Map<string, Set<string>>() // channel_id -> set of message_ts the user replied near
 
-  // First pass: collect all thread_ts where the user has replied
+  // First pass: collect all threads/channels where the user has replied
   for (const msg of messages) {
-    if (msg.user_id === slackUserId && msg.thread_ts) {
-      threadReplies.add(msg.thread_ts)
-    }
-    // Also count if user replied in the same channel as a parent message
     if (msg.user_id === slackUserId) {
+      if (msg.thread_ts) threadReplies.add(msg.thread_ts)
       threadReplies.add(msg.message_ts)
+      // Track which channels the user has been active in (by nearby timestamps)
+      if (!channelUserReplied.has(msg.channel_id)) {
+        channelUserReplied.set(msg.channel_id, new Set())
+      }
+      channelUserReplied.get(msg.channel_id)!.add(msg.message_ts)
     }
   }
 
-  // Second pass: find messages mentioning the user where they never responded
+  // Identify DM and group DM channels (channel IDs starting with D = DM, G = group DM / mpim)
+  const dmChannels = new Set<string>()
+  for (const msg of messages) {
+    const ch = msg.channel_id || ''
+    if (ch.startsWith('D') || ch.startsWith('G')) {
+      dmChannels.add(ch)
+    }
+  }
+
+  // Second pass: find missed messages
   for (const msg of messages) {
     if (msg.user_id === slackUserId) continue // Skip own messages
 
     const text = msg.message_text || ''
-    const isMention = slackUserId
-      ? text.includes(`<@${slackUserId}>`)
-      : false
-
-    if (!isMention) continue
+    const threadKey = msg.thread_ts || msg.message_ts
+    const isDM = dmChannels.has(msg.channel_id)
 
     // Check if user has responded in this thread
-    const threadKey = msg.thread_ts || msg.message_ts
     if (threadReplies.has(threadKey)) continue
 
-    mentionedMessages.push(msg)
+    // For DMs/group DMs: any message from someone else that wasn't responded to
+    if (isDM) {
+      // In DMs, check if user replied anywhere in the same channel within 24 hours
+      const msgTime = new Date(msg.created_at).getTime()
+      const userReplies = channelUserReplied.get(msg.channel_id)
+      let userRepliedNearby = false
+      if (userReplies) {
+        // Check if any of the user's messages in this channel are after this message
+        for (const replyTs of userReplies) {
+          const replyTime = parseFloat(replyTs) * 1000
+          if (replyTime > msgTime && replyTime - msgTime < 24 * 60 * 60 * 1000) {
+            userRepliedNearby = true
+            break
+          }
+        }
+      }
+      if (!userRepliedNearby) {
+        // Skip very short messages in DMs (reactions, "ok", "thanks")
+        if (text.trim().length >= 15) {
+          missedMessages.push(msg)
+        }
+      }
+      continue
+    }
+
+    // For channels: only catch @mentions
+    const isMention = slackUserId ? text.includes(`<@${slackUserId}>`) : false
+    if (isMention) {
+      missedMessages.push(msg)
+    }
   }
 
   // Get existing missed_chats to avoid duplicates
@@ -146,17 +185,20 @@ export async function POST() {
 
   // Insert new missed chats
   let insertedCount = 0
-  const toInsert = mentionedMessages
+  const toInsert = missedMessages
     .filter(msg => !existingTs.has(msg.message_ts))
     .map(msg => {
       const text = msg.message_text || ''
       // Simple urgency heuristic
       let urgency: 'critical' | 'high' | 'medium' | 'low' = 'medium'
+      const isDMMsg = dmChannels.has(msg.channel_id)
       const hasQuestion = /\?|can you|could you|would you|please|need|asap|urgent/i.test(text)
       const hasDeadline = /today|tomorrow|eod|end of day|by \w+day|this week/i.test(text)
       if (hasDeadline && hasQuestion) urgency = 'critical'
       else if (hasDeadline || /urgent|asap|critical/i.test(text)) urgency = 'high'
+      else if (isDMMsg && hasQuestion) urgency = 'high' // DMs with questions are higher priority
       else if (hasQuestion) urgency = 'medium'
+      else if (isDMMsg) urgency = 'medium' // DMs are at least medium
       else urgency = 'low'
 
       // Extract question summary
@@ -187,7 +229,7 @@ export async function POST() {
         thread_ts: msg.thread_ts || null,
         sent_at: msg.created_at,
         urgency,
-        reason: hasQuestion ? 'Contains a direct question or request' : 'You were mentioned but haven\'t responded',
+        reason: hasQuestion ? 'Contains a direct question or request' : dmChannels.has(msg.channel_id) ? 'DM awaiting your response' : 'You were mentioned but haven\'t responded',
         question_summary: questionSummary,
         category,
         confidence: hasQuestion ? 0.85 : 0.6,
@@ -219,7 +261,7 @@ export async function POST() {
   return NextResponse.json({
     success: true,
     scanned: messages.length,
-    mentions_found: mentionedMessages.length,
+    mentions_found: missedMessages.length,
     missed: insertedCount,
   })
 }
