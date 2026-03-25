@@ -31,18 +31,21 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // This refreshes a user's session in case they have session data from a cookie
-  const { data: { session } } = await supabase.auth.getSession()
-
   const pathname = request.nextUrl.pathname
 
   // Skip checks for public/API/static paths
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+    // Still refresh the session for API routes
+    await supabase.auth.getUser()
     return response
   }
 
-  // No session → let pages handle their own auth redirects
-  if (!session) {
+  // Use getUser() instead of getSession() — Supabase recommends this
+  // as getSession() reads unvalidated data from cookies
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // No user → let pages handle their own auth redirects
+  if (!user) {
     return response
   }
 
@@ -56,7 +59,7 @@ export async function updateSession(request: NextRequest) {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('onboarding_completed, current_team_id')
-      .eq('id', session.user.id)
+      .eq('id', user.id)
       .single()
 
     // If the query errored, skip the onboarding check entirely
@@ -71,7 +74,7 @@ export async function updateSession(request: NextRequest) {
 
     // Even if onboarding_completed is false, check if user has a team with
     // integrations — that means they've effectively onboarded and the flag
-    // just wasn't set (server-side session bug). Don't trap them in a loop.
+    // just wasn't set. Don't trap them in a loop.
     if (profile?.current_team_id) {
       const { data: integrations } = await supabase
         .from('integrations')
@@ -84,7 +87,7 @@ export async function updateSession(request: NextRequest) {
         await supabase
           .from('profiles')
           .update({ onboarding_completed: true })
-          .eq('id', session.user.id)
+          .eq('id', user.id)
         return response
       }
     }
