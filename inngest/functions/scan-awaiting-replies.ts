@@ -152,8 +152,20 @@ export async function scanTeamAwaitingReplies(
     .eq('provider', 'outlook')
     .single()
 
-  if (!integration) return { success: true, teamId, scanned: 0, awaiting: 0 }
+  let totalScanned = 0
+  let totalAwaiting = 0
+  let userEmail = ''
 
+  // Get user email from profile for Slack scanning
+  const { data: userProfile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId)
+    .single()
+  userEmail = userProfile?.email?.toLowerCase() || ''
+
+  if (integration) {
+  // ── Outlook Scanning ──
   let msToken = integration.access_token
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
@@ -161,7 +173,6 @@ export async function scanTeamAwaitingReplies(
   // Determine who actually owns the Outlook token by calling Graph /me
   // This prevents attributing one user's emails to another user
   let tokenOwnerUserId = userId
-  let userEmail = ''
   try {
     const meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
       headers: { Authorization: 'Bearer ' + msToken },
@@ -229,9 +240,6 @@ export async function scanTeamAwaitingReplies(
       repliedConversations.add(msg.conversation_id)
     }
   }
-
-  let totalScanned = 0
-  let totalAwaiting = 0
 
   while (nextLink && Date.now() - startTime < TIME_BUDGET_MS && totalScanned < MAX_SENT_PER_RUN) {
     const { data: pageData, token: updatedToken } = await graphFetch(
@@ -348,6 +356,8 @@ export async function scanTeamAwaitingReplies(
     .eq('team_id', teamId)
     .in('status', ['dismissed', 'replied'])
     .lt('updated_at', thirtyDaysAgo)
+
+  } // end if (integration) — Outlook scanning
 
   // ── Slack Scanning ──
   // Find messages the user sent in DMs/group DMs/channels that got no reply

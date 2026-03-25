@@ -80,7 +80,12 @@ export default function WaitingRoomPage() {
   const runScan = useCallback(async () => {
     setScanning(true)
     try {
-      const res = await fetch('/api/awaiting-replies', { method: 'POST' })
+      const { data: userData } = await supabase.auth.getUser()
+      const res = await fetch('/api/awaiting-replies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userData?.user?.id }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
       toast.success(`Scanned ${data.scanned || 0} sent messages — found ${data.awaiting || 0} awaiting reply`)

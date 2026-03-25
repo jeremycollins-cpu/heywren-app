@@ -106,18 +106,37 @@ export async function GET(request: NextRequest) {
 }
 
 // POST: Trigger an on-demand scan of sent items
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createSessionClient()
-    const { data: userData } = await supabase.auth.getUser()
-    if (!userData?.user) {
+    let userId: string | null = null
+
+    try {
+      const supabase = await createSessionClient()
+      const { data: userData } = await supabase.auth.getUser()
+      userId = userData?.user?.id || null
+    } catch { /* session failed */ }
+
+    const admin = getAdminClient()
+
+    // Fallback: userId from body
+    if (!userId) {
+      try {
+        const body = await request.json()
+        if (body?.userId) {
+          const { data: authUser } = await admin.auth.admin.getUserById(body.userId)
+          if (authUser?.user) userId = authUser.user.id
+        }
+      } catch { /* no body */ }
+    }
+
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
+    const { data: profile } = await admin
       .from('profiles')
       .select('current_team_id')
-      .eq('id', userData.user.id)
+      .eq('id', userId)
       .single()
 
     const teamId = profile?.current_team_id
@@ -125,10 +144,8 @@ export async function POST() {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
 
-    // Import and run the scan
     const { scanTeamAwaitingReplies } = await import('@/inngest/functions/scan-awaiting-replies')
-    const admin = getAdminClient()
-    const result = await scanTeamAwaitingReplies(admin, teamId, userData.user.id)
+    const result = await scanTeamAwaitingReplies(admin, teamId, userId)
 
     return NextResponse.json(result)
   } catch (err: any) {
