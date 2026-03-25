@@ -195,24 +195,13 @@ export default function CommitmentsPage() {
   }, [])
 
   // Determine if a commitment is personally relevant to the current user.
-  // Broad matching: includes anything where the user is mentioned, assigned,
-  // involved via DM/group DM, or the commitment has high urgency/priority.
+  // Only shows items where the user is directly involved — not all team items.
   const isPersonallyRelevant = (c: Commitment): boolean => {
-    // 1. User is the assignee
+    // 1. User is the assignee or creator
     if (c.assignee_id === userId) return true
+    if (c.creator_id === userId) return true
 
-    // 2. High urgency or critical — always surface these
-    const urgency = c.metadata?.urgency
-    if (urgency === 'critical' || urgency === 'high') return true
-
-    // 3. Came from email source — these are inherently personal (your inbox)
-    if (c.source === 'outlook' || c.source === 'email') return true
-
-    // 4. Came from a DM or group DM (channel names starting with DM- or Group-DM-)
-    const channelName = c.metadata?.channelName || ''
-    if (channelName.startsWith('DM-') || channelName.startsWith('Group-DM-') || channelName.includes('mpdm-')) return true
-
-    // 5. User's name appears in stakeholders, title, description, or quote
+    // 2. User's name appears in stakeholders, title, description, or quote
     const nameLower = userName.toLowerCase()
     const firstName = nameLower.split(' ')[0]
     if (firstName && firstName.length >= 3) {
@@ -230,10 +219,6 @@ export default function CommitmentsPage() {
       const combined = (c.title + ' ' + (c.description || '') + ' ' + (c.metadata?.originalQuote || '')).toLowerCase()
       if (combined.includes(firstName)) return true
     }
-
-    // 6. Commitment type is "meeting" or "decision" — these often need the user's attention
-    const cType = c.metadata?.commitmentType
-    if (cType === 'meeting' || cType === 'decision') return true
 
     return false
   }
