@@ -11,7 +11,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 
-const MAX_SENT_PER_RUN = 100
+const MAX_SENT_PER_RUN = 500
 const TIME_BUDGET_MS = 240000 // 4 minutes
 
 function getAdminClient() {
@@ -199,8 +199,8 @@ export async function scanTeamAwaitingReplies(
     userEmail = profile?.email?.toLowerCase() || ''
   }
 
-  // Fetch sent items from last 14 days
-  const scanWindow = new Date(Date.now() - 14 * 86400000).toISOString()
+  // Fetch sent items from last 30 days
+  const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
   const filter = encodeURIComponent(`sentDateTime ge ${scanWindow} and isDraft eq false`)
   const selectFields = 'id,subject,bodyPreview,toRecipients,sentDateTime,conversationId,webLink'
 
