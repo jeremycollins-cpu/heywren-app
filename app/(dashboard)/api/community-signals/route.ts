@@ -163,23 +163,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Increment vote count
-    await admin.rpc('increment_signal_votes', { signal_id_param: signalId })
-      .then(() => {})
-      .catch(() => {
-        // Fallback: manual increment
-        admin.from('community_signals')
-          .select('vote_count')
-          .eq('id', signalId)
-          .single()
-          .then(({ data }) => {
-            if (data) {
-              admin.from('community_signals')
-                .update({ vote_count: (data.vote_count || 0) + 1 })
-                .eq('id', signalId)
-                .then(() => {})
-            }
-          })
-      })
+    const { data: current } = await admin
+      .from('community_signals')
+      .select('vote_count')
+      .eq('id', signalId)
+      .single()
+
+    if (current) {
+      await admin
+        .from('community_signals')
+        .update({ vote_count: (current.vote_count || 0) + 1 })
+        .eq('id', signalId)
+    }
   } else {
     await admin
       .from('community_signal_votes')
