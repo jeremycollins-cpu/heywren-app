@@ -46,6 +46,10 @@ export async function GET() {
       .limit(50)
 
     if (error) {
+      // Table may not exist yet if migration 014 hasn't been run
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        return NextResponse.json({ items: [], count: 0 })
+      }
       console.error('Failed to fetch awaiting replies:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }

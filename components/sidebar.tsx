@@ -78,7 +78,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .from('awaiting_replies')
               .select('id')
               .eq('team_id', teamId)
-              .eq('status', 'waiting'),
+              .eq('status', 'waiting')
+              .then(res => res.error ? { data: [] } : res),
           ])
 
           const commitments = commitResult.data || []
