@@ -146,6 +146,7 @@ export default function CommitmentsPage() {
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
+          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .order('created_at', { ascending: false })
 
         if (data) setCommitments(data)

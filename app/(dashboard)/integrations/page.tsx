@@ -274,16 +274,21 @@ function IntegrationsContent() {
   }
 
   const handleDisconnect = async (id: string) => {
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('integrations')
-      .delete()
-      .eq('id', id)
+    try {
+      const res = await fetch('/api/integrations/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
 
-    if (!error) {
-      setIntegrations(integrations.filter((i) => i.id !== id))
-      toast.success('Integration disconnected')
-    } else {
+      if (res.ok) {
+        setIntegrations(integrations.filter((i) => i.id !== id))
+        toast.success('Integration disconnected')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to disconnect')
+      }
+    } catch {
       toast.error('Failed to disconnect')
     }
   }
