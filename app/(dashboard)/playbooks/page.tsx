@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { FileText, Plus, CheckCircle2, Trash2, X, Zap, ToggleLeft, ToggleRight } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface Playbook {
   id: string
@@ -210,17 +211,7 @@ export default function PlaybooksPage() {
   const totalActions = playbooks.reduce((sum, p) => sum + (p.run_count || 0), 0)
 
   if (loading) {
-    return (
-      <div className="space-y-6" role="status" aria-live="polite" aria-busy="true" aria-label="Loading playbooks">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
-          </div>
-          {[1, 2].map(i => <div key={i} className="h-40 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   return (

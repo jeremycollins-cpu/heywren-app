@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Users, Mail, Trash2, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface TeamMember {
   id: string
@@ -79,11 +80,7 @@ export default function TeamManagementPage() {
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'super_admin'
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500 dark:text-gray-400">Loading team members...</p>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   return (

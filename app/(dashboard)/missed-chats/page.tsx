@@ -7,6 +7,7 @@ import {
   ThumbsUp, ThumbsDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface MissedChat {
   id: string
@@ -189,19 +190,7 @@ export default function MissedChatsPage() {
   const lowCount = chats.filter(c => c.urgency === 'low').length
 
   if (loading) {
-    return (
-      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading missed chats">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
-          </div>
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
-          </div>
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   return (

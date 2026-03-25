@@ -7,6 +7,7 @@ import {
   Clock, Activity, TrendingUp, Shield, ArrowRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import Link from 'next/link'
 
 type SyncResult = {
@@ -181,15 +182,7 @@ export default function SyncPage() {
   const healthLabel = healthScore >= 70 ? 'Healthy' : healthScore >= 40 ? 'Needs Attention' : 'Action Required'
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse" role="status" aria-busy="true" aria-label="Loading data health">
-        <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
-        <div className="h-48 bg-gray-100 dark:bg-gray-800 rounded-xl" />
-        <div className="grid grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded-xl" />)}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="dashboard" />
   }
 
   return (

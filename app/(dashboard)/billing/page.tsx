@@ -7,6 +7,7 @@ import {
   Check, Sparkles, Shield, Zap, X, AlertTriangle, Clock, ExternalLink,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { type PlanKey, type PlanDisplay, PLAN_DISPLAY } from '@/lib/plans'
 import { getStripe } from '@/lib/stripe/client'
 
@@ -242,17 +243,7 @@ export default function BillingPage() {
   }
 
   if (loading) {
-    return (
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="h-8 w-64 bg-gray-200 rounded-lg animate-pulse" />
-        <div className="h-4 w-96 bg-gray-100 rounded animate-pulse" />
-        <div className="grid md:grid-cols-3 gap-6">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-80 bg-gray-100 rounded-2xl animate-pulse" />
-          ))}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="card" />
   }
 
   const currentPlan = billingInfo?.plan || 'trial'

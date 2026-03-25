@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface Commitment {
   id: string
@@ -175,14 +176,7 @@ export default function WeeklyPage() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading weekly review">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          <div className="h-32 bg-gray-100 dark:bg-gray-800 rounded"></div>
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="card" />
   }
 
   const now = new Date()

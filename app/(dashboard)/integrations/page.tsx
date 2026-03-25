@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface Integration {
   id: string
@@ -306,11 +307,7 @@ function IntegrationsContent() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading integrations...</p>
-      </div>
-    )
+    return <LoadingSkeleton variant="card" />
   }
 
   const liveIntegrations = availableIntegrations.filter(i => !i.comingSoon)

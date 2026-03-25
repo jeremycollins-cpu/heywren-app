@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import UpgradeGate from '@/components/upgrade-gate'
 import { Hand, Calendar, CheckCircle2, AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 
@@ -315,21 +316,7 @@ export default function HandoffPage() {
 
   // ── Loading state ──
   if (loading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">PTO Handoff Protocol</h1>
-          <p className="text-gray-600 mt-1">
-            When someone goes OOO, HeyWren surfaces every open commitment and ensures clean transfers
-          </p>
-        </div>
-        <div role="status" aria-live="polite" aria-busy="true" aria-label="Loading handoff data" className="animate-pulse space-y-4">
-          {[1, 2].map((i) => (
-            <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-lg" />
-          ))}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   // ── Render ──

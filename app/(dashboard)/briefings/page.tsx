@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2 } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 
@@ -368,17 +369,7 @@ export default function BriefingsPage() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="p-8" role="status" aria-live="polite" aria-busy="true" aria-label="Loading briefings">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
-          <div className="h-4 bg-gray-100 dark:bg-gray-800 rounded w-1/2"></div>
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-32 bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
-          ))}
-        </div>
-      </div>
-    )
+    return <LoadingSkeleton variant="list" />
   }
 
   return (
