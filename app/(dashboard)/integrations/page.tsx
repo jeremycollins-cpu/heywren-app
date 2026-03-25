@@ -2,8 +2,8 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useSearchParams } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink } from 'lucide-react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -37,6 +37,15 @@ const availableIntegrations = [
         <path d="M8.322 9.652a3.045 3.045 0 00-1.194.242 3.077 3.077 0 00-1.015.675 3.131 3.131 0 00-.686 1.025 3.157 3.157 0 00-.25 1.253c0 .434.084.845.25 1.234.167.388.396.727.686 1.017.29.29.627.517 1.015.682.387.165.78.248 1.178.248.398 0 .79-.083 1.177-.248a3.098 3.098 0 001.016-.682c.29-.29.519-.629.686-1.017a3.072 3.072 0 00.25-1.234c0-.44-.083-.855-.25-1.253a3.132 3.132 0 00-.686-1.025 3.077 3.077 0 00-1.016-.675 3.023 3.023 0 00-1.161-.242zm0 4.986a1.807 1.807 0 01-1.312-.543 1.835 1.835 0 01-.547-1.343c0-.526.182-.974.547-1.343a1.807 1.807 0 011.312-.543c.511 0 .949.181 1.312.543.364.369.547.817.547 1.343s-.183.974-.547 1.343a1.807 1.807 0 01-1.312.543z" fill="white"/>
       </svg>
     ),
+  },
+  {
+    id: 'meetings',
+    name: 'Meeting Transcripts',
+    description: 'Upload transcripts to detect commitments. Say "Hey Wren" in meetings!',
+    color: '#7c3aed',
+    icon: <Mic className="w-5 h-5 text-white" />,
+    isPage: true,
+    pageUrl: '/meetings',
   },
   {
     id: 'asana',
@@ -197,6 +206,7 @@ function IntegrationsContent() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   useEffect(() => {
     async function fetchIntegrations() {
@@ -298,7 +308,11 @@ function IntegrationsContent() {
     return integrations.some((i) => i.provider === provider)
   }
 
-  const handleConnect = (integrationId: string) => {
+  const handleConnect = (integrationId: string, pageUrl?: string) => {
+    if (pageUrl) {
+      router.push(pageUrl)
+      return
+    }
     if (integrationId === 'slack') {
       handleSlackConnect()
     } else if (integrationId === 'outlook') {
@@ -371,14 +385,14 @@ function IntegrationsContent() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => handleConnect(integration.id)}
+                    onClick={() => handleConnect(integration.id, (integration as any).pageUrl)}
                     className="w-full px-4 py-2 text-white rounded-lg transition font-medium text-sm"
                     style={{
                       background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                       boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
                     }}
                   >
-                    Connect
+                    {(integration as any).isPage ? 'Open' : 'Connect'}
                   </button>
                 )}
               </div>

@@ -73,6 +73,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   briefings:        def('briefings',        'Briefings',          'Pre-meeting briefings with context on participants.',            'pro',  '/briefings'),
   ai_nudges:        def('ai_nudges',        'AI Nudges & Scoring','Smart nudges with priority scoring.',                            'pro'),
   calendar_sync:    def('calendar_sync',    'Calendar Sync',      'Sync your calendar for meeting-aware workflows.',                'pro'),
+  meeting_transcripts: def('meeting_transcripts', 'Meeting Transcripts', 'Upload meeting transcripts to detect commitments. Say "Hey Wren" in meetings to flag action items.', 'pro', '/meetings'),
 
   // ── Team ───────────────────────────────────────────────────────────
   playbooks:        def('playbooks',        'Playbooks',          'Automate workflows with trigger-based playbooks.',               'team', '/playbooks'),
@@ -144,6 +145,8 @@ export const PLAN_DISPLAY: Record<Exclude<PlanKey, 'trial'>, PlanDisplay> = {
       'Draft queue',
       'Pre-meeting briefings',
       'Calendar sync',
+      'Meeting transcript analysis',
+      '"Hey Wren" wake word triggers',
       'Unlimited commitments',
       'Up to 25 team members',
       'Priority support',
