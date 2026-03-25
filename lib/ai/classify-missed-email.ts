@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { getActiveCommunityPatterns } from './validate-community-signal'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -261,7 +262,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
 // ============================================================
 // TIER 3: Sonnet deep analysis — extract question & urgency
 // ============================================================
-async function sonnetAnalyze(email: EmailInput): Promise<MissedEmailClassification> {
+async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): Promise<MissedEmailClassification> {
   const daysSince = Math.floor(
     (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
   )
@@ -273,6 +274,10 @@ async function sonnetAnalyze(email: EmailInput): Promise<MissedEmailClassificati
     '',
     email.bodyPreview,
   ].join('\n')
+
+  const communityRulesBlock = communityPatterns && communityPatterns.length > 0
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -320,7 +325,7 @@ ALWAYS mark as needsResponse: false for:
 - Emails where the sender is clearly not expecting a personal reply
 - Mass-sent emails / mailing lists
 - Calendar invites with no question
-- Simple FYI/informational emails with no ask`,
+- Simple FYI/informational emails with no ask${communityRulesBlock}`,
     messages: [{ role: 'user', content: `Analyze this email:\n\n${emailText}` }],
   })
 
@@ -446,9 +451,15 @@ export async function classifyMissedEmail(
       }
     }
 
-    // TIER 3: Sonnet full analysis
+    // TIER 3: Sonnet full analysis (with community-learned patterns)
     _stats.tier3_analyzed++
-    const result = await sonnetAnalyze(email)
+    let communityPatterns: string[] = []
+    try {
+      communityPatterns = await getActiveCommunityPatterns('email')
+    } catch {
+      // Non-fatal — proceed without community patterns
+    }
+    const result = await sonnetAnalyze(email, communityPatterns)
 
     // Escalate urgency if email has been waiting longer than expected response time
     escalateForAge(result, email.receivedAt)
@@ -560,8 +571,18 @@ export async function classifyMissedEmailBatch(
 
   if (triaged.length === 0) return results
 
-  // Tier 3: Batch Sonnet analysis
+  // Tier 3: Batch Sonnet analysis (with community-learned patterns)
   _stats.tier3_analyzed += triaged.length
+
+  let communityPatterns: string[] = []
+  try {
+    communityPatterns = await getActiveCommunityPatterns('email')
+  } catch {
+    // Non-fatal — proceed without community patterns
+  }
+  const communityRulesBlock = communityPatterns.length > 0
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
 
   const numberedEmails = triaged
     .map((email, i) => {
@@ -619,7 +640,7 @@ ALWAYS mark needsResponse: false for:
 - Newsletters, digests, promotional content
 - Transactional emails (receipts, confirmations)
 - Mass-sent emails / mailing lists
-- Simple FYI/informational with no ask`,
+- Simple FYI/informational with no ask${communityRulesBlock}`,
       messages: [
         {
           role: 'user',

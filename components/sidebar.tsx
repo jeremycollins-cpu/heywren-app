@@ -10,7 +10,7 @@ import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/pl
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
-  Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic,
+  Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -148,6 +148,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       label: 'Community',
       links: [
         { href: '/ideas', label: 'Ideas', icon: Lightbulb, tourId: 'nav-ideas', badge: 0, badgeColor: '' },
+        { href: '/teach-wren', label: 'Teach Wren', icon: GraduationCap, tourId: 'nav-teach-wren', badge: 0, badgeColor: '' },
       ],
     },
   ]
