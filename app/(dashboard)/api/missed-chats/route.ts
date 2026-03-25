@@ -25,6 +25,7 @@ export async function GET() {
     .from('missed_chats')
     .select('*')
     .eq('team_id', profile.current_team_id)
+    .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
     .order('sent_at', { ascending: false })
 

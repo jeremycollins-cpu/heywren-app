@@ -68,16 +68,19 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .from('missed_emails')
               .select('id, subject')
               .eq('team_id', teamId)
+              .eq('user_id', user.user.id)
               .eq('status', 'pending'),
             supabase
               .from('missed_chats')
               .select('id')
               .eq('team_id', teamId)
+              .eq('user_id', user.user.id)
               .eq('status', 'pending'),
             supabase
               .from('awaiting_replies')
               .select('id')
               .eq('team_id', teamId)
+              .eq('user_id', user.user.id)
               .eq('status', 'waiting')
               .then(res => res.error ? { data: [] } : res),
           ])

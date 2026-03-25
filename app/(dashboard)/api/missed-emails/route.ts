@@ -31,11 +31,12 @@ export async function GET() {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
-  // Fetch pending and snoozed missed emails
+  // Fetch pending and snoozed missed emails — scoped to THIS user only
   const { data: missedEmails, error } = await supabase
     .from('missed_emails')
     .select('*')
     .eq('team_id', profile.current_team_id)
+    .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
     .order('received_at', { ascending: false })
 
