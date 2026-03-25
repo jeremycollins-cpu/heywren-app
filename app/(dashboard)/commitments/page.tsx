@@ -115,7 +115,7 @@ export default function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'active' | 'for_you' | 'completed'>('active')
+  const [activeTab, setActiveTab] = useState<'for_you' | 'all_team' | 'completed'>('for_you')
 
   // Search & filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -188,35 +188,46 @@ export default function CommitmentsPage() {
     load()
   }, [])
 
-  // Determine if a commitment is personally relevant to the current user
+  // Determine if a commitment is personally relevant to the current user.
+  // Broad matching: includes anything where the user is mentioned, assigned,
+  // involved via DM/group DM, or the commitment has high urgency/priority.
   const isPersonallyRelevant = (c: Commitment): boolean => {
     // 1. User is the assignee
     if (c.assignee_id === userId) return true
 
+    // 2. High urgency or critical — always surface these
+    const urgency = c.metadata?.urgency
+    if (urgency === 'critical' || urgency === 'high') return true
+
+    // 3. Came from email source — these are inherently personal (your inbox)
+    if (c.source === 'outlook' || c.source === 'email') return true
+
+    // 4. Came from a DM or group DM (channel names starting with DM- or Group-DM-)
+    const channelName = c.metadata?.channelName || ''
+    if (channelName.startsWith('DM-') || channelName.startsWith('Group-DM-') || channelName.includes('mpdm-')) return true
+
+    // 5. User's name appears in stakeholders, title, description, or quote
     const nameLower = userName.toLowerCase()
     const firstName = nameLower.split(' ')[0]
-    if (!firstName || firstName.length < 2) return false
-
-    // 2. User's name appears in stakeholders
-    const stakeholders = c.metadata?.stakeholders
-    if (Array.isArray(stakeholders)) {
-      for (const s of stakeholders) {
-        if (!s.name) continue
-        const sLower = s.name.toLowerCase()
-        if (sLower === nameLower || sLower.includes(firstName) || nameLower.includes(sLower)) {
-          return true
+    if (firstName && firstName.length >= 3) {
+      const stakeholders = c.metadata?.stakeholders
+      if (Array.isArray(stakeholders)) {
+        for (const s of stakeholders) {
+          if (!s.name) continue
+          const sLower = s.name.toLowerCase()
+          if (sLower === nameLower || sLower.includes(firstName) || nameLower.includes(sLower)) {
+            return true
+          }
         }
       }
+
+      const combined = (c.title + ' ' + (c.description || '') + ' ' + (c.metadata?.originalQuote || '')).toLowerCase()
+      if (combined.includes(firstName)) return true
     }
 
-    // 3. User is mentioned by name in title or description
-    const titleLower = c.title.toLowerCase()
-    const descLower = (c.description || '').toLowerCase()
-    if (titleLower.includes(firstName) || descLower.includes(firstName)) return true
-
-    // 4. User is mentioned by name in the original quote
-    const quoteLower = (c.metadata?.originalQuote || '').toLowerCase()
-    if (quoteLower.includes(firstName)) return true
+    // 6. Commitment type is "meeting" or "decision" — these often need the user's attention
+    const cType = c.metadata?.commitmentType
+    if (cType === 'meeting' || cType === 'decision') return true
 
     return false
   }
@@ -277,10 +288,10 @@ export default function CommitmentsPage() {
   const completedCommitments = commitments.filter(c => c.status === 'completed')
   const forYouCommitments = openCommitments.filter(isPersonallyRelevant)
 
-  const baseList = activeTab === 'active'
-    ? openCommitments
-    : activeTab === 'for_you'
+  const baseList = activeTab === 'for_you'
     ? forYouCommitments
+    : activeTab === 'all_team'
+    ? openCommitments
     : completedCommitments
 
   const filteredAndSorted = useMemo(() => {
@@ -344,7 +355,7 @@ export default function CommitmentsPage() {
     }
 
     // In active tabs, always float likely_complete items to the top
-    if (activeTab === 'active' || activeTab === 'for_you') {
+    if (activeTab === 'for_you' || activeTab === 'all_team') {
       result.sort((a, b) => {
         const aLikely = a.status === 'likely_complete' ? 0 : 1
         const bLikely = b.status === 'likely_complete' ? 0 : 1
@@ -388,8 +399,8 @@ export default function CommitmentsPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{openCommitments.length}</p>
-            <p className="text-xs text-gray-500">active</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{forYouCommitments.length}</p>
+            <p className="text-xs text-gray-500">for you</p>
           </div>
           <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
           <div className="text-right">
@@ -531,8 +542,8 @@ export default function CommitmentsPage() {
       {/* Tabs */}
       <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
         {[
-          { key: 'active' as const, label: 'Active', count: openCommitments.length },
           { key: 'for_you' as const, label: 'For You', count: forYouCommitments.length },
+          { key: 'all_team' as const, label: 'All Team', count: openCommitments.length },
           { key: 'completed' as const, label: 'Completed', count: completedCommitments.length },
         ].map(tab => (
           <button
@@ -564,7 +575,7 @@ export default function CommitmentsPage() {
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2 ml-auto">
-            {(activeTab === 'active' || activeTab === 'for_you') && (
+            {(activeTab === 'for_you' || activeTab === 'all_team') && (
               <>
                 <button
                   onClick={bulkComplete}
@@ -608,7 +619,7 @@ export default function CommitmentsPage() {
             {hasActiveFilters ? '\u{1F50D}' : activeTab === 'for_you' ? '\u2705' : activeTab === 'completed' ? '\u{1F4CB}' : '\u{1F4AC}'}
           </div>
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
-            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'active' ? 'No active commitments' : activeTab === 'for_you' ? 'Nothing needs your attention right now' : 'No completed commitments yet'}
+            {hasActiveFilters ? 'No commitments match your filters' : activeTab === 'for_you' ? 'Nothing needs your attention right now' : activeTab === 'all_team' ? 'No active team commitments' : 'No completed commitments yet'}
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
             {hasActiveFilters
@@ -631,7 +642,7 @@ export default function CommitmentsPage() {
       ) : (
         <div className="space-y-3">
           {/* Likely complete banner */}
-          {(activeTab === 'active' || activeTab === 'for_you') && likelyCompleteCommitments.length > 0 && (
+          {(activeTab === 'for_you' || activeTab === 'all_team') && likelyCompleteCommitments.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
               <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
@@ -641,7 +652,7 @@ export default function CommitmentsPage() {
           )}
 
           {/* Select all row */}
-          {(activeTab === 'active' || activeTab === 'for_you') && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
+          {(activeTab === 'for_you' || activeTab === 'all_team') && filteredAndSorted.length > 0 && selectedIds.size === 0 && (
             <div className="flex items-center gap-2 px-2">
               <input
                 type="checkbox"
@@ -682,7 +693,7 @@ export default function CommitmentsPage() {
               }`}>
                 {/* Row 1: Checkbox + title + actions */}
                 <div className="flex items-start gap-3 mb-2">
-                  {(activeTab === 'active' || activeTab === 'for_you') && (
+                  {(activeTab === 'for_you' || activeTab === 'all_team') && (
                     <input
                       type="checkbox"
                       checked={isSelected}
