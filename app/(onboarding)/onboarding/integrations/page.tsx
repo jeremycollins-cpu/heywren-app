@@ -155,34 +155,44 @@ function IntegrationsSetupContent() {
         toast.success('Outlook connected successfully!')
       }
 
-      // Use server-side API to check integrations (bypasses RLS issues)
-      // cache: 'no-store' prevents browser from returning a stale cached response
-      const res = await fetch('/api/integrations/status', { cache: 'no-store' })
-      if (res.ok) {
-        const data = await res.json()
-        const fetched: Integration[] = data.integrations?.map((i: any) => ({ id: i.id, provider: i.provider })) || []
-
-        // If OAuth just completed but the API hasn't caught up yet,
-        // ensure the provider appears in the list so the Continue button enables
-        if (slackJustConnected && !fetched.some(i => i.provider === 'slack')) {
-          fetched.push({ id: 'pending-slack', provider: 'slack' })
+      // Try server-side API first, then client-side fallback
+      let fetched: Integration[] = []
+      try {
+        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          fetched = data.integrations?.map((i: any) => ({ id: i.id, provider: i.provider })) || []
         }
-        if (outlookJustConnected && !fetched.some(i => i.provider === 'outlook')) {
-          fetched.push({ id: 'pending-outlook', provider: 'outlook' })
-        }
+      } catch { /* fall through */ }
 
-        setIntegrations(fetched)
-      } else {
-        // API failed — still trust the URL params if OAuth just completed
-        const fallback: Integration[] = []
-        if (slackJustConnected) fallback.push({ id: 'pending-slack', provider: 'slack' })
-        if (outlookJustConnected) fallback.push({ id: 'pending-outlook', provider: 'outlook' })
-        setIntegrations(fallback)
+      // Client-side fallback if server-side session fails
+      if (fetched.length === 0) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', authData.user.id)
+          .single()
+        if (profile?.current_team_id) {
+          const { data: intData } = await supabase
+            .from('integrations')
+            .select('id, provider')
+            .eq('team_id', profile.current_team_id)
+          fetched = (intData || []).map((i: any) => ({ id: i.id, provider: i.provider }))
+        }
       }
+
+      // If OAuth just completed but not yet in DB, add from URL params
+      if (slackJustConnected && !fetched.some(i => i.provider === 'slack')) {
+        fetched.push({ id: 'pending-slack', provider: 'slack' })
+      }
+      if (outlookJustConnected && !fetched.some(i => i.provider === 'outlook')) {
+        fetched.push({ id: 'pending-outlook', provider: 'outlook' })
+      }
+
+      setIntegrations(fetched)
       setChecking(false)
     } catch (err) {
       console.error('Error checking integrations:', err)
-      // Even on error, trust URL params so user isn't stuck
       const fallback: Integration[] = []
       if (searchParams.get('slack') === 'connected') fallback.push({ id: 'pending-slack', provider: 'slack' })
       if (searchParams.get('outlook') === 'connected') fallback.push({ id: 'pending-outlook', provider: 'outlook' })

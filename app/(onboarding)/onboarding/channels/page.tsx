@@ -35,10 +35,30 @@ export default function ChannelsSetupPage() {
         return
       }
 
-      // Use server-side API for integration check (bypasses RLS)
-      const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
-      const intData = intRes.ok ? await intRes.json() : { integrations: [] }
-      const integrations = intData.integrations || []
+      // Check integrations — try API first, fallback to client-side
+      let integrations: any[] = []
+      try {
+        const intRes = await fetch('/api/integrations/status', { cache: 'no-store' })
+        if (intRes.ok) {
+          const intData = await intRes.json()
+          integrations = intData.integrations || []
+        }
+      } catch { /* fall through */ }
+
+      if (integrations.length === 0) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id')
+          .eq('id', authData.user.id)
+          .single()
+        if (profile?.current_team_id) {
+          const { data: intData } = await supabase
+            .from('integrations')
+            .select('id, provider')
+            .eq('team_id', profile.current_team_id)
+          integrations = intData || []
+        }
+      }
 
       const hasSlackIntegration = integrations.some((i: any) => i.provider === 'slack')
       setHasSlack(!!hasSlackIntegration)
