@@ -277,11 +277,13 @@ export async function PATCH(req: Request) {
   }
 
   // If threadEmailIds provided, bulk update all emails in the thread
+  // SECURITY: Always scope to current user to prevent cross-user data manipulation
   if (threadEmailIds && Array.isArray(threadEmailIds) && threadEmailIds.length > 0) {
     const { error } = await supabase
       .from('missed_emails')
       .update(updateData)
       .in('id', threadEmailIds)
+      .eq('user_id', user.id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -290,11 +292,12 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ success: true, updated: threadEmailIds.length })
   }
 
-  // Single email update (backward compatible)
+  // Single email update
   const { error } = await supabase
     .from('missed_emails')
     .update(updateData)
     .eq('id', id)
+    .eq('user_id', user.id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -58,7 +58,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .from('commitments')
               .select('status, created_at')
               .eq('team_id', teamId)
-              .in('status', ['open', 'overdue']),
+              .in('status', ['open', 'overdue'])
+              .limit(500),
             supabase
               .from('drafts')
               .select('id')

@@ -309,6 +309,7 @@ export async function PATCH(request: NextRequest) {
     .from('missed_chats')
     .update(updateData)
     .eq('id', id)
+    .eq('user_id', user.id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

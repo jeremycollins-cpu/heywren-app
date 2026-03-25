@@ -78,7 +78,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
-          .order('created_at', { ascending: false }),
+          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+          .order('created_at', { ascending: false })
+          .limit(200),
         supabase
           .from('slack_messages')
           .select('*')

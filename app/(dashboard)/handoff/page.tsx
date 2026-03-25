@@ -150,14 +150,20 @@ export default function HandoffPage() {
         role,
         profiles (
           email,
-          full_name,
+          display_name,
           avatar_url
         )
       `
       )
       .eq('team_id', teamId)
 
-    const teamMembersList = (members || []) as unknown as TeamMember[]
+    const teamMembersList = ((members || []) as any[]).map((m: any) => ({
+      ...m,
+      profiles: Array.isArray(m.profiles) ? m.profiles[0] : m.profiles,
+    })).map((m: any) => ({
+      ...m,
+      profiles: m.profiles ? { ...m.profiles, full_name: m.profiles.display_name || m.profiles.full_name || m.profiles.email } : null,
+    })) as unknown as TeamMember[]
     setTeamMembers(teamMembersList)
 
     // ── Fetch PTO/OOO calendar events ──

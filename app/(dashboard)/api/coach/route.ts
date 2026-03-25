@@ -31,16 +31,20 @@ export async function POST() {
   const [commitmentsResult, missedEmailsResult] = await Promise.all([
     supabase
       .from('commitments')
-      .select('id, title, description, status, source, source_ref, metadata, created_at, updated_at, completed_at')
+      .select('id, title, description, status, source, metadata, created_at, updated_at, completed_at')
       .eq('team_id', teamId)
+      .or(`creator_id.eq.${user.id},assignee_id.eq.${user.id}`)
       .gte('created_at', thirtyDaysAgo)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(100),
     supabase
       .from('missed_emails')
-      .select('id, from_name, from_email, subject, urgency, category, status, received_at, created_at')
+      .select('id, from_name, from_email, subject, urgency, category, status, received_at')
       .eq('team_id', teamId)
+      .eq('user_id', user.id)
       .gte('created_at', thirtyDaysAgo)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   if (commitmentsResult.error) {

@@ -44,7 +44,7 @@ export const generateDrafts = inngest.createFunction(
         // Fetch open commitments without drafts
         let query = supabase
           .from('commitments')
-          .select('id, title, description, source, created_at, assignee:team_members(user_id, profiles(full_name))')
+          .select('id, title, description, source, created_at, assignee:team_members(user_id, profiles(display_name))')
           .eq('team_id', teamId)
           .eq('status', 'open')
           .order('created_at', { ascending: false })
@@ -83,7 +83,7 @@ export const generateDrafts = inngest.createFunction(
           description: c.description || undefined,
           source: c.source || undefined,
           created_at: c.created_at,
-          recipient_name: c.assignee?.profiles?.full_name || undefined,
+          recipient_name: c.assignee?.profiles?.display_name || undefined,
         }))
 
         let totalGenerated = 0
