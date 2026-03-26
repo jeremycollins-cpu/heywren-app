@@ -437,7 +437,7 @@ export default function SettingsPage() {
 
           <div>
             <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-4">Team Members</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Team management coming soon. Invite users through Slack or email integrations.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Manage your organization, departments, and teams from the <a href="/team-management" className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-medium">Team Management</a> page.</p>
             <div className="space-y-3">
               {user && (
                 <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
