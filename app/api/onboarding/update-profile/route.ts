@@ -3,12 +3,15 @@ import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureTeamForUser } from '@/lib/team/ensure-team'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getAdminClient()
   try {
     // Authenticate the user via session
     const supabase = await createSessionClient()

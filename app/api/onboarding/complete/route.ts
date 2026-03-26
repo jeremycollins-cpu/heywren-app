@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getAdminClient()
   try {
     // Try server-side session first
     let userId: string | null = null
@@ -76,6 +79,7 @@ export async function POST(request: NextRequest) {
  * This handles the case where migration 009 hasn't been applied.
  */
 async function ensureOnboardingColumns() {
+  const supabaseAdmin = getAdminClient()
   try {
     // Test if the column exists by selecting it
     const { error } = await supabaseAdmin
