@@ -72,7 +72,12 @@ export async function ensureTeamForUser(
 
   if (orgMembership) {
     // Ensure profiles + team_members are consistent
-    await syncProfileAndTeamMember(supabase, userId, orgMembership)
+    await assignUserToOrgHierarchy(supabase, userId, {
+      organizationId: orgMembership.organization_id,
+      departmentId: orgMembership.department_id,
+      teamId: orgMembership.team_id,
+      role: orgMembership.role as OrgRole,
+    })
 
     return {
       organizationId: orgMembership.organization_id,
@@ -461,7 +466,7 @@ export async function fixOrphanedUser(
   const supabase = getAdminClient()
 
   const { data: users } = await supabase.auth.admin.listUsers()
-  const user = users?.users?.find(u => u.email?.toLowerCase() === userEmail.toLowerCase())
+  const user = users?.users?.find((u: any) => u.email?.toLowerCase() === userEmail.toLowerCase())
 
   if (!user) {
     return { success: false, error: `User not found: ${userEmail}` }

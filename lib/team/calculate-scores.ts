@@ -96,12 +96,12 @@ export async function calculateWeeklyScores(
 
   if (!members || members.length === 0) return []
 
-  const userIds = members.map(m => m.user_id)
-  const memberMap = new Map(members.map(m => [m.user_id, m]))
+  const userIds = members.map((m: any) => m.user_id)
+  const memberMap = new Map(members.map((m: any) => [m.user_id, m]))
 
   // ── Fetch activity counts in parallel (all team-scoped, no content) ────────
 
-  const teamIds = [...new Set(members.map(m => m.team_id))]
+  const teamIds = [...new Set(members.map((m: any) => m.team_id))]
 
   const [
     commitmentsRes,
@@ -184,48 +184,48 @@ export async function calculateWeeklyScores(
     .eq('organization_id', organizationId)
     .in('user_id', userIds)
 
-  const streakMap = new Map((currentScores || []).map(s => [s.user_id, s.current_streak || 0]))
+  const streakMap = new Map((currentScores || []).map((s: any) => [s.user_id, s.current_streak || 0]))
 
-  const scores: WeeklyMemberScore[] = members.map(member => {
+  const scores: WeeklyMemberScore[] = members.map((member: any) => {
     const uid = member.user_id
 
     // Commitments created this week
-    const created = (commitmentsRes.data || []).filter(c => c.creator_id === uid)
+    const created = (commitmentsRes.data || []).filter((c: any) => c.creator_id === uid)
     const commitmentsCreated = created.length
 
     // Commitments completed this week (regardless of when created)
-    const completed = (completedThisWeek || []).filter(c => c.creator_id === uid)
+    const completed = (completedThisWeek || []).filter((c: any) => c.creator_id === uid)
     const commitmentsCompleted = completed.length
 
     // On-time completions (completed before or on due date)
-    const onTimeCompletions = completed.filter(c => {
+    const onTimeCompletions = completed.filter((c: any) => {
       if (!c.due_date || !c.completed_at) return false
       return new Date(c.completed_at) <= new Date(c.due_date)
     }).length
 
     // Overdue items
-    const commitmentsOverdue = created.filter(c => c.status === 'overdue').length
+    const commitmentsOverdue = created.filter((c: any) => c.status === 'overdue').length
 
     // Average days to close
     const closeTimes = completed
-      .filter(c => c.created_at && c.completed_at)
-      .map(c => (new Date(c.completed_at!).getTime() - new Date(c.created_at).getTime()) / 86400000)
+      .filter((c: any) => c.created_at && c.completed_at)
+      .map((c: any) => (new Date(c.completed_at!).getTime() - new Date(c.created_at).getTime()) / 86400000)
     const avgDaysToClose = closeTimes.length > 0
-      ? Math.round(closeTimes.reduce((a, b) => a + b, 0) / closeTimes.length * 10) / 10
+      ? Math.round(closeTimes.reduce((a: number, b: number) => a + b, 0) / closeTimes.length * 10) / 10
       : null
 
     // Missed items resolved
-    const missedEmailsResolved = (missedEmailsRes.data || []).filter(e => e.user_id === uid).length
-    const missedChatsResolved = (missedChatsRes.data || []).filter(c => c.user_id === uid).length
+    const missedEmailsResolved = (missedEmailsRes.data || []).filter((e: any) => e.user_id === uid).length
+    const missedChatsResolved = (missedChatsRes.data || []).filter((c: any) => c.user_id === uid).length
 
     // Meetings & action items
-    const userMeetings = (meetingsRes.data || []).filter(m => m.user_id === uid)
+    const userMeetings = (meetingsRes.data || []).filter((m: any) => m.user_id === uid)
     const meetingsAttended = userMeetings.length
-    const actionItemsGenerated = userMeetings.reduce((s, m) => s + (m.commitments_found || 0), 0)
+    const actionItemsGenerated = userMeetings.reduce((s: number, m: any) => s + (m.commitments_found || 0), 0)
 
     // Response rate
-    const totalMissedForUser = (totalMissedEmails || []).filter(e => e.user_id === uid).length
-      + (totalMissedChats || []).filter(c => c.user_id === uid).length
+    const totalMissedForUser = (totalMissedEmails || []).filter((e: any) => e.user_id === uid).length
+      + (totalMissedChats || []).filter((c: any) => c.user_id === uid).length
     const totalResolvedForUser = missedEmailsResolved + missedChatsResolved
     const responseRate = totalMissedForUser > 0
       ? Math.round(totalResolvedForUser / totalMissedForUser * 100)
@@ -392,27 +392,27 @@ async function updateRankings(organizationId: string): Promise<void> {
 
   if (!members) return
 
-  const memberMap = new Map(members.map(m => [m.user_id, m]))
+  const memberMap = new Map(members.map((m: any) => [m.user_id, m]))
 
   // Org rank
   for (let i = 0; i < allScores.length; i++) {
-    const userId = allScores[i].user_id
-    const member = memberMap.get(userId)
+    const userId = (allScores[i] as any).user_id
+    const member = memberMap.get(userId) as any
     if (!member) continue
 
     // Dept rank
-    const deptMembers = allScores.filter(s => {
-      const m = memberMap.get(s.user_id)
+    const deptMembers = allScores.filter((s: any) => {
+      const m = memberMap.get(s.user_id) as any
       return m?.department_id === member.department_id
     })
-    const deptRank = deptMembers.findIndex(s => s.user_id === userId) + 1
+    const deptRank = deptMembers.findIndex((s: any) => s.user_id === userId) + 1
 
     // Team rank
-    const teamMembers = allScores.filter(s => {
-      const m = memberMap.get(s.user_id)
+    const teamMembers = allScores.filter((s: any) => {
+      const m = memberMap.get(s.user_id) as any
       return m?.team_id === member.team_id
     })
-    const teamRank = teamMembers.findIndex(s => s.user_id === userId) + 1
+    const teamRank = teamMembers.findIndex((s: any) => s.user_id === userId) + 1
 
     await supabase
       .from('member_scores')

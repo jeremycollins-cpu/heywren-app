@@ -55,8 +55,7 @@ export async function GET(request: NextRequest) {
     const { organization_id } = callerMembership
 
     // Get the most recent completed week (previous week)
-    const currentWeek = getWeekStart()
-    const previousWeek = getPreviousWeekStart()
+    const previousWeek = getPreviousWeekStart(getWeekStart())
 
     // Two weeks ago for delta calculation
     const twoWeeksAgo = new Date(previousWeek + 'T00:00:00Z')

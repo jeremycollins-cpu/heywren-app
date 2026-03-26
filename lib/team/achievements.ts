@@ -70,15 +70,15 @@ export async function checkAndAwardAchievements(
     .in('user_id', userIds)
 
   const earnedSet = new Set(
-    (earnedAchievements || []).map(ea => `${ea.user_id}:${ea.achievement_id}`)
+    (earnedAchievements || []).map((ea: any) => `${ea.user_id}:${ea.achievement_id}`)
   )
 
   const cumulativeMap = new Map(
-    (memberScores || []).map(ms => [ms.user_id, ms])
+    (memberScores || []).map((ms: any) => [ms.user_id, ms])
   )
 
   for (const weekScore of weeklyScores) {
-    const cumulative = cumulativeMap.get(weekScore.userId)
+    const cumulative = cumulativeMap.get(weekScore.userId) as any
     if (!cumulative) continue
 
     const stats: MemberCumulativeStats = {

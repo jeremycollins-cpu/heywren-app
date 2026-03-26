@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       achievementsRes,
       memberAchievementsRes,
       challengesRes,
-      achievementDefsRes,
+      _achievementDefsRes,
       profilesRes,
       orgRes,
     ] = await Promise.all([
