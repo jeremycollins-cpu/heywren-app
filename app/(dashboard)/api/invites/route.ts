@@ -192,9 +192,9 @@ export async function POST(request: NextRequest) {
     const token = crypto.randomUUID()
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
 
-    // Resolve department/team defaults for dept_manager
-    const finalDepartmentId = departmentId || (membership.role === 'dept_manager' ? membership.department_id : null)
-    const finalTeamId = teamId || null
+    // Resolve department/team defaults — fall back to inviter's own dept/team
+    const finalDepartmentId = departmentId || membership.department_id
+    const finalTeamId = teamId || membership.team_id
 
     // If a previous invite was revoked/expired, delete it so the unique constraint is satisfied
     await admin

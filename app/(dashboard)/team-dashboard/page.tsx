@@ -123,7 +123,33 @@ export default function TeamDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'achievements' | 'challenges'>('leaderboard')
   const [showCreateChallenge, setShowCreateChallenge] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
   const supabase = createClient()
+
+  const handleBackfillScores = async () => {
+    try {
+      setBackfilling(true)
+      const { data: user } = await supabase.auth.getUser()
+      if (!user?.user) return
+      const res = await fetch(`/api/admin/backfill-scores?weeks=8`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.user.id }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.error || 'Backfill failed')
+        return
+      }
+      const result = await res.json()
+      toast.success(`Scores calculated for ${result.scoreCalculation?.weeksProcessed || 0} weeks`)
+      await loadDashboard()
+    } catch {
+      toast.error('Failed to calculate scores')
+    } finally {
+      setBackfilling(false)
+    }
+  }
 
   const handleExportReport = async () => {
     try {
@@ -185,6 +211,54 @@ export default function TeamDashboardPage() {
           Export Report
         </button>
       </div>
+
+      {/* Getting Started Banner — shown when no scores exist yet */}
+      {trends.length === 0 && leaderboard.length === 0 && (
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center">
+              <Rocket className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-indigo-900 dark:text-indigo-200">
+                Welcome to your Team Dashboard
+              </h3>
+              <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-1">
+                Scores are calculated weekly (every Monday). To populate the dashboard with your existing activity data, click the button below.
+                Once calculated, you will see leaderboards, streaks, achievements, and team health metrics here.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {data.callerRole === 'org_admin' && (
+                  <button
+                    onClick={handleBackfillScores}
+                    disabled={backfilling}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition"
+                  >
+                    {backfilling ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Calculating...
+                      </>
+                    ) : (
+                      <>
+                        <BarChart3 className="w-4 h-4" />
+                        Calculate Scores Now
+                      </>
+                    )}
+                  </button>
+                )}
+                <a
+                  href="/onboarding/invite"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-white dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/60 transition"
+                >
+                  <Users className="w-4 h-4" />
+                  Invite Team Members
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

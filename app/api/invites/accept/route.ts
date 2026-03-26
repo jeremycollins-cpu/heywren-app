@@ -180,6 +180,41 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Resolve department_id and team_id — organization_members requires both NOT NULL
+    let inviteDeptId = invitation.department_id
+    let inviteTeamId = invitation.team_id
+
+    if (!inviteDeptId || !inviteTeamId) {
+      // Fall back to the org's default department and team
+      if (!inviteDeptId) {
+        const { data: defaultDept } = await admin
+          .from('departments')
+          .select('id')
+          .eq('organization_id', invitation.organization_id)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single()
+        inviteDeptId = defaultDept?.id || null
+      }
+
+      if (!inviteTeamId && inviteDeptId) {
+        const { data: defaultTeam } = await admin
+          .from('teams')
+          .select('id')
+          .eq('organization_id', invitation.organization_id)
+          .eq('department_id', inviteDeptId)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single()
+        inviteTeamId = defaultTeam?.id || null
+      }
+
+      if (!inviteDeptId || !inviteTeamId) {
+        console.error('[invites/accept/POST] No default department/team found for org:', invitation.organization_id)
+        return NextResponse.json({ error: 'Organization is not fully set up. Contact your admin.' }, { status: 500 })
+      }
+    }
+
     // Create organization_members record
     const { error: memberError } = await admin
       .from('organization_members')
@@ -187,8 +222,8 @@ export async function POST(request: NextRequest) {
         organization_id: invitation.organization_id,
         user_id: user.id,
         role: invitation.role,
-        department_id: invitation.department_id || null,
-        team_id: invitation.team_id || null,
+        department_id: inviteDeptId,
+        team_id: inviteTeamId,
       })
 
     if (memberError) {
@@ -196,15 +231,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to join organization' }, { status: 500 })
     }
 
-    // If a team_id is specified, also add to team_members
-    if (invitation.team_id) {
+    // Also add to team_members for legacy compatibility
+    if (inviteTeamId) {
       const { error: teamError } = await admin
         .from('team_members')
-        .insert({
-          team_id: invitation.team_id,
+        .upsert({
+          team_id: inviteTeamId,
           user_id: user.id,
           role: invitation.role === 'team_lead' ? 'team_lead' : 'member',
-        })
+        }, { onConflict: 'team_id,user_id' })
 
       if (teamError) {
         console.error('[invites/accept/POST] Failed to add to team:', teamError.message)
@@ -215,12 +250,8 @@ export async function POST(request: NextRequest) {
     // Update profile with organization/department info
     const profileUpdate: Record<string, string | null> = {
       organization_id: invitation.organization_id,
-    }
-    if (invitation.department_id) {
-      profileUpdate.department_id = invitation.department_id
-    }
-    if (invitation.team_id) {
-      profileUpdate.current_team_id = invitation.team_id
+      department_id: inviteDeptId,
+      current_team_id: inviteTeamId,
     }
 
     const { error: profileError } = await admin
@@ -251,11 +282,11 @@ export async function POST(request: NextRequest) {
       .single()
 
     let teamName: string | null = null
-    if (invitation.team_id) {
+    if (inviteTeamId) {
       const { data: team } = await admin
         .from('teams')
         .select('name')
-        .eq('id', invitation.team_id)
+        .eq('id', inviteTeamId)
         .single()
       teamName = team?.name || null
     }
@@ -264,9 +295,9 @@ export async function POST(request: NextRequest) {
       success: true,
       organization_id: invitation.organization_id,
       organization_name: org?.name || null,
-      team_id: invitation.team_id || null,
+      team_id: inviteTeamId,
       team_name: teamName,
-      department_id: invitation.department_id || null,
+      department_id: inviteDeptId,
       role: invitation.role,
     })
   } catch (err) {
