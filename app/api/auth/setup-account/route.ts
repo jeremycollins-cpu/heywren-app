@@ -3,12 +3,15 @@ import { stripe } from '@/lib/stripe/server'
 import { createClient } from '@supabase/supabase-js'
 
 // Use service role to bypass RLS — this is a server-only route
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getAdminClient()
   try {
     const { sessionId, userId, email, companyName } = await request.json()
 

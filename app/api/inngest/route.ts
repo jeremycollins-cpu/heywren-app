@@ -20,6 +20,8 @@ import {
   handleGoogleMeetRecording,
   scheduledPlatformSync,
 } from '@/inngest/functions/sync-platform-recordings'
+import { calculateWeeklyScoresJob } from '@/inngest/functions/calculate-weekly-scores'
+import { managerWeeklyDigest } from '@/inngest/functions/manager-weekly-digest'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -38,5 +40,7 @@ export const { GET, POST, PUT } = serve({
     handleZoomRecordingCompleted, // Webhook: Zoom recording completed → download transcript
     handleGoogleMeetRecording,   // Webhook: Google Meet recording available → trigger sync
     scheduledPlatformSync,       // Cron: every 30 min — sync all connected platform recordings
+    calculateWeeklyScoresJob,    // Monday 6 AM UTC — weekly scores, streaks, achievements, leaderboards
+    managerWeeklyDigest,         // Monday 8 AM UTC — BI digest DM to managers via Slack
   ],
 })

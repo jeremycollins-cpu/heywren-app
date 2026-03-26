@@ -3,12 +3,15 @@ import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureTeamForUser } from '@/lib/team/ensure-team'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getAdminClient()
   try {
     // Authenticate the user via session
     const supabase = await createSessionClient()
@@ -18,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = userData.user.id
-    const { fullName, jobTitle, companyName, teamSize } = await request.json()
+    const { fullName, jobTitle, companyName, teamSize, departmentName, teamName } = await request.json()
 
     if (!fullName?.trim()) {
       return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
@@ -75,7 +78,11 @@ export async function POST(request: NextRequest) {
     // Ensure user has a team — uses shared utility that handles all fallback paths
     // and guarantees both team_members and profiles.current_team_id are consistent
     try {
-      await ensureTeamForUser(userId, { companyName: companyName?.trim() })
+      await ensureTeamForUser(userId, {
+        companyName: companyName?.trim(),
+        departmentName: departmentName?.trim() || undefined,
+        teamName: teamName?.trim() || undefined,
+      })
     } catch (teamErr) {
       console.error('Failed to ensure team during onboarding:', teamErr)
       // Non-fatal — user can still complete onboarding, team will be resolved later

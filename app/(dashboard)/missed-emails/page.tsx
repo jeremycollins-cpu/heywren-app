@@ -659,7 +659,7 @@ export default function MissedEmailsPage() {
       {feedbackModal?.show && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setFeedbackModal(null)}>
           <div className="bg-white dark:bg-surface-dark-secondary rounded-xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Why isn't this helpful?</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Why isn&apos;t this helpful?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Your feedback trains the AI to be smarter for everyone.
             </p>

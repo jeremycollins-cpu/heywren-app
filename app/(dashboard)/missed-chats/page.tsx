@@ -207,7 +207,7 @@ export default function MissedChatsPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Missed Chats</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Slack @mentions and DMs you haven't responded to
+            Slack @mentions and DMs you haven&apos;t responded to
           </p>
         </div>
         <button

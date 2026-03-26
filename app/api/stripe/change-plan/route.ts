@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { stripe } from '@/lib/stripe/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 const PRICE_IDS: Record<string, string> = {
   basic: process.env.STRIPE_BASIC_PRICE_ID!,
@@ -14,6 +16,7 @@ const PRICE_IDS: Record<string, string> = {
 }
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = getAdminClient()
   try {
     // Origin validation
     const origin = request.headers.get('origin')

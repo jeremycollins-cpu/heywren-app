@@ -19,7 +19,7 @@ export const processSlackMessage = inngest.createFunction(
   {
     id: 'process-slack-message',
     retries: 2,
-    concurrency: { limit: 10 },
+    concurrency: { limit: 5 },
   },
   { event: 'slack/message.received' },
   async ({ event, step }) => {
