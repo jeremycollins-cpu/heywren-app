@@ -184,9 +184,9 @@ async function getOrgHierarchyMembers(
   const teamMap = new Map((teams || []).map((t: any) => [t.id, t]))
 
   const members = orgMembers.map((m: any) => {
-    const p = profileMap.get(m.user_id)
-    const dept = deptMap.get(m.department_id)
-    const team = teamMap.get(m.team_id)
+    const p: any = profileMap.get(m.user_id)
+    const dept: any = deptMap.get(m.department_id)
+    const team: any = teamMap.get(m.team_id)
     return {
       id: m.id,
       user_id: m.user_id,
@@ -211,7 +211,7 @@ async function getOrgHierarchyMembers(
     callerDepartmentId: department_id,
     callerTeamId: team_id,
     teamId: team_id,
-    teamName: teamMap.get(team_id)?.name || null,
+    teamName: (teamMap.get(team_id) as any)?.name || null,
   })
 }
 

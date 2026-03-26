@@ -247,7 +247,7 @@ export const sendNudges = inngest.createFunction(
             sent_at: new Date().toISOString(),
           }))
 
-          await supabase.from('nudges').insert(failedRows).catch(() => {})
+          try { await supabase.from('nudges').insert(failedRows) } catch {}
         }
       })
     }
