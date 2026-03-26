@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
-  Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle
+  Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
+  Trophy
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -41,6 +42,16 @@ export default function SettingsPage() {
   const [newBlockedEntry, setNewBlockedEntry] = useState('')
   const [showAddVip, setShowAddVip] = useState(false)
   const [showAddBlocked, setShowAddBlocked] = useState(false)
+  // Gamification notification preferences
+  const [gamificationPrefs, setGamificationPrefs] = useState({
+    achievement_notifications: true,
+    streak_notifications: true,
+    leaderboard_notifications: true,
+    challenge_notifications: true,
+    weekly_digest: true,
+    celebration_posts: true,
+  })
+  const [gamificationPrefsLoading, setGamificationPrefsLoading] = useState(true)
 
   const supabase = createClient()
 
@@ -69,6 +80,20 @@ export default function SettingsPage() {
       setEmailPrefsLoading(false)
     }
     fetchEmailPrefs()
+
+    const fetchGamificationPrefs = async () => {
+      try {
+        const res = await fetch('/api/notification-preferences')
+        const data = await res.json()
+        if (data.preferences) {
+          setGamificationPrefs(data.preferences)
+        }
+      } catch (err) {
+        console.error('Error fetching gamification notification preferences:', err)
+      }
+      setGamificationPrefsLoading(false)
+    }
+    fetchGamificationPrefs()
   }, [])
 
   const saveEmailPrefs = async () => {
@@ -151,6 +176,27 @@ export default function SettingsPage() {
       ? current.filter(c => c !== cat)
       : [...current, cat]
     setEmailPrefs({ ...emailPrefs, enabled_categories: updated })
+  }
+
+  const toggleGamificationPref = async (key: keyof typeof gamificationPrefs) => {
+    const updated = { ...gamificationPrefs, [key]: !gamificationPrefs[key] }
+    setGamificationPrefs(updated) // optimistic update
+    try {
+      const res = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      })
+      const data = await res.json()
+      if (data.error) {
+        // revert on error
+        setGamificationPrefs(gamificationPrefs)
+        toast.error(data.error)
+      }
+    } catch {
+      setGamificationPrefs(gamificationPrefs) // revert
+      toast.error('Failed to update notification preference')
+    }
   }
 
   useEffect(() => {
@@ -754,6 +800,83 @@ export default function SettingsPage() {
             >
               {savingEmailPrefs ? 'Saving...' : 'Save Email Preferences'}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* Gamification Notifications */}
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+          <Trophy aria-hidden="true" className="w-5 h-5" />
+          Gamification Notifications
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Choose which gamification events trigger notifications for you.
+        </p>
+
+        {gamificationPrefsLoading ? (
+          <div className="animate-pulse space-y-4" role="status" aria-busy="true" aria-label="Loading gamification notification preferences">
+            {[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {([
+              {
+                id: 'achievement_notifications' as const,
+                label: 'Achievement Notifications',
+                description: 'Notify when you earn badges and achievements',
+              },
+              {
+                id: 'streak_notifications' as const,
+                label: 'Streak Notifications',
+                description: 'Notify about streak milestones and streaks at risk',
+              },
+              {
+                id: 'leaderboard_notifications' as const,
+                label: 'Leaderboard Notifications',
+                description: 'Notify when your rank changes on the leaderboard',
+              },
+              {
+                id: 'challenge_notifications' as const,
+                label: 'Challenge Notifications',
+                description: 'Notify about team challenge progress and completions',
+              },
+              {
+                id: 'weekly_digest' as const,
+                label: 'Weekly Digest',
+                description: 'Receive a weekly summary of your gamification stats',
+              },
+              {
+                id: 'celebration_posts' as const,
+                label: 'Celebration Posts (Public)',
+                description: 'Post your achievements to the team channel',
+              },
+            ]).map((setting) => (
+              <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">{setting.label}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{setting.description}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={gamificationPrefs[setting.id]}
+                  aria-label={setting.label}
+                  onClick={() => toggleGamificationPref(setting.id)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                    gamificationPrefs[setting.id]
+                      ? 'bg-indigo-600'
+                      : 'bg-gray-200 dark:bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      gamificationPrefs[setting.id] ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

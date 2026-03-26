@@ -7,8 +7,9 @@ import {
   Medal, Star, Crown, Shield, Users, Building2,
   CheckCircle2, BarChart3, Heart, Target,
   ChevronUp, ChevronDown, Award, Zap, Timer,
-  Clock, Inbox, Rocket, MailCheck,
+  Clock, Inbox, Rocket, MailCheck, Download, Plus, X,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -121,7 +122,23 @@ export default function TeamDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'achievements' | 'challenges'>('leaderboard')
+  const [showCreateChallenge, setShowCreateChallenge] = useState(false)
   const supabase = createClient()
+
+  const handleExportReport = async () => {
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      if (!user?.user) return
+      const res = await fetch(`/api/team-report?userId=${user.user.id}&format=html`)
+      if (!res.ok) throw new Error('Failed to generate report')
+      const html = await res.text()
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+    } catch {
+      toast.error('Failed to export report')
+    }
+  }
 
   useEffect(() => {
     loadDashboard()
@@ -153,11 +170,20 @@ export default function TeamDashboardPage() {
     <UpgradeGate featureKey="team_management">
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Team Dashboard</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          {data.organization?.name} · Weekly performance, leaderboards, and achievements
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Team Dashboard</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            {data.organization?.name} · Weekly performance, leaderboards, and achievements
+          </p>
+        </div>
+        <button
+          onClick={handleExportReport}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+        >
+          <Download className="w-4 h-4" />
+          Export Report
+        </button>
       </div>
 
       {/* Top Stats Row */}
@@ -272,7 +298,14 @@ export default function TeamDashboardPage() {
             />
           )}
           {activeTab === 'challenges' && (
-            <ChallengesSection challenges={challenges} />
+            <ChallengesSection
+              challenges={challenges}
+              callerRole={data.callerRole}
+              showCreate={showCreateChallenge}
+              onToggleCreate={() => setShowCreateChallenge(!showCreateChallenge)}
+              organizationId={data.organization?.id}
+              onChallengeCreated={loadDashboard}
+            />
           )}
         </div>
       </div>
@@ -532,71 +565,228 @@ function AchievementsSection({ achievements, myAchievements }: {
   )
 }
 
-function ChallengesSection({ challenges }: { challenges: Challenge[] }) {
-  if (challenges.length === 0) {
-    return (
-      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
-        <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <p className="text-gray-500">No active challenges</p>
-        <p className="text-sm text-gray-400 mt-1">Org admins can create team challenges to drive engagement</p>
-      </div>
-    )
+const METRIC_LABELS: Record<string, string> = {
+  commitments_completed: 'Commitments Completed',
+  points_earned: 'Points Earned',
+  response_rate: 'Response Rate (%)',
+  on_time_rate: 'On-Time Rate (%)',
+  streak_members: 'Members on Streaks',
+}
+
+function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate, organizationId, onChallengeCreated }: {
+  challenges: Challenge[]
+  callerRole: string
+  showCreate: boolean
+  onToggleCreate: () => void
+  organizationId?: string
+  onChallengeCreated: () => void
+}) {
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    scopeType: 'organization' as string,
+    targetMetric: 'commitments_completed' as string,
+    targetValue: 50,
+    duration: '7', // days
+  })
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleCreate = async () => {
+    if (!form.title || !organizationId) return
+    setSubmitting(true)
+    try {
+      const now = new Date()
+      const endsAt = new Date(now)
+      endsAt.setDate(endsAt.getDate() + parseInt(form.duration))
+
+      const res = await fetch('/api/team-challenges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description || null,
+          scopeType: form.scopeType,
+          scopeId: organizationId,
+          targetMetric: form.targetMetric,
+          targetValue: form.targetValue,
+          startsAt: now.toISOString(),
+          endsAt: endsAt.toISOString(),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to create challenge')
+      toast.success('Challenge created!')
+      onToggleCreate()
+      setForm({ title: '', description: '', scopeType: 'organization', targetMetric: 'commitments_completed', targetValue: 50, duration: '7' })
+      onChallengeCreated()
+    } catch {
+      toast.error('Failed to create challenge')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="space-y-3">
-      {challenges.map(c => {
-        const isComplete = c.status === 'completed'
-        const daysLeft = Math.max(0, Math.ceil((new Date(c.ends_at).getTime() - Date.now()) / 86400000))
-
-        return (
-          <div
-            key={c.id}
-            className={`p-5 rounded-xl border transition ${
-              isComplete
-                ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'
-                : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark'
-            }`}
+    <div className="space-y-4">
+      {/* Create Challenge Button (org_admin only) */}
+      {callerRole === 'org_admin' && (
+        <div className="flex justify-end">
+          <button
+            onClick={onToggleCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg transition"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
           >
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{c.title}</h3>
-                  {isComplete && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Complete
-                    </span>
-                  )}
-                </div>
-                {c.description && (
-                  <p className="text-sm text-gray-500 mt-0.5">{c.description}</p>
-                )}
-              </div>
-              {!isComplete && (
-                <span className="text-xs text-gray-400 whitespace-nowrap">
-                  {daysLeft} day{daysLeft !== 1 ? 's' : ''} left
-                </span>
-              )}
-            </div>
+            {showCreate ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {showCreate ? 'Cancel' : 'Create Challenge'}
+          </button>
+        </div>
+      )}
 
-            {/* Progress bar */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    isComplete ? 'bg-green-500' : 'bg-indigo-500'
-                  }`}
-                  style={{ width: `${c.progress}%` }}
-                />
-              </div>
-              <span className="text-sm font-bold text-gray-900 dark:text-white whitespace-nowrap">
-                {c.current_value} / {c.target_value}
-              </span>
+      {/* Create Challenge Form */}
+      {showCreate && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-5 space-y-4">
+          <h3 className="font-semibold text-gray-900 dark:text-white">New Team Challenge</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Title</label>
+              <input
+                type="text"
+                value={form.title}
+                onChange={e => setForm({ ...form, title: e.target.value })}
+                placeholder="e.g. Complete 100 items this week"
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Description (optional)</label>
+              <input
+                type="text"
+                value={form.description}
+                onChange={e => setForm({ ...form, description: e.target.value })}
+                placeholder="What's the goal?"
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Scope</label>
+              <select
+                value={form.scopeType}
+                onChange={e => setForm({ ...form, scopeType: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              >
+                <option value="organization">Whole Organization</option>
+                <option value="department">Department</option>
+                <option value="team">Team</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Metric</label>
+              <select
+                value={form.targetMetric}
+                onChange={e => setForm({ ...form, targetMetric: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              >
+                {Object.entries(METRIC_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Target Value</label>
+              <input
+                type="number"
+                min={1}
+                value={form.targetValue}
+                onChange={e => setForm({ ...form, targetValue: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Duration</label>
+              <select
+                value={form.duration}
+                onChange={e => setForm({ ...form, duration: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              >
+                <option value="7">1 Week</option>
+                <option value="14">2 Weeks</option>
+                <option value="30">1 Month</option>
+                <option value="90">1 Quarter</option>
+              </select>
             </div>
           </div>
-        )
-      })}
+          <div className="flex justify-end">
+            <button
+              onClick={handleCreate}
+              disabled={!form.title || submitting}
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+            >
+              {submitting ? 'Creating...' : 'Create Challenge'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Challenge list */}
+      {challenges.length === 0 && !showCreate ? (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
+          <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500">No active challenges</p>
+          <p className="text-sm text-gray-400 mt-1">
+            {callerRole === 'org_admin' ? 'Create a challenge to drive team engagement' : 'Org admins can create team challenges'}
+          </p>
+        </div>
+      ) : (
+        challenges.map(c => {
+          const isComplete = c.status === 'completed'
+          const daysLeft = Math.max(0, Math.ceil((new Date(c.ends_at).getTime() - Date.now()) / 86400000))
+
+          return (
+            <div
+              key={c.id}
+              className={`p-5 rounded-xl border transition ${
+                isComplete
+                  ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'
+                  : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{c.title}</h3>
+                    {isComplete && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Complete
+                      </span>
+                    )}
+                  </div>
+                  {c.description && (
+                    <p className="text-sm text-gray-500 mt-0.5">{c.description}</p>
+                  )}
+                </div>
+                {!isComplete && (
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                    {daysLeft} day{daysLeft !== 1 ? 's' : ''} left
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isComplete ? 'bg-green-500' : 'bg-indigo-500'
+                    }`}
+                    style={{ width: `${c.progress}%` }}
+                  />
+                </div>
+                <span className="text-sm font-bold text-gray-900 dark:text-white whitespace-nowrap">
+                  {c.current_value} / {c.target_value}
+                </span>
+              </div>
+            </div>
+          )
+        })
+      )}
     </div>
   )
 }

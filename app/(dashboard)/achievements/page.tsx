@@ -1,298 +1,180 @@
 // app/(dashboard)/achievements/page.tsx
-// Achievements v3 — Matches demo with Unlocked/In Progress sections, streak, XP
-// Split into: summary stats, Unlocked cards, In Progress with progress bars
+// Achievements page — DB-backed via /api/team-dashboard
+// Shows user level/XP from member_scores, earned achievements, progress, streaks
 
 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import {
+  Trophy, Flame, Award, Zap, Timer, Clock, Inbox, Rocket,
+  CheckCircle2, TrendingUp, Users, Star, MailCheck, Target,
+} from 'lucide-react'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Achievement {
   id: string
-  icon: string
+  slug: string
   name: string
   description: string
-  target: number
-  current: number
-  xp: number
-  earnedDate: string | null
+  category: string
+  tier: string
+  icon: string
+  threshold: number
+  earnedBy: number
+  earnedByMe: boolean
 }
 
-function daysSince(dateStr: string): number {
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
+interface MyAchievement {
+  achievement_id: string
+  earned_at: string
+  name: string
+  description: string
+  tier: string
+  icon: string
+  category: string
 }
 
-function getStreakDays(dates: Set<string>): number {
-  let streak = 0
-  const today = new Date()
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const key = d.toISOString().split('T')[0]
-    if (dates.has(key)) {
-      streak++
-    } else if (i > 0) break
-  }
-  return streak
+interface LeaderboardEntry {
+  userId: string
+  totalPoints: number
+  currentStreak: number
+  longestStreak: number
+  totalCompleted: number
 }
 
-function getLevel(xp: number): string {
-  if (xp >= 3000) return 'Legend'
-  if (xp >= 2000) return 'Expert'
-  if (xp >= 1500) return 'Master'
-  if (xp >= 1000) return 'Consistent'
-  if (xp >= 500) return 'Building'
-  if (xp >= 200) return 'Warming Up'
-  return 'Getting Started'
+interface DashboardData {
+  leaderboard: LeaderboardEntry[]
+  achievements: Achievement[]
+  myAchievements: MyAchievement[]
 }
+
+// ── Level system ──────────────────────────────────────────────────────────────
+
+const LEVELS = [
+  { name: 'Getting Started', min: 0, max: 99 },
+  { name: 'Contributor', min: 100, max: 299 },
+  { name: 'Achiever', min: 300, max: 699 },
+  { name: 'Expert', min: 700, max: 1499 },
+  { name: 'Champion', min: 1500, max: 2999 },
+  { name: 'Legend', min: 3000, max: Infinity },
+]
+
+function getLevel(points: number) {
+  const level = LEVELS.find(l => points >= l.min && points <= l.max) || LEVELS[0]
+  const nextLevel = LEVELS[LEVELS.indexOf(level) + 1]
+  const progressInLevel = points - level.min
+  const levelRange = (level.max === Infinity ? 1000 : level.max - level.min + 1)
+  const progressPercent = Math.min(100, Math.round((progressInLevel / levelRange) * 100))
+  return { ...level, progressPercent, nextLevel: nextLevel || null, pointsToNext: nextLevel ? nextLevel.min - points : 0 }
+}
+
+// ── Icon map ──────────────────────────────────────────────────────────────────
+
+const ICON_MAP: Record<string, typeof Trophy> = {
+  trophy: Trophy, flame: Flame, award: Award, zap: Zap, timer: Timer,
+  clock: Clock, inbox: Inbox, rocket: Rocket, 'check-circle': CheckCircle2,
+  'mail-check': MailCheck, mail: Inbox, 'trending-up': TrendingUp,
+  users: Users, star: Star, target: Target,
+}
+
+const TIER_COLORS: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+  bronze:   { bg: 'bg-orange-50 dark:bg-orange-900/20',   text: 'text-orange-700 dark:text-orange-400',   border: 'border-orange-200 dark:border-orange-800', badge: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400' },
+  silver:   { bg: 'bg-gray-50 dark:bg-gray-800',          text: 'text-gray-700 dark:text-gray-300',       border: 'border-gray-300 dark:border-gray-600',     badge: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' },
+  gold:     { bg: 'bg-yellow-50 dark:bg-yellow-900/20',   text: 'text-yellow-700 dark:text-yellow-400',   border: 'border-yellow-200 dark:border-yellow-800', badge: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' },
+  platinum: { bg: 'bg-indigo-50 dark:bg-indigo-900/20',   text: 'text-indigo-700 dark:text-indigo-400',   border: 'border-indigo-200 dark:border-indigo-800', badge: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400' },
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  completion: 'Completion',
+  response: 'Responsiveness',
+  streak: 'Streaks',
+  speed: 'Speed',
+  volume: 'Volume',
+  team: 'Teamwork',
+}
+
+const CATEGORY_ORDER = ['completion', 'response', 'streak', 'speed', 'volume', 'team']
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AchievementsPage() {
   const [achievements, setAchievements] = useState<Achievement[]>([])
-  const [totalXP, setTotalXP] = useState(0)
-  const [streak, setStreak] = useState(0)
+  const [myAchievements, setMyAchievements] = useState<MyAchievement[]>([])
+  const [totalPoints, setTotalPoints] = useState(0)
+  const [currentStreak, setCurrentStreak] = useState(0)
+  const [longestStreak, setLongestStreak] = useState(0)
+  const [totalCompleted, setTotalCompleted] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [commitmentCount, setCommitmentCount] = useState(0)
 
   useEffect(() => {
     async function load() {
       try {
-      const supabase = createClient()
+        const supabase = createClient()
+        const { data: userData } = await supabase.auth.getUser()
+        if (!userData?.user) { setLoading(false); return }
 
-      // Get authenticated user and their current team
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData?.user) { setLoading(false); return }
+        const res = await fetch(`/api/team-dashboard?userId=${userData.user.id}`, { cache: 'no-store' })
+        if (!res.ok) {
+          setError('Failed to load achievements data')
+          setLoading(false)
+          return
+        }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', userData.user.id)
-        .single()
+        const data: DashboardData = await res.json()
 
-      const teamId = profile?.current_team_id
-      if (!teamId) { setLoading(false); return }
+        setAchievements(data.achievements || [])
+        setMyAchievements(data.myAchievements || [])
 
-      const { data: commitments } = await supabase
-        .from('commitments')
-        .select('id, status, source, created_at, updated_at')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: false })
-
-      if (!commitments) { setLoading(false); return }
-      setCommitmentCount(commitments.length)
-
-      const total = commitments.length
-      const completed = commitments.filter(c => c.status === 'completed').length
-      const slackCount = commitments.filter(c => c.source === 'slack').length
-      const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
-      const hasMultiChannel = slackCount > 0 && outlookCount > 0
-
-      // Calculate streak
-      const activityDates = new Set<string>()
-      commitments.forEach(c => {
-        activityDates.add(new Date(c.created_at).toISOString().split('T')[0])
-        activityDates.add(new Date(c.updated_at).toISOString().split('T')[0])
-      })
-      const streakDays = getStreakDays(activityDates)
-      setStreak(streakDays)
-
-      // Calculate XP
-      const xp = (total * 10) + (completed * 25)
-      setTotalXP(xp)
-
-      // Build achievements
-      const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      const achList: Achievement[] = [
-        {
-          id: 'first-spark',
-          icon: '🔥',
-          name: 'First Spark',
-          description: 'Complete your first nudge',
-          target: 1,
-          current: completed,
-          xp: 50,
-          earnedDate: completed >= 1 ? `Day 1 · +50 XP` : null,
-        },
-        {
-          id: 'first-steps',
-          icon: '👣',
-          name: 'First Steps',
-          description: 'Track your first commitment',
-          target: 1,
-          current: total,
-          xp: 50,
-          earnedDate: total >= 1 ? `Day 1 · +50 XP` : null,
-        },
-        {
-          id: 'getting-started',
-          icon: '📦',
-          name: 'Getting Started',
-          description: 'Track 10 commitments',
-          target: 10,
-          current: total,
-          xp: 100,
-          earnedDate: total >= 10 ? `Earned · +100 XP` : null,
-        },
-        {
-          id: 'momentum-builder',
-          icon: '⚡',
-          name: 'Momentum Builder',
-          description: '5-day follow-through streak',
-          target: 5,
-          current: streakDays,
-          xp: 150,
-          earnedDate: streakDays >= 5 ? `Day ${Math.min(streakDays, 6)} · +150 XP` : null,
-        },
-        {
-          id: 'commitment-tracker',
-          icon: '📊',
-          name: 'Commitment Tracker',
-          description: 'Track 25 commitments',
-          target: 25,
-          current: total,
-          xp: 200,
-          earnedDate: total >= 25 ? `Earned · +200 XP` : null,
-        },
-        {
-          id: 'sharpshooter',
-          icon: '🎯',
-          name: 'Sharpshooter',
-          description: 'Clear 3 urgent items in one day',
-          target: 3,
-          current: Math.min(completed, 3),
-          xp: 200,
-          earnedDate: completed >= 3 ? `Earned · +200 XP` : null,
-        },
-        {
-          id: 'follow-through-pro',
-          icon: '✅',
-          name: 'Follow-Through Pro',
-          description: 'Complete 5 commitments',
-          target: 5,
-          current: completed,
-          xp: 150,
-          earnedDate: completed >= 5 ? `Earned · +150 XP` : null,
-        },
-        {
-          id: 'connector',
-          icon: '🔗',
-          name: 'Connector',
-          description: 'Follow through on 5 relationship commitments',
-          target: 5,
-          current: Math.min(completed, 5),
-          xp: 200,
-          earnedDate: completed >= 5 ? `Day 10 · +200 XP` : null,
-        },
-        {
-          id: 'slack-native',
-          icon: '#️⃣',
-          name: 'Slack Native',
-          description: 'Capture 10 commitments from Slack',
-          target: 10,
-          current: slackCount,
-          xp: 100,
-          earnedDate: slackCount >= 10 ? `Earned · +100 XP` : null,
-        },
-        {
-          id: 'email-wrangler',
-          icon: '📧',
-          name: 'Email Wrangler',
-          description: 'Capture 10 commitments from Outlook',
-          target: 10,
-          current: outlookCount,
-          xp: 100,
-          earnedDate: outlookCount >= 10 ? `Earned · +100 XP` : null,
-        },
-        {
-          id: 'wren-whisperer',
-          icon: '💬',
-          name: 'Wren Whisperer',
-          description: 'Teach Wren 10 things via @HeyWren',
-          target: 10,
-          current: slackCount, // approximate
-          xp: 150,
-          earnedDate: slackCount >= 10 ? `Day 12 · +150 XP` : null,
-        },
-        {
-          id: 'multi-channel',
-          icon: '🔀',
-          name: 'Multi-Channel',
-          description: 'Have commitments from both Slack and Outlook',
-          target: 1,
-          current: hasMultiChannel ? 1 : 0,
-          xp: 150,
-          earnedDate: hasMultiChannel ? `Earned · +150 XP` : null,
-        },
-        {
-          id: 'delegate-master',
-          icon: '📋',
-          name: 'Delegate Master',
-          description: '100% delegation check-in rate for a week',
-          target: 100,
-          current: Math.min(completed * 10, 70),
-          xp: 250,
-          earnedDate: null,
-        },
-        {
-          id: 'summit-week',
-          icon: '⛰️',
-          name: 'Summit Week',
-          description: '90%+ follow-through for a full week',
-          target: 90,
-          current: Math.round((completed / Math.max(total, 1)) * 100 * 0.8),
-          xp: 300,
-          earnedDate: null,
-        },
-        {
-          id: 'century-club',
-          icon: '💯',
-          name: 'Century Club',
-          description: 'Track 100 commitments',
-          target: 100,
-          current: total,
-          xp: 500,
-          earnedDate: total >= 100 ? `Earned · +500 XP` : null,
-        },
-        {
-          id: 'streak-legend',
-          icon: '🔥',
-          name: 'Streak Legend',
-          description: '30-day consecutive streak',
-          target: 30,
-          current: streakDays,
-          xp: 500,
-          earnedDate: streakDays >= 30 ? `Earned · +500 XP` : null,
-        },
-      ]
-
-      setAchievements(achList)
-      setLoading(false)
+        // Find this user's scores from leaderboard
+        const myEntry = (data.leaderboard || []).find(e => e.userId === userData.user!.id)
+        if (myEntry) {
+          setTotalPoints(myEntry.totalPoints)
+          setCurrentStreak(myEntry.currentStreak)
+          setLongestStreak(myEntry.longestStreak)
+          setTotalCompleted(myEntry.totalCompleted)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load achievements'
         setError(message)
-        toast.error(message)
+      } finally {
         setLoading(false)
       }
     }
     load()
   }, [])
 
-  if (loading) {
-    return <LoadingSkeleton variant="card" />
-  }
+  if (loading) return <LoadingSkeleton variant="card" />
 
-  const unlocked = achievements.filter(a => a.earnedDate !== null)
-  const inProgress = achievements.filter(a => a.earnedDate === null && a.current > 0)
-  const locked = achievements.filter(a => a.earnedDate === null && a.current === 0)
-  const level = getLevel(totalXP)
+  const level = getLevel(totalPoints)
+  const earnedIds = new Set(myAchievements.map(a => a.achievement_id))
+  const earned = achievements.filter(a => earnedIds.has(a.id))
+  const unearned = achievements.filter(a => !earnedIds.has(a.id))
+
+  // Group earned by category
+  const earnedByCategory = CATEGORY_ORDER
+    .map(cat => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat],
+      achievements: earned.filter(a => a.category === cat),
+    }))
+    .filter(g => g.achievements.length > 0)
+
+  // Build my achievements map for earned_at dates
+  const myAchMap = new Map(myAchievements.map(a => [a.achievement_id, a]))
+
+  const hasData = achievements.length > 0 || myAchievements.length > 0
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Achievements</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Milestones earned through consistent follow-through</p>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+          Milestones earned through consistent follow-through
+        </p>
       </div>
 
       {error && (
@@ -301,97 +183,221 @@ export default function AchievementsPage() {
         </div>
       )}
 
-      {commitmentCount === 0 && !error && (
+      {!hasData && !error && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="text-5xl mb-4">🏆</div>
+          <Trophy className="w-12 h-12 text-gray-300 mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No achievements yet</h3>
           <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-            Start tracking commitments to unlock achievements and earn XP. Every commitment you create, complete, or follow through on brings you closer to your next milestone.
+            Start tracking commitments to unlock achievements and earn XP.
+            Every commitment you complete brings you closer to your next milestone.
           </p>
-          <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+          <a href="/commitments" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
             Start Tracking Commitments
           </a>
         </div>
       )}
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
-          <div className="text-3xl font-bold text-indigo-600">{unlocked.length}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Unlocked</div>
-        </div>
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">{streak}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Day streak</div>
-        </div>
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
-          <div className="text-3xl font-bold text-green-600">{totalXP.toLocaleString()}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Total XP</div>
-        </div>
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-indigo-600">{level}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">Current level</div>
-        </div>
-      </div>
-
-      {/* Unlocked */}
-      {unlocked.length > 0 && (
+      {hasData && (
         <>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Unlocked</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {unlocked.map(a => (
-              <div key={a.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 text-center hover:border-indigo-300 transition-colors">
-                <div className="text-3xl mb-2">{a.icon}</div>
-                <div className="font-bold text-gray-900 dark:text-white">{a.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">{a.description}</div>
-                <div className="text-xs text-indigo-500 font-medium">{a.earnedDate}</div>
+          {/* Summary Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
+              <div className="text-3xl font-bold text-indigo-600">{earned.length}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Unlocked</div>
+            </div>
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Flame className="w-5 h-5 text-orange-500" />
+                <span className="text-3xl font-bold text-gray-900 dark:text-white">{currentStreak}</span>
               </div>
-            ))}
+              <div className="text-sm text-gray-500 dark:text-gray-400">Week streak</div>
+              {longestStreak > currentStreak && (
+                <div className="text-xs text-gray-400 mt-0.5">Best: {longestStreak}w</div>
+              )}
+            </div>
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
+              <div className="text-3xl font-bold text-green-600">{totalPoints.toLocaleString()}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Points</div>
+            </div>
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-indigo-600">{level.name}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Current Level</div>
+            </div>
           </div>
-        </>
-      )}
 
-      {/* In Progress */}
-      {inProgress.length > 0 && (
-        <>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">In Progress</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {inProgress.map(a => {
-              const percent = Math.round((a.current / a.target) * 100)
-              return (
-                <div key={a.id} className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 text-center opacity-80">
-                  <div className="text-3xl mb-2 grayscale-[30%]">{a.icon}</div>
-                  <div className="font-bold text-gray-900 dark:text-white">{a.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">{a.description}</div>
-                  {/* Progress bar */}
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-1" role="progressbar" aria-valuenow={a.current} aria-valuemin={0} aria-valuemax={a.target} aria-label={`${a.name}: ${a.current} of ${a.target}`}>
-                    <div
-                      className="bg-indigo-500 h-1.5 rounded-full transition-all"
-                      style={{ width: `${Math.min(percent, 100)}%` }}
-                    />
-                  </div>
-                  <div className="text-xs text-gray-400">{a.current} / {a.target}</div>
+          {/* Level Progress */}
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Star className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">Level Progress</h3>
+              </div>
+              <span className="text-sm text-gray-500">
+                {totalPoints.toLocaleString()} points
+              </span>
+            </div>
+            <div className="w-full h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                style={{ width: `${level.progressPercent}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs font-medium text-indigo-600">{level.name}</span>
+              {level.nextLevel ? (
+                <span className="text-xs text-gray-400">
+                  {level.pointsToNext.toLocaleString()} points to {level.nextLevel.name}
+                </span>
+              ) : (
+                <span className="text-xs text-indigo-500 font-medium">Max level reached</span>
+              )}
+            </div>
+          </div>
+
+          {/* Streak Info */}
+          {(currentStreak > 0 || longestStreak > 0) && (
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/10 dark:to-amber-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center">
+                  <Flame className="w-6 h-6 text-orange-500" />
                 </div>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Locked */}
-      {locked.length > 0 && (
-        <>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white/50 text-opacity-50">Locked</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {locked.map(a => (
-              <div key={a.id} className="bg-gray-50 dark:bg-surface-dark border border-gray-100 dark:border-border-dark rounded-xl p-5 text-center opacity-40">
-                <div className="text-3xl mb-2">🔒</div>
-                <div className="font-bold text-gray-500">{a.name}</div>
-                <div className="text-xs text-gray-400">{a.description}</div>
-                <div className="text-xs text-gray-300 mt-2">+{a.xp} XP</div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">
+                    {currentStreak > 0 ? `${currentStreak}-week streak active` : 'Build your streak'}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {currentStreak > 0
+                      ? `You've been productive for ${currentStreak} consecutive week${currentStreak !== 1 ? 's' : ''}. Keep it up!`
+                      : `Your longest streak is ${longestStreak} week${longestStreak !== 1 ? 's' : ''}. Start a new one this week!`
+                    }
+                  </p>
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-sm text-gray-500">Longest</div>
+                  <div className="text-lg font-bold text-orange-600">{longestStreak}w</div>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* Earned Achievements by Category */}
+          {earnedByCategory.length > 0 && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Earned Achievements</h2>
+              {earnedByCategory.map(group => (
+                <div key={group.category}>
+                  <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                    {group.label}
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.achievements.map(a => {
+                      const tierStyle = TIER_COLORS[a.tier] || TIER_COLORS.bronze
+                      const Icon = ICON_MAP[a.icon] || Trophy
+                      const myAch = myAchMap.get(a.id)
+                      const earnedDate = myAch
+                        ? new Date(myAch.earned_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : null
+
+                      return (
+                        <div
+                          key={a.id}
+                          className={`${tierStyle.bg} border ${tierStyle.border} rounded-xl p-5 hover:shadow-md transition-shadow`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${tierStyle.bg} ${tierStyle.text}`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className={`text-sm font-semibold ${tierStyle.text}`}>{a.name}</h4>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium uppercase ${tierStyle.badge}`}>
+                                  {a.tier}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{a.description}</p>
+                              {earnedDate && (
+                                <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-green-500" />
+                                  Earned {earnedDate}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Unearned / In Progress */}
+          {unearned.length > 0 && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">In Progress</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {unearned.map(a => {
+                  const tierStyle = TIER_COLORS[a.tier] || TIER_COLORS.bronze
+                  const Icon = ICON_MAP[a.icon] || Trophy
+
+                  // Estimate progress based on category and user stats
+                  let current = 0
+                  let target = a.threshold
+                  if (a.category === 'completion') {
+                    current = Math.min(totalCompleted, target)
+                  } else if (a.category === 'streak') {
+                    current = Math.min(longestStreak, target)
+                  }
+                  // For response/speed/volume/team we don't have per-user data here,
+                  // so show them as locked if not earned
+                  const hasProgress = current > 0
+                  const progressPercent = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0
+
+                  return (
+                    <div
+                      key={a.id}
+                      className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5 ${
+                        hasProgress ? 'opacity-90' : 'opacity-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-gray-100 dark:bg-gray-700 text-gray-400">
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400">{a.name}</h4>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium uppercase bg-gray-100 dark:bg-gray-700 text-gray-400">
+                              {a.tier}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">{a.description}</p>
+                          {hasProgress && (
+                            <div className="mt-3">
+                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5" role="progressbar" aria-valuenow={current} aria-valuemin={0} aria-valuemax={target} aria-label={`${a.name}: ${current} of ${target}`}>
+                                <div
+                                  className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">{current} / {target}</div>
+                            </div>
+                          )}
+                          {!hasProgress && (
+                            <p className="text-xs text-gray-300 dark:text-gray-600 mt-2">Locked</p>
+                          )}
+                          {a.earnedBy > 0 && (
+                            <p className="text-[10px] text-gray-400 mt-1">{a.earnedBy} team member{a.earnedBy !== 1 ? 's' : ''} earned</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

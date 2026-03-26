@@ -30,6 +30,8 @@ export default function ProfileSetupPage() {
   const [jobTitle, setJobTitle] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [teamSize, setTeamSize] = useState('')
+  const [departmentName, setDepartmentName] = useState('')
+  const [teamName, setTeamName] = useState('')
   const [initializing, setInitializing] = useState(true)
 
   const supabase = createClient()
@@ -101,6 +103,16 @@ export default function ProfileSetupPage() {
       return
     }
 
+    if (!departmentName.trim()) {
+      toast.error('Please enter your department name')
+      return
+    }
+
+    if (!teamName.trim()) {
+      toast.error('Please enter your team name')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -119,6 +131,8 @@ export default function ProfileSetupPage() {
           jobTitle,
           companyName,
           teamSize,
+          departmentName,
+          teamName,
         }),
       })
 
@@ -237,6 +251,40 @@ export default function ProfileSetupPage() {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Department Name */}
+        <div>
+          <label htmlFor="departmentName" className="block text-sm font-medium text-gray-700 mb-1">
+            What department are you in?
+          </label>
+          <p className="text-xs text-gray-500 mb-2">Wren organizes commitments by department for better visibility</p>
+          <input
+            id="departmentName"
+            type="text"
+            value={departmentName}
+            onChange={(e) => setDepartmentName(e.target.value)}
+            required
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition bg-white text-gray-900"
+            placeholder="e.g. Sales, Engineering, Marketing"
+          />
+        </div>
+
+        {/* Team Name */}
+        <div>
+          <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 mb-1">
+            What&apos;s your team name?
+          </label>
+          <p className="text-xs text-gray-500 mb-2">Your team is your day-to-day group within the department</p>
+          <input
+            id="teamName"
+            type="text"
+            value={teamName}
+            onChange={(e) => setTeamName(e.target.value)}
+            required
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition bg-white text-gray-900"
+            placeholder="e.g. East Coast Sales, Backend Platform"
+          />
         </div>
 
         {/* Continue Button */}

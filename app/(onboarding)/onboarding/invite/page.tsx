@@ -1,15 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowRight, Users, X } from 'lucide-react'
+import { ArrowRight, Users, X, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+type InviteRole = 'member' | 'team_lead' | 'dept_manager'
 
 interface TeamMemberInvite {
   id: string
   email: string
-  role: 'admin' | 'member'
+  role: InviteRole
+}
+
+interface OrgContext {
+  organizationId: string
+  organizationName: string
+  departmentId: string
+  departmentName: string
+  teamId: string
+  teamName: string
+}
+
+const roleLabels: Record<InviteRole, string> = {
+  member: 'Member',
+  team_lead: 'Team Lead',
+  dept_manager: 'Department Manager',
 }
 
 export default function InviteTeamPage() {
@@ -17,9 +34,67 @@ export default function InviteTeamPage() {
   const [loading, setLoading] = useState(false)
   const [invites, setInvites] = useState<TeamMemberInvite[]>([])
   const [emailInput, setEmailInput] = useState('')
-  const [roleInput, setRoleInput] = useState<'admin' | 'member'>('member')
+  const [roleInput, setRoleInput] = useState<InviteRole>('member')
+  const [orgContext, setOrgContext] = useState<OrgContext | null>(null)
+  const [contextLoading, setContextLoading] = useState(true)
 
   const supabase = createClient()
+
+  useEffect(() => {
+    const loadOrgContext = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser()
+        if (!authData?.user) {
+          router.push('/signup')
+          return
+        }
+
+        // Fetch the user's org membership to display context
+        const { data: membership } = await supabase
+          .from('organization_members')
+          .select('organization_id, department_id, team_id, role')
+          .eq('user_id', authData.user.id)
+          .limit(1)
+          .single()
+
+        if (membership) {
+          // Fetch names for org, dept, team
+          const [orgResult, deptResult, teamResult] = await Promise.all([
+            supabase
+              .from('organizations')
+              .select('name')
+              .eq('id', membership.organization_id)
+              .single(),
+            supabase
+              .from('departments')
+              .select('name')
+              .eq('id', membership.department_id)
+              .single(),
+            supabase
+              .from('teams')
+              .select('name')
+              .eq('id', membership.team_id)
+              .single(),
+          ])
+
+          setOrgContext({
+            organizationId: membership.organization_id,
+            organizationName: orgResult.data?.name || 'Your Organization',
+            departmentId: membership.department_id,
+            departmentName: deptResult.data?.name || 'Your Department',
+            teamId: membership.team_id,
+            teamName: teamResult.data?.name || 'Your Team',
+          })
+        }
+      } catch (err) {
+        console.error('Error loading org context:', err)
+      } finally {
+        setContextLoading(false)
+      }
+    }
+
+    loadOrgContext()
+  }, [supabase, router])
 
   const handleAddEmail = () => {
     if (!emailInput.trim()) {
@@ -58,23 +133,52 @@ export default function InviteTeamPage() {
     setLoading(true)
 
     try {
-      // Store invitations for later processing
-      // In production, you would send actual email invitations here
       if (invites.length > 0) {
         const { data: authData } = await supabase.auth.getUser()
         if (!authData?.user) {
           throw new Error('Not authenticated')
         }
 
-        // You would typically call an API to send invitations
-        // For now, we'll just proceed to completion
-        toast.success(`${invites.length} team member${invites.length > 1 ? 's' : ''} will be invited!`)
+        // Send each invitation via the invites API
+        const results = await Promise.allSettled(
+          invites.map((invite) =>
+            fetch('/api/invites', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: invite.email,
+                role: invite.role,
+                departmentId: orgContext?.departmentId || null,
+                teamId: orgContext?.teamId || null,
+              }),
+            }).then(async (res) => {
+              const data = await res.json()
+              if (!res.ok) throw new Error(data.error || 'Failed to invite')
+              return data
+            })
+          )
+        )
+
+        const succeeded = results.filter((r) => r.status === 'fulfilled').length
+        const failed = results.filter((r) => r.status === 'rejected').length
+
+        if (succeeded > 0) {
+          toast.success(
+            `${succeeded} invitation${succeeded > 1 ? 's' : ''} sent!${
+              failed > 0 ? ` (${failed} failed)` : ''
+            }`
+          )
+        } else if (failed > 0) {
+          const firstError =
+            results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+          toast.error(firstError?.reason?.message || 'Failed to send invitations')
+        }
       }
 
       router.push('/onboarding/complete')
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error:', err)
-      toast.error('Failed to process invitations. Please try again.')
+      toast.error(err.message || 'Failed to process invitations. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -107,6 +211,21 @@ export default function InviteTeamPage() {
         </p>
       </div>
 
+      {/* Org Context Banner */}
+      {!contextLoading && orgContext && (
+        <div className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <Building2 className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-gray-700">
+            <p className="font-medium text-gray-900">
+              Invite members to {orgContext.teamName} in {orgContext.departmentName}
+            </p>
+            <p className="text-gray-500 mt-0.5">
+              {orgContext.organizationName} &rsaquo; {orgContext.departmentName} &rsaquo; {orgContext.teamName}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Email Input */}
       <div className="space-y-3">
         <label className="block text-sm font-medium text-gray-700">
@@ -117,10 +236,19 @@ export default function InviteTeamPage() {
             type="email"
             value={emailInput}
             onChange={(e) => setEmailInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAddEmail()}
+            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddEmail())}
             placeholder="colleague@company.com"
             className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition bg-white text-gray-900"
           />
+          <select
+            value={roleInput}
+            onChange={(e) => setRoleInput(e.target.value as InviteRole)}
+            className="px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition bg-white text-gray-900 text-sm"
+          >
+            <option value="member">Member</option>
+            <option value="team_lead">Team Lead</option>
+            <option value="dept_manager">Dept Manager</option>
+          </select>
           <button
             onClick={handleAddEmail}
             className="px-4 py-3 bg-gray-100 text-gray-900 font-medium rounded-lg hover:bg-gray-200 transition"
@@ -144,8 +272,8 @@ export default function InviteTeamPage() {
               >
                 <div className="flex-1">
                   <p className="font-medium text-gray-900">{invite.email}</p>
-                  <p className="text-sm text-gray-600 capitalize">
-                    {invite.role === 'admin' ? 'Admin' : 'Member'}
+                  <p className="text-sm text-gray-600">
+                    {roleLabels[invite.role]}
                   </p>
                 </div>
                 <button
