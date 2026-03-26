@@ -162,6 +162,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
   const adminLinks = [
     { href: '/billing', label: 'Billing', icon: CreditCard },
+    { href: '/team-dashboard', label: 'Team Dashboard', icon: Trophy },
     { href: '/team-management', label: 'Team Management', icon: Users },
     { href: '/settings', label: 'Settings', icon: Settings },
   ]
