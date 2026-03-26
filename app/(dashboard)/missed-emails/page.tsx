@@ -89,8 +89,10 @@ export default function MissedEmailsPage() {
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [scanning, setScanning] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
+  const [feedbackModal, setFeedbackModal] = useState<{ email: MissedEmail; show: boolean } | null>(null)
+  const [feedbackReason, setFeedbackReason] = useState('')
 
-  async function submitFeedback(email: MissedEmail, feedback: 'valid' | 'invalid') {
+  async function submitFeedback(email: MissedEmail, feedback: 'valid' | 'invalid', reason?: string) {
     try {
       const res = await fetch('/api/missed-email-feedback', {
         method: 'POST',
@@ -99,21 +101,28 @@ export default function MissedEmailsPage() {
           missed_email_id: email.id,
           from_email: email.from_email,
           feedback,
+          reason: reason || null,
         }),
       })
       if (res.ok) {
         setFeedbackGiven(prev => ({ ...prev, [email.id]: feedback }))
+        setFeedbackModal(null)
+        setFeedbackReason('')
         if (feedback === 'invalid') {
-          // Remove from list after brief delay so user sees the feedback registered
           setTimeout(() => {
             setEmails(prev => prev.filter(e => e.id !== email.id))
           }, 800)
         }
-        toast.success(feedback === 'valid' ? 'Thanks! This helps improve detection.' : 'Got it — this type will be filtered better.')
+        toast.success(feedback === 'valid' ? 'Thanks! This helps improve detection.' : 'Got it — this feedback will improve the algorithm.')
       }
     } catch {
       toast.error('Failed to submit feedback')
     }
+  }
+
+  function handleThumbsDown(email: MissedEmail) {
+    setFeedbackModal({ email, show: true })
+    setFeedbackReason('')
   }
 
   async function loadEmails() {
@@ -610,7 +619,7 @@ export default function MissedEmailsPage() {
                               <ThumbsUp aria-hidden="true" className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); submitFeedback(email, 'invalid') }}
+                              onClick={(e) => { e.stopPropagation(); handleThumbsDown(email) }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
                               aria-label="Mark as invalid — this email should not have been flagged"
                               aria-pressed={feedbackGiven[email.id] === 'invalid'}
@@ -645,6 +654,60 @@ export default function MissedEmailsPage() {
           <li>&#10003; Scans daily after your Outlook sync at 6:30 AM PT</li>
         </ul>
       </div>
+
+      {/* Feedback Reason Modal */}
+      {feedbackModal?.show && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setFeedbackModal(null)}>
+          <div className="bg-white dark:bg-surface-dark-secondary rounded-xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Why isn't this helpful?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Your feedback trains the AI to be smarter for everyone.
+            </p>
+
+            <div className="space-y-2 mb-4">
+              {[
+                { value: 'not_my_email', label: 'This email isn\'t mine / wrong person' },
+                { value: 'already_replied', label: 'I already responded to this' },
+                { value: 'not_important', label: 'This doesn\'t need a response' },
+                { value: 'spam_or_automated', label: 'This is spam, marketing, or automated' },
+                { value: 'wrong_urgency', label: 'The urgency level is wrong' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setFeedbackReason(opt.value)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+                    feedbackReason === opt.value
+                      ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 border'
+                      : 'border border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setFeedbackModal(null)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (feedbackModal.email) {
+                    submitFeedback(feedbackModal.email, 'invalid', feedbackReason || 'not_helpful')
+                  }
+                }}
+                disabled={!feedbackReason}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                Submit Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
