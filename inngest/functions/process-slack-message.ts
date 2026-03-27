@@ -5,7 +5,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCommitments, calculatePriorityScore, type UserContext } from '@/lib/ai/detect-commitments'
 import { detectCompletions } from '@/lib/ai/detect-completion'
 import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
@@ -89,27 +89,8 @@ export const processSlackMessage = inngest.createFunction(
       return { success: true, commitments: 0, reason: 'Message too short' }
     }
 
-    // ── Detect commitments using AI ──
-    const commitments = await step.run('detect-commitments', async () => {
-      try {
-        return (await detectCommitments(event.data.text)) || []
-      } catch (err) {
-        console.error('AI commitment detection failed:', err)
-        return []
-      }
-    })
-
-    if (commitments.length === 0) {
-      await step.run('mark-no-commitments', async () => {
-        await supabase
-          .from('slack_messages')
-          .update({ processed: true, commitments_found: 0 })
-          .eq('id', messageData.id)
-      })
-      return { success: true, commitments: 0 }
-    }
-
     // ── Find a creator_id (required: NOT NULL in schema) ──
+    // Moved BEFORE AI detection so we can pass user context to the AI
     const creatorId = await step.run('resolve-creator', async () => {
       // Try: person who connected the Slack integration
       const connectedBy = integration.config?.connected_by
@@ -144,17 +125,45 @@ export const processSlackMessage = inngest.createFunction(
       return { success: false, error: 'No creator_id available' }
     }
 
-    // ── Score relevance to the user ──
-    // Prevents noisy commitments from large channels where the user isn't involved
-    const relevance = await step.run('score-relevance', async () => {
-      // Get the creator's Slack identity
+    // ── Resolve user identity for AI context ──
+    const userContext = await step.run('resolve-user-context', async () => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('slack_user_id')
+        .select('full_name, slack_user_id')
         .eq('id', creatorId)
         .single()
 
-      const targetSlackId = profile?.slack_user_id || null
+      if (!profile?.full_name) return null
+      return {
+        userName: profile.full_name,
+        slackUserId: profile.slack_user_id || null,
+      } as UserContext
+    })
+
+    // ── Detect commitments using AI (with user context for filtering) ──
+    const commitments = await step.run('detect-commitments', async () => {
+      try {
+        return (await detectCommitments(event.data.text, userContext || undefined)) || []
+      } catch (err) {
+        console.error('AI commitment detection failed:', err)
+        return []
+      }
+    })
+
+    if (commitments.length === 0) {
+      await step.run('mark-no-commitments', async () => {
+        await supabase
+          .from('slack_messages')
+          .update({ processed: true, commitments_found: 0 })
+          .eq('id', messageData.id)
+      })
+      return { success: true, commitments: 0 }
+    }
+
+    // ── Score relevance to the user ──
+    // Prevents noisy commitments from large channels where the user isn't involved
+    const relevance = await step.run('score-relevance', async () => {
+      const targetSlackId = userContext?.slackUserId || null
 
       // Get channel member count from Slack API
       let channelMemberCount: number | undefined

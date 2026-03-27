@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatch, getDetectionStats, type UserContext } from '@/lib/ai/detect-commitments'
 import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
 // Process max 500 messages per request to stay within 300s timeout
@@ -102,13 +102,16 @@ export async function POST(request: NextRequest) {
 
   const slackToken = integration.access_token
 
-  // Resolve the user's Slack identity for relevance filtering
+  // Resolve the user's identity for AI context and relevance filtering
   const { data: userProfile } = await supabase
     .from('profiles')
-    .select('slack_user_id')
+    .select('full_name, slack_user_id')
     .eq('id', userId)
     .single()
   const userSlackId: string | null = userProfile?.slack_user_id || null
+  const userContext: UserContext | undefined = userProfile?.full_name
+    ? { userName: userProfile.full_name, slackUserId: userSlackId }
+    : undefined
 
   // Test the token
   const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
@@ -158,7 +161,7 @@ export async function POST(request: NextRequest) {
       const chunk = batch.slice(i, i + 15)
       try {
         const batchInput = chunk.map((b) => ({ id: b.id, text: b.text }))
-        const batchResults = await detectCommitmentsBatch(batchInput)
+        const batchResults = await detectCommitmentsBatch(batchInput, userContext)
 
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
@@ -474,7 +477,7 @@ export async function POST(request: NextRequest) {
         if (batch.length > 0) {
           try {
             const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
-            const batchResults = await detectCommitmentsBatch(batchInput)
+            const batchResults = await detectCommitmentsBatch(batchInput, userContext)
 
             for (const item of batch) {
               const commitments = batchResults.get(item.id) || []
