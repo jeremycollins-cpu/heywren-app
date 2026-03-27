@@ -5,14 +5,14 @@ import Link from 'next/link'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
-import { WrenFullLogo } from '@/components/logo'
+import { WrenIcon, WrenFullLogo } from '@/components/logo'
 import { usePlan } from '@/lib/contexts/plan-context'
 import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/plans'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -31,6 +31,8 @@ interface BadgeCounts {
   openCommitments: number
 }
 
+const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation', 'Community']
+
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -38,8 +40,22 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const { plan } = usePlan()
   const supabase = createClient()
 
-  // Collapsible sections: track which sections are expanded
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['Overview', 'Action Queue']))
+  // Collapsed = icon-only mode (persisted in localStorage)
+  const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    const stored = localStorage.getItem('heywren_sidebar_collapsed')
+    if (stored === 'true') setCollapsed(true)
+  }, [])
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('heywren_sidebar_collapsed', String(next))
+      return next
+    })
+  }, [])
+
+  // All sections expanded by default
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(SECTION_NAMES))
 
   const toggleSection = useCallback((label: string) => {
     setExpandedSections(prev => {
@@ -52,35 +68,6 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       return next
     })
   }, [])
-
-  // Auto-expand sections that have active badge counts > 0
-  const sectionBadgeTotals = useMemo(() => {
-    const totals: Record<string, number> = {}
-    // We compute this after sections are defined, but badges are available here
-    // Map section labels to their cumulative badge counts
-    totals['Overview'] = badges.overdue + badges.openCommitments
-    totals['Intelligence'] = 0
-    totals['Action Queue'] = badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
-    totals['Automation'] = 0
-    totals['Community'] = 0
-    return totals
-  }, [badges])
-
-  useEffect(() => {
-    const toExpand: string[] = []
-    for (const [label, total] of Object.entries(sectionBadgeTotals)) {
-      if (total > 0 && !expandedSections.has(label)) {
-        toExpand.push(label)
-      }
-    }
-    if (toExpand.length > 0) {
-      setExpandedSections(prev => {
-        const next = new Set(prev)
-        toExpand.forEach(l => next.add(l))
-        return next
-      })
-    }
-  }, [sectionBadgeTotals]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -162,7 +149,6 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
   // Re-fetch badge counts when commitments or action items change in real-time
   const refetchBadges = useCallback(() => {
-    // Small delay to let DB settle after insert
     const timer = setTimeout(() => {
       const fetchUserData = async () => {
         try {
@@ -212,7 +198,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   useRealtime({ table: 'missed_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
 
-  const sections = [
+  const sections = useMemo(() => [
     {
       label: 'Overview',
       links: [
@@ -256,7 +242,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/teach-wren', label: 'Teach Wren', icon: GraduationCap, tourId: 'nav-teach-wren', badge: 0, badgeColor: '' },
       ],
     },
-  ]
+  ], [badges])
 
   const adminLinks = [
     { href: '/billing', label: 'Billing', icon: CreditCard },
@@ -284,6 +270,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
   const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
 
+  // Sidebar width: full (256px) or collapsed (64px for icon-only)
+  const sidebarWidth = collapsed ? 'w-16' : 'w-64'
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -297,27 +286,33 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 w-[260px] sm:w-64 bg-white dark:bg-surface-dark-secondary border-r border-gray-200 dark:border-border-dark transform transition-transform duration-300 ease-brand z-50 lg:z-0 ${
+        className={`fixed lg:static inset-y-0 left-0 ${collapsed ? 'w-16' : 'w-[260px] sm:w-64'} bg-white dark:bg-surface-dark-secondary border-r border-gray-200 dark:border-border-dark transform transition-all duration-300 ease-brand z-50 lg:z-0 ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         <div className="h-screen flex flex-col">
           {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200 dark:border-border-dark">
-            <Link href="/" className="flex items-center group" data-tour="logo">
-              <WrenFullLogo width={110} />
-            </Link>
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} h-16 px-3 ${collapsed ? '' : 'sm:px-5'} border-b border-gray-200 dark:border-border-dark`}>
+            {collapsed ? (
+              <Link href="/" className="flex items-center" data-tour="logo">
+                <WrenIcon size={28} />
+              </Link>
+            ) : (
+              <Link href="/" className="flex items-center group" data-tour="logo">
+                <WrenFullLogo width={110} />
+              </Link>
+            )}
             <button
               onClick={onToggle}
               className="lg:hidden p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
               aria-label="Close sidebar"
             >
-              <X aria-hidden="true" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              {!collapsed && <X aria-hidden="true" className="w-5 h-5 text-gray-500 dark:text-gray-400" />}
             </button>
           </div>
 
-          {/* Action summary banner */}
-          {totalActionItems > 0 && (
+          {/* Action summary banner — only in expanded mode */}
+          {!collapsed && totalActionItems > 0 && (
             <div className="mx-3 mt-3 px-3 py-2.5 rounded-lg bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-100 dark:border-indigo-800/50">
               <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
                 {totalActionItems} item{totalActionItems !== 1 ? 's' : ''} need attention
@@ -343,31 +338,36 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           )}
 
           {/* Navigation */}
-          <nav aria-label="Main navigation" className="flex-1 px-3 py-3 overflow-y-auto">
+          <nav aria-label="Main navigation" className={`flex-1 ${collapsed ? 'px-2' : 'px-3'} py-3 overflow-y-auto`}>
             {sections.map((section) => {
               const isExpanded = expandedSections.has(section.label)
               const sectionBadgeTotal = section.links.reduce((sum, l) => sum + l.badge, 0)
               return (
-                <div key={section.label} className="mb-3">
-                  <button
-                    type="button"
-                    onClick={() => toggleSection(section.label)}
-                    className="w-full flex items-center gap-1 px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-150"
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
-                    ) : (
-                      <ChevronRight aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
-                    )}
-                    <span>{section.label}</span>
-                    {!isExpanded && sectionBadgeTotal > 0 && (
-                      <span className="ml-auto min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold text-white bg-indigo-500 px-1">
-                        {sectionBadgeTotal > 99 ? '99+' : sectionBadgeTotal}
-                      </span>
-                    )}
-                  </button>
-                  {isExpanded && (
+                <div key={section.label} className="mb-2">
+                  {/* Section header — hidden in collapsed mode */}
+                  {!collapsed && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(section.label)}
+                      className="w-full flex items-center gap-1 px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-150"
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
+                      ) : (
+                        <ChevronRight aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
+                      )}
+                      <span>{section.label}</span>
+                      {!isExpanded && sectionBadgeTotal > 0 && (
+                        <span className="ml-auto min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold text-white bg-indigo-500 px-1">
+                          {sectionBadgeTotal > 99 ? '99+' : sectionBadgeTotal}
+                        </span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Links — always visible in collapsed mode, or when section is expanded */}
+                  {(collapsed || isExpanded) && (
                     <ul role="list" className="space-y-0.5">
                       {section.links.map(({ href, label, icon: Icon, tourId, badge, badgeColor }) => {
                         const active = isActive(href)
@@ -379,8 +379,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                               data-tour={tourId}
                               onClick={() => open && onToggle()}
                               aria-current={active ? 'page' : undefined}
-                              title={locked ? `Requires ${requiredPlan} plan` : undefined}
-                              className={`group flex items-center gap-3 px-3 py-2.5 sm:py-2 rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
+                              title={collapsed ? label : locked ? `Requires ${requiredPlan} plan` : undefined}
+                              className={`group relative flex items-center ${collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5 sm:py-2'} rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
                                 active
                                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                                   : locked
@@ -395,22 +395,32 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                                     ? 'text-gray-300 dark:text-gray-600'
                                     : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                               }`} />
-                              <span className="truncate">{label}</span>
-                              {locked && (
-                                <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
-                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
-                                    {requiredPlan}
-                                  </span>
-                                  <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                                </div>
+                              {!collapsed && (
+                                <>
+                                  <span className="truncate">{label}</span>
+                                  {locked && (
+                                    <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
+                                      <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
+                                        {requiredPlan}
+                                      </span>
+                                      <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                                    </div>
+                                  )}
+                                  {!locked && badge > 0 && (
+                                    <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${badgeColor} px-1`}>
+                                      {badge > 99 ? '99+' : badge}
+                                    </span>
+                                  )}
+                                  {!locked && badge === 0 && active && (
+                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
+                                  )}
+                                </>
                               )}
-                              {!locked && badge > 0 && (
-                                <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${badgeColor} px-1`}>
+                              {/* Badge dot in collapsed mode */}
+                              {collapsed && !locked && badge > 0 && (
+                                <span className={`absolute top-1 right-1 min-w-[14px] h-[14px] flex items-center justify-center rounded-full text-[8px] font-bold text-white ${badgeColor} px-0.5`}>
                                   {badge > 99 ? '99+' : badge}
                                 </span>
-                              )}
-                              {!locked && badge === 0 && active && (
-                                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
                               )}
                             </Link>
                           </li>
@@ -422,12 +432,17 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               )
             })}
 
+            {/* Divider before admin/collapsed separator */}
+            {collapsed && <div className="my-2 border-t border-gray-200 dark:border-border-dark" />}
+
             {/* Admin Section */}
             {isAdmin && (
-              <div className="pt-3 mt-3 border-t border-gray-200 dark:border-border-dark">
-                <p className="px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                  Administration
-                </p>
+              <div className={`${collapsed ? '' : 'pt-3 mt-3 border-t border-gray-200 dark:border-border-dark'}`}>
+                {!collapsed && (
+                  <p className="px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                    Administration
+                  </p>
+                )}
                 <ul role="list" className="space-y-0.5">
                 {adminLinks.map(({ href, label, icon: Icon }) => {
                   const active = isActive(href)
@@ -438,8 +453,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                       href={href}
                       onClick={() => open && onToggle()}
                       aria-current={active ? 'page' : undefined}
-                      title={locked ? `Requires ${requiredPlan} plan` : undefined}
-                      className={`group flex items-center gap-3 px-3 py-2.5 sm:py-2 rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
+                      title={collapsed ? label : locked ? `Requires ${requiredPlan} plan` : undefined}
+                      className={`group flex items-center ${collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5 sm:py-2'} rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
                         active
                           ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                           : locked
@@ -454,17 +469,21 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                             ? 'text-gray-300 dark:text-gray-600'
                             : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                       }`} />
-                      <span className="truncate">{label}</span>
-                      {locked && (
-                        <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
-                            {requiredPlan}
-                          </span>
-                          <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                        </div>
-                      )}
-                      {!locked && active && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
+                      {!collapsed && (
+                        <>
+                          <span className="truncate">{label}</span>
+                          {locked && (
+                            <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
+                                {requiredPlan}
+                              </span>
+                              <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                            </div>
+                          )}
+                          {!locked && active && (
+                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
+                          )}
+                        </>
                       )}
                     </Link>
                     </li>
@@ -475,14 +494,33 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             )}
           </nav>
 
-          {/* Help Button */}
-          <div className="px-3 py-4 border-t border-gray-200 dark:border-border-dark flex-shrink-0">
+          {/* Bottom actions: Help + Collapse toggle */}
+          <div className="px-2 py-3 border-t border-gray-200 dark:border-border-dark flex-shrink-0 space-y-1">
+            {/* Help */}
             <button
               onClick={onHelpClick}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 font-medium text-[13px]"
+              title={collapsed ? 'Help & Tips' : undefined}
+              className={`w-full flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 font-medium text-[13px]`}
             >
-              <HelpCircle aria-hidden="true" className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <span className="truncate">Help & Tips</span>
+              <HelpCircle aria-hidden="true" className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Help & Tips</span>}
+            </button>
+
+            {/* Collapse/expand toggle — desktop only */}
+            <button
+              onClick={toggleCollapsed}
+              className={`hidden lg:flex w-full items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-200 transition-all duration-200 text-[13px]`}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? (
+                <PanelLeftOpen aria-hidden="true" className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <>
+                  <PanelLeftClose aria-hidden="true" className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">Collapse</span>
+                </>
+              )}
             </button>
           </div>
         </div>
