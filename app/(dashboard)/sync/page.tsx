@@ -350,7 +350,7 @@ export default function SyncPage() {
             {hasSlack ? (
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  Scans public channels, private channels, and DMs from the last 30 days to find commitments and promises.
+                  Scans public channels, private channels, and DMs to find commitments and promises. May need multiple clicks for large histories.
                 </p>
                 <button
                   onClick={handleSlackSync}
@@ -364,7 +364,7 @@ export default function SyncPage() {
                   {syncingSlack ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Syncing Slack...</>
                   ) : (
-                    <><RefreshCw className="w-4 h-4" /> Sync Last 30 Days</>
+                    <><RefreshCw className="w-4 h-4" /> Sync Slack History</>
                   )}
                 </button>
               </div>
@@ -442,7 +442,7 @@ export default function SyncPage() {
             {hasOutlook ? (
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  Scans your inbox and sent emails from the last 30 days to find commitments, promises, and action items.
+                  Scans your inbox and sent emails to find commitments, promises, and action items. May need multiple clicks for large inboxes.
                 </p>
                 <button
                   onClick={handleOutlookSync}
@@ -456,7 +456,7 @@ export default function SyncPage() {
                   {syncingOutlook ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Syncing Outlook...</>
                   ) : (
-                    <><Mail className="w-4 h-4" /> Sync Last 30 Days</>
+                    <><Mail className="w-4 h-4" /> Sync Outlook History</>
                   )}
                 </button>
               </div>

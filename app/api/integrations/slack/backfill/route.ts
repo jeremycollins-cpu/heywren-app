@@ -6,7 +6,7 @@ import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
 // Process max 500 messages per request to stay within 300s timeout
 const MAX_MESSAGES_PER_RUN = 500
-const TIME_BUDGET_MS = 240000 // Stop at 240s, leaving 60s buffer
+const TIME_BUDGET_MS = 250000 // Stop at 250s, leaving 50s buffer
 
 function getAdminClient() {
   return createClient(
@@ -161,33 +161,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Process in chunks of 15 (for batch AI)
-    for (let i = 0; i < batch.length; i += 15) {
+    // Process in chunks of 25 (for batch AI)
+    for (let i = 0; i < batch.length; i += 25) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
-      const chunk = batch.slice(i, i + 15)
+      const chunk = batch.slice(i, i + 25)
       try {
         const batchInput = chunk.map((b) => ({ id: b.id, text: b.text }))
         const batchResults = await detectCommitmentsBatch(batchInput, userContext)
 
+        // Pre-fetch channel member counts for this chunk in parallel
+        const uncachedChannels = [...new Set(chunk.map(c => c.channelId).filter(ch => !channelMemberCounts.has(ch)))]
+        await Promise.all(uncachedChannels.map(async (chId) => {
+          try {
+            const chInfo = await slackGet(
+              `https://slack.com/api/conversations.info?channel=${chId}`,
+              slackToken, 1
+            )
+            if (chInfo.ok && chInfo.channel?.num_members != null) {
+              channelMemberCounts.set(chId, chInfo.channel.num_members)
+            }
+          } catch { /* Non-fatal */ }
+        }))
+
+        const commitmentRows: any[] = []
+
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
-
-          // Score relevance for this stored message
-          // Fetch channel member count if not cached
-          if (!channelMemberCounts.has(item.channelId)) {
-            try {
-              const chInfo = await slackGet(
-                `https://slack.com/api/conversations.info?channel=${item.channelId}`,
-                slackToken, 1
-              )
-              if (chInfo.ok && chInfo.channel?.num_members != null) {
-                channelMemberCounts.set(item.channelId, chInfo.channel.num_members)
-              }
-            } catch {
-              // Non-fatal
-            }
-          }
 
           const rel = scoreRelevance({
             messageAuthorSlackId: item.authorSlackId,
@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
           const inbound = commitments.filter(c => c.direction === 'inbound')
 
           for (const commitment of outbound) {
-            const { error: commitErr } = await supabase.from('commitments').insert({
+            commitmentRows.push({
               team_id: teamId,
               creator_id: userId,
               title: commitment.title || 'Untitled commitment',
@@ -233,14 +233,6 @@ export async function POST(request: NextRequest) {
                 relevanceReason: rel.reason,
               },
             })
-            if (commitErr) {
-              console.error('COMMITMENT INSERT FAILED:', JSON.stringify({
-                message: commitErr.message, details: commitErr.details,
-                hint: commitErr.hint, code: commitErr.code,
-              }))
-            } else {
-              totalCommitments++
-            }
           }
 
           // Route inbound commitments to Waiting Room
@@ -275,6 +267,16 @@ export async function POST(request: NextRequest) {
             .update({ processed: true, commitments_found: commitments.length })
             .eq('id', item.dbId)
           processedMessages++
+        }
+
+        // Batch insert all outbound commitments from this chunk
+        if (commitmentRows.length > 0) {
+          const { error: commitErr } = await supabase.from('commitments').insert(commitmentRows)
+          if (commitErr) {
+            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message)
+          } else {
+            totalCommitments += commitmentRows.length
+          }
         }
       } catch (batchErr) {
         console.error('Batch AI error:', (batchErr as Error).message)

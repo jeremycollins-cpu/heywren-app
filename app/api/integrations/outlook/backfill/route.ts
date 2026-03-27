@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
-// Process max 100 messages per request to stay within 300s timeout
-const MAX_MESSAGES_PER_RUN = 100
-const TIME_BUDGET_MS = 240000 // Stop at 240s, leaving 60s buffer
+// Process max 300 messages per request to stay within 300s timeout
+const MAX_MESSAGES_PER_RUN = 300
+const TIME_BUDGET_MS = 250000 // Stop at 250s, leaving 50s buffer
 
 function getAdminClient() {
   return createClient(
@@ -187,20 +187,22 @@ export async function POST(request: NextRequest) {
       batch.push({ id: msg.message_id, text: messageText, dbId: msg.id })
     }
 
-    // Process in chunks of 15
-    for (let i = 0; i < batch.length; i += 15) {
+    // Process in chunks of 25
+    for (let i = 0; i < batch.length; i += 25) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
-      const chunk = batch.slice(i, i + 15)
+      const chunk = batch.slice(i, i + 25)
       try {
         const batchInput = chunk.map((b) => ({ id: b.id, text: b.text }))
         const batchResults = await detectCommitmentsBatch(batchInput)
 
+        const commitmentRows: any[] = []
+        const processedIds: { dbId: string; count: number }[] = []
+
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
-
           for (const commitment of commitments) {
-            const { error: commitErr } = await supabase.from('commitments').insert({
+            commitmentRows.push({
               team_id: teamId,
               creator_id: userId,
               title: commitment.title || 'Untitled commitment',
@@ -220,20 +222,26 @@ export async function POST(request: NextRequest) {
                 assigneeName: commitment.assignee || null,
               },
             })
-            if (commitErr) {
-              console.error('COMMITMENT INSERT FAILED:', JSON.stringify({
-                message: commitErr.message, details: commitErr.details,
-                hint: commitErr.hint, code: commitErr.code,
-              }))
-            } else {
-              totalCommitments++
-            }
           }
+          processedIds.push({ dbId: item.dbId, count: commitments.length })
+        }
 
+        // Batch insert commitments
+        if (commitmentRows.length > 0) {
+          const { error: commitErr } = await supabase.from('commitments').insert(commitmentRows)
+          if (commitErr) {
+            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message)
+          } else {
+            totalCommitments += commitmentRows.length
+          }
+        }
+
+        // Batch mark as processed
+        for (const { dbId, count } of processedIds) {
           await supabase
             .from('outlook_messages')
-            .update({ processed: true, commitments_found: commitments.length })
-            .eq('id', item.dbId)
+            .update({ processed: true, commitments_found: count })
+            .eq('id', dbId)
           processedMessages++
         }
       } catch (batchErr) {
