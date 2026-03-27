@@ -415,23 +415,21 @@ export async function scanTeamAwaitingReplies(
           .limit(500)
 
         if (slackMessages && slackMessages.length > 0) {
-          // Find messages the user sent that are in DMs/group DMs
+          // Find messages the user sent (DMs, group DMs, AND channels)
           const userMessages = slackMessages.filter(m =>
             m.user_id === slackUserId &&
-            (m.channel_id?.startsWith('D') || m.channel_id?.startsWith('G')) &&
             (m.message_text || '').trim().length >= 15
           )
 
-          // Track which channels/threads got replies after user's message
+          // Track thread replies (someone replied in the thread the user started)
           const repliedThreads = new Set<string>()
           for (const msg of slackMessages) {
-            if (msg.user_id !== slackUserId) {
-              if (msg.thread_ts) repliedThreads.add(msg.thread_ts)
-              repliedThreads.add(msg.message_ts)
+            if (msg.user_id !== slackUserId && msg.thread_ts) {
+              repliedThreads.add(msg.thread_ts)
             }
           }
 
-          // Check for replies after each user message in the same channel
+          // For DMs/group DMs: any message from someone else counts as a reply
           const channelReplies = new Map<string, number[]>()
           for (const msg of slackMessages) {
             if (msg.user_id !== slackUserId) {
@@ -460,15 +458,24 @@ export async function scanTeamAwaitingReplies(
             // Skip if less than 1 day old
             if (daysSince < 1) continue
 
-            const replies = channelReplies.get(msg.channel_id) || []
-            const hasReplyAfter = replies.some(t => t > msgTime)
-            if (hasReplyAfter) continue
+            const isDM = msg.channel_id?.startsWith('D') || msg.channel_id?.startsWith('G')
+            if (isDM) {
+              // For DMs: any message from someone else after this counts as a reply
+              const replies = channelReplies.get(msg.channel_id) || []
+              const hasReplyAfter = replies.some(t => t > msgTime)
+              if (hasReplyAfter) continue
+            } else {
+              // For channels: only a thread reply to THIS message counts
+              // The user's message_ts becomes the thread_ts for replies
+              if (repliedThreads.has(msg.message_ts)) continue
+            }
 
             // No reply — this is awaiting
             const text = msg.message_text || ''
             const hasQuestion = /\?|can you|could you|would you|please|need/i.test(text)
             let urgency = 'medium'
-            if (daysSince > 3 && hasQuestion) urgency = 'high'
+            if (daysSince > 7) urgency = 'critical'
+            else if (daysSince > 3 && hasQuestion) urgency = 'high'
             else if (hasQuestion) urgency = 'medium'
             else urgency = 'low'
 
@@ -476,22 +483,24 @@ export async function scanTeamAwaitingReplies(
               ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
               : null
 
+            const recipientLabel = isDM ? 'DM participant' : 'Channel member'
+            const nameLabel = isDM ? 'DM' : (msg.channel_id || 'Channel')
+
             slackToInsert.push({
               team_id: teamId,
               user_id: userId,
-              sender_email: userEmail || null,
               source: 'slack',
               source_message_id: msg.message_ts,
               permalink,
               channel_id: msg.channel_id,
-              to_recipients: 'DM participant',
-              to_name: 'DM',
+              to_recipients: recipientLabel,
+              to_name: nameLabel,
               subject: null,
               body_preview: text.slice(0, 500),
               sent_at: msg.created_at,
               urgency,
               category: hasQuestion ? 'question' : 'follow_up',
-              wait_reason: hasQuestion ? 'Question sent with no reply' : 'Message sent with no reply',
+              wait_reason: hasQuestion ? 'Question sent — no reply' : 'Message sent — no reply',
               days_waiting: daysSince,
             })
           }
