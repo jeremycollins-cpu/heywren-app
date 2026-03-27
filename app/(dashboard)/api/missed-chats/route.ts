@@ -320,6 +320,9 @@ export async function POST() {
         message_text: resolveMentions(text),
         message_ts: msg.message_ts,
         thread_ts: msg.thread_ts || null,
+        permalink: msg.channel_id && msg.message_ts
+          ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
+          : null,
         sent_at: msg.created_at,
         urgency,
         reason: hasQuestion ? 'Contains a direct question or request' : dmChannels.has(msg.channel_id) ? 'DM awaiting your response' : 'You were mentioned but haven\'t responded',
@@ -374,6 +377,27 @@ export async function POST() {
             .update({ sender_name: name })
             .eq('id', record.id)
         }
+      }
+    }
+  }
+
+  // Backfill permalink for existing records missing it
+  {
+    const { data: missingPermalinks } = await adminDb
+      .from('missed_chats')
+      .select('id, channel_id, message_ts')
+      .eq('team_id', teamId)
+      .eq('user_id', user.id)
+      .is('permalink', null)
+      .in('status', ['pending', 'snoozed'])
+      .not('channel_id', 'is', null)
+      .not('message_ts', 'is', null)
+      .limit(200)
+
+    if (missingPermalinks && missingPermalinks.length > 0) {
+      for (const row of missingPermalinks) {
+        const link = `https://slack.com/archives/${row.channel_id}/p${row.message_ts.replace('.', '')}`
+        await adminDb.from('missed_chats').update({ permalink: link }).eq('id', row.id)
       }
     }
   }

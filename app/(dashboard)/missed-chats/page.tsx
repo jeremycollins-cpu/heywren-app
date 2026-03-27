@@ -324,6 +324,18 @@ export default function MissedChatsPage() {
                               : `${chat.waiting_days} days waiting`
                           }
                         </span>
+                        {chat.permalink && (
+                          <a
+                            href={chat.permalink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition"
+                          >
+                            <ExternalLink aria-hidden="true" className="w-3 h-3" />
+                            Open in Slack
+                          </a>
+                        )}
                       </div>
 
                       {/* Sender */}
