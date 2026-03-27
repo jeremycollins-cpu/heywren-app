@@ -98,10 +98,8 @@ const COMMITMENT_PATTERNS = [
  * using fast regex patterns. This is free (no API call).
  */
 function likelyContainsCommitment(text: string): boolean {
-  // Skip very short messages
   if (text.length < 20) return false
 
-  // Skip common non-commitment patterns
   const lowerText = text.toLowerCase()
   if (
     lowerText === 'thanks' ||
@@ -118,41 +116,145 @@ function likelyContainsCommitment(text: string): boolean {
     return false
   }
 
-  // Check against commitment patterns
   return COMMITMENT_PATTERNS.some((pattern) => pattern.test(text))
 }
 
-/**
- * Extract JSON from a string that might be wrapped in markdown code fences.
- */
-function extractJSON(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) {
-    return fenceMatch[1].trim()
-  }
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (jsonMatch) {
-    return jsonMatch[0]
-  }
-  return text.trim()
+// ============================================================
+// Tool definitions for structured output
+// ============================================================
+
+const TRIAGE_TOOL: Anthropic.Messages.Tool = {
+  name: 'classify_message',
+  description: 'Classify whether a message contains a commitment, promise, action item, task assignment, deadline, or follow-up.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      has_commitment: {
+        type: 'boolean',
+        description: 'true if the message contains a commitment, promise, action item, task, deadline, or follow-up',
+      },
+    },
+    required: ['has_commitment'],
+  },
+}
+
+const COMMITMENT_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
+  name: 'extract_commitments',
+  description: 'Extract commitments, promises, and action items from a message.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      commitments: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Specific task title including WHO and WHAT, e.g. "Sarah to send Q3 budget report to finance team"' },
+            description: { type: 'string', description: '2-3 sentence description with full context: what was promised, why it matters, dependencies' },
+            assignee: { type: 'string', description: 'Person who owns the commitment, or null' },
+            dueDate: { type: 'string', description: 'ISO date if mentioned, or null' },
+            priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+            confidence: { type: 'number', description: '0.0-1.0 confidence score' },
+            urgency: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'ASAP=critical, "when you get a chance"=low, explicit deadlines=high' },
+            tone: { type: 'string', enum: ['casual', 'professional', 'urgent', 'demanding'] },
+            commitmentType: { type: 'string', enum: ['deliverable', 'meeting', 'follow_up', 'decision', 'review', 'request'] },
+            stakeholders: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  role: { type: 'string', enum: ['owner', 'assignee', 'stakeholder'] },
+                },
+                required: ['name', 'role'],
+              },
+            },
+            originalQuote: { type: 'string', description: 'Exact sentence(s) from the message containing the commitment, max 200 chars' },
+          },
+          required: ['title', 'description', 'priority', 'confidence'],
+        },
+      },
+    },
+    required: ['commitments'],
+  },
+}
+
+const BATCH_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
+  name: 'extract_batch_commitments',
+  description: 'Extract commitments from multiple numbered messages.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of message number (string) to array of commitments found in that message',
+        additionalProperties: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              assignee: { type: 'string' },
+              dueDate: { type: 'string' },
+              priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+              confidence: { type: 'number' },
+              urgency: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+              tone: { type: 'string', enum: ['casual', 'professional', 'urgent', 'demanding'] },
+              commitmentType: { type: 'string', enum: ['deliverable', 'meeting', 'follow_up', 'decision', 'review', 'request'] },
+              stakeholders: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    role: { type: 'string', enum: ['owner', 'assignee', 'stakeholder'] },
+                  },
+                  required: ['name', 'role'],
+                },
+              },
+              originalQuote: { type: 'string' },
+            },
+            required: ['title', 'description', 'priority', 'confidence'],
+          },
+        },
+      },
+    },
+    required: ['results'],
+  },
 }
 
 // ============================================================
-// TIER 2: Cheap Haiku triage (yes/no) — ~$0.0003 per call
-// Only messages that pass Tier 1 get sent here
+// Shared system prompt (cached across calls)
+// ============================================================
+const SONNET_SYSTEM_PROMPT = `You detect commitments, promises, and action items in messages. Extract rich context to make each commitment actionable.
+
+Rules:
+- Title: specific enough to understand alone. Include WHO and WHAT. Bad: "Look into the issue". Good: "Mike to investigate payment gateway timeout errors reported by Acme Corp".
+- Description: explain business context, not just restate the title.
+- originalQuote: direct excerpt from the source message, not a paraphrase. Max 200 chars.
+- stakeholders: anyone mentioned as involved (committer, recipient, CC'd).
+- Only include items with confidence >= 0.5.
+- If no commitments found, return empty array.`
+
+// ============================================================
+// TIER 2: Cheap Haiku triage (yes/no) via tool_use
+// ~$0.0003 per call — guaranteed structured boolean output
 // ============================================================
 async function haiku_triage(text: string): Promise<boolean> {
   try {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 10,
-      system: 'Does this message contain a commitment, promise, action item, task assignment, deadline, or follow-up? Reply ONLY "yes" or "no".',
+      max_tokens: 64,
+      system: 'Classify whether this message contains a commitment, promise, action item, task assignment, deadline, or follow-up. Use the classify_message tool.',
+      tools: [TRIAGE_TOOL],
+      tool_choice: { type: 'tool', name: 'classify_message' },
       messages: [{ role: 'user', content: text }],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      return content.text.trim().toLowerCase().startsWith('yes')
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      return (toolBlock.input as { has_commitment: boolean }).has_commitment === true
     }
   } catch (error) {
     console.error('Haiku triage failed:', (error as Error).message)
@@ -163,60 +265,35 @@ async function haiku_triage(text: string): Promise<boolean> {
 }
 
 // ============================================================
-// TIER 3: Full Sonnet analysis — only for confirmed commitments
-// ~$0.003 per call, but only ~5-10% of messages reach here
+// TIER 3: Full Sonnet analysis via tool_use
+// ~$0.003 per call, guaranteed structured JSON output
 // ============================================================
 async function sonnet_analyze(text: string, communityPatterns?: string[]): Promise<DetectedCommitment[]> {
   const communityRulesBlock = communityPatterns && communityPatterns.length > 0
-    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these — from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : ''
+
+  const systemContent = SONNET_SYSTEM_PROMPT + communityRulesBlock
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
-    system: `You detect commitments, promises, and action items in messages. Extract rich context to make each commitment actionable and understandable at a glance.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "commitments": [
-    {
-      "title": "concise but specific task title (include WHO and WHAT, e.g. 'Sarah to send Q3 budget report to finance team')",
-      "description": "2-3 sentence description with full context: what exactly was promised, why it matters, and any conditions or dependencies mentioned",
-      "assignee": "person name who owns the commitment (if mentioned)",
-      "dueDate": "ISO date if mentioned, null otherwise",
-      "priority": "high|medium|low",
-      "confidence": 0.0-1.0,
-      "urgency": "low|medium|high|critical — based on language cues (ASAP=critical, 'when you get a chance'=low, explicit deadlines=high)",
-      "tone": "casual|professional|urgent|demanding — the tone of the original request/commitment",
-      "commitmentType": "deliverable|meeting|follow_up|decision|review|request — what kind of commitment this is",
-      "stakeholders": [{"name": "person name", "role": "owner|assignee|stakeholder"}],
-      "originalQuote": "the exact sentence(s) from the message that contain the commitment — keep it short, max 200 chars"
-    }
-  ]
-}
-
-Guidelines:
-- Title should be specific enough to understand without reading the full message. Bad: "Look into the issue". Good: "Mike to investigate payment gateway timeout errors reported by Acme Corp".
-- Description should explain the business context, not just restate the title.
-- originalQuote must be a direct excerpt from the source message, not a paraphrase.
-- stakeholders should include anyone mentioned as involved (the person committing, the person they're committing to, anyone CC'd or referenced).
-- If no commitments: {"commitments": []}
-- Only include items with confidence >= 0.5.${communityRulesBlock}`,
+    system: [{ type: 'text', text: systemContent, cache_control: communityRulesBlock ? undefined : { type: 'ephemeral' } }],
+    tools: [COMMITMENT_EXTRACTION_TOOL],
+    tool_choice: { type: 'tool', name: 'extract_commitments' },
     messages: [{ role: 'user', content: `Analyze for commitments:\n\n"${text}"` }],
   })
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const jsonStr = extractJSON(content.text)
-    const parsed = JSON.parse(jsonStr)
-    return parsed.commitments || []
+  const toolBlock = message.content.find((b) => b.type === 'tool_use')
+  if (toolBlock && toolBlock.type === 'tool_use') {
+    const result = toolBlock.input as { commitments: DetectedCommitment[] }
+    return result.commitments || []
   }
   return []
 }
 
 // ============================================================
 // Priority score calculation (0-100)
-// Combines priority level + confidence + time signals
 // ============================================================
 export function calculatePriorityScore(commitment: DetectedCommitment): number {
   const priorityBase = { high: 75, medium: 50, low: 25 }
@@ -228,10 +305,8 @@ export function calculatePriorityScore(commitment: DetectedCommitment): number {
 
 // ============================================================
 // MAIN EXPORT: 3-tier pipeline
-// Tier 1 (free) → Tier 2 (Haiku $0.0003) → Tier 3 (Sonnet $0.003)
 // ============================================================
 
-// Track stats for logging
 let _stats = { tier1_filtered: 0, tier2_filtered: 0, tier3_analyzed: 0, errors: 0 }
 
 export function getDetectionStats() {
@@ -257,13 +332,13 @@ export async function detectCommitments(
       return []
     }
 
-    // TIER 3: Sonnet full analysis ($0.003) — with community-learned patterns
+    // TIER 3: Sonnet full analysis ($0.003)
     _stats.tier3_analyzed++
     let communityPatterns: string[] = []
     try {
       communityPatterns = await getActiveCommunityPatterns('slack')
     } catch {
-      // Non-fatal — proceed without community patterns
+      // Non-fatal
     }
     const commitments = await sonnet_analyze(messageText, communityPatterns)
 
@@ -287,7 +362,7 @@ export async function detectCommitments(
 
 // ============================================================
 // BATCH MODE: Process multiple messages in one Sonnet call
-// Even cheaper for backfill — groups up to 15 messages per call
+// Parallelizes Haiku triage for speed
 // ============================================================
 export async function detectCommitmentsBatch(
   messages: Array<{ id: string; text: string }>
@@ -303,23 +378,24 @@ export async function detectCommitmentsBatch(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage each candidate
-  const triaged: typeof candidates = []
-  for (const msg of candidates) {
-    const hasCommitment = await haiku_triage(msg.text)
-    if (hasCommitment) {
-      triaged.push(msg)
-    } else {
-      _stats.tier2_filtered++
-    }
-  }
+  // Tier 2: Haiku triage — run in parallel for speed
+  const triageResults = await Promise.all(
+    candidates.map(async (msg) => {
+      const hasCommitment = await haiku_triage(msg.text)
+      return { msg, hasCommitment }
+    })
+  )
+
+  const triaged = triageResults
+    .filter((r) => r.hasCommitment)
+    .map((r) => r.msg)
+  _stats.tier2_filtered += candidates.length - triaged.length
 
   if (triaged.length === 0) return results
 
-  // Tier 3: Batch Sonnet analysis
+  // Tier 3: Batch Sonnet analysis via tool_use
   _stats.tier3_analyzed += triaged.length
 
-  // Build batch prompt
   const numberedMessages = triaged
     .map((m, i) => `[${i + 1}] "${m.text}"`)
     .join('\n\n')
@@ -328,24 +404,17 @@ export async function detectCommitmentsBatch(
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 8192,
-      system: `You detect commitments in batched messages. Each message is numbered [1], [2], etc. Extract rich context for each commitment.
+      system: [{ type: 'text', text: `You detect commitments in batched messages. Each message is numbered [1], [2], etc. Extract rich context for each commitment.
 
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "results": {
-    "1": [{"title": "concise but specific (include WHO and WHAT)", "description": "2-3 sentences with full context", "assignee": "person name", "dueDate": null, "priority": "medium", "confidence": 0.8, "urgency": "low|medium|high|critical", "tone": "casual|professional|urgent|demanding", "commitmentType": "deliverable|meeting|follow_up|decision|review|request", "stakeholders": [{"name": "...", "role": "owner|assignee|stakeholder"}], "originalQuote": "exact excerpt from the message, max 200 chars"}],
-    "2": [],
-    "3": [...]
-  }
-}
-
-Guidelines:
-- Title should be specific enough to understand without the source message. Bad: "Look into the issue". Good: "Mike to investigate payment gateway timeout errors".
-- Description should explain the business context.
-- originalQuote must be a direct excerpt from the source, not a paraphrase.
-- stakeholders: include anyone mentioned as involved.
-Keys are the message numbers. Values are arrays of commitments found.
-Only include commitments with confidence >= 0.5. Empty array if none found.`,
+Rules:
+- Title: specific enough to understand alone. Include WHO and WHAT.
+- Description: explain business context.
+- originalQuote: direct excerpt, not a paraphrase.
+- stakeholders: anyone mentioned as involved.
+- Only include commitments with confidence >= 0.5.
+- Empty array if none found.`, cache_control: { type: 'ephemeral' } }],
+      tools: [BATCH_EXTRACTION_TOOL],
+      tool_choice: { type: 'tool', name: 'extract_batch_commitments' },
       messages: [
         {
           role: 'user',
@@ -354,11 +423,9 @@ Only include commitments with confidence >= 0.5. Empty array if none found.`,
       ],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      const jsonStr = extractJSON(content.text)
-      const parsed = JSON.parse(jsonStr)
-      const batchResults = parsed.results || {}
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      const batchResults = (toolBlock.input as { results: Record<string, DetectedCommitment[]> }).results || {}
 
       triaged.forEach((msg, i) => {
         const key = String(i + 1)
