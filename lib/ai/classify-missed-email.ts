@@ -16,132 +16,74 @@ export interface MissedEmailClassification {
   isVip?: boolean
 }
 
-// User preferences that influence classification
 export interface UserEmailPreferences {
   vipContacts: Array<{ name?: string; email?: string; domain?: string }>
   blockedSenders: Array<{ email?: string; domain?: string }>
   enabledCategories: string[]
   minUrgency: string
-  // Past feedback: domains/emails frequently marked invalid
   feedbackBlockedDomains: Set<string>
   feedbackBlockedEmails: Set<string>
 }
 
 // ============================================================
-// TIER 1: Free pre-filter — eliminate obvious noise
-// Catches ~80% of sales, automated, and no-reply emails
+// TIER 1: Free pre-filter -- eliminate obvious noise
 // ============================================================
 
 const AUTOMATED_SENDER_PATTERNS = [
-  /noreply@/i,
-  /no-reply@/i,
-  /donotreply@/i,
-  /do-not-reply@/i,
-  /notifications?@/i,
-  /alerts?@/i,
-  /mailer-daemon@/i,
-  /postmaster@/i,
-  /bounce@/i,
-  /support@.*\.com$/i,
-  /info@.*\.com$/i,
-  /hello@.*\.com$/i,
-  /news@/i,
-  /newsletter@/i,
-  /updates?@/i,
-  /marketing@/i,
-  /promo(tions)?@/i,
-  /sales@/i,
-  /billing@/i,
-  /invoice@/i,
-  /receipts?@/i,
-  /order@/i,
-  /shipping@/i,
-  /feedback@/i,
-  /survey@/i,
-  /digest@/i,
-  /automated@/i,
-  /system@/i,
-  /admin@/i,
-  /webmaster@/i,
+  /noreply@/i, /no-reply@/i, /donotreply@/i, /do-not-reply@/i,
+  /notifications?@/i, /alerts?@/i, /mailer-daemon@/i, /postmaster@/i,
+  /bounce@/i, /support@.*\.com$/i, /info@.*\.com$/i, /hello@.*\.com$/i,
+  /news@/i, /newsletter@/i, /updates?@/i, /marketing@/i,
+  /promo(tions)?@/i, /sales@/i, /billing@/i, /invoice@/i,
+  /receipts?@/i, /order@/i, /shipping@/i, /feedback@/i,
+  /survey@/i, /digest@/i, /automated@/i, /system@/i,
+  /admin@/i, /webmaster@/i,
 ]
 
 const AUTOMATED_SUBJECT_PATTERNS = [
-  /\bunsubscribe\b/i,
-  /\bnewsletter\b/i,
-  /\bdigest\b/i,
-  /\bweekly (update|summary|recap|report)\b/i,
-  /\bdaily (update|summary|recap|report)\b/i,
-  /\bmonthly (update|summary|recap|report)\b/i,
-  /\bnotification\b/i,
-  /\balert:/i,
+  /\bunsubscribe\b/i, /\bnewsletter\b/i, /\bdigest\b/i,
+  /\b(weekly|daily|monthly) (update|summary|recap|report)\b/i,
+  /\bnotification\b/i, /\balert:/i,
   /\b(order|shipping|tracking) (confirm|update|number)/i,
-  /\breceipt for\b/i,
-  /\binvoice #/i,
-  /\bpassword reset\b/i,
-  /\bverify your (email|account)\b/i,
+  /\breceipt for\b/i, /\binvoice #/i,
+  /\bpassword reset\b/i, /\bverify your (email|account)\b/i,
   /\bwelcome to\b/i,
   /\bthanks for (signing up|subscribing|registering|your (order|purchase))\b/i,
   /\byour (account|subscription|trial|order|payment)\b/i,
-  /\b(new|recent) (sign-?in|login)\b/i,
-  /\bsecurity (alert|notice)\b/i,
-  /\bout of office\b/i,
-  /\bautomatic reply\b/i,
-  /\bautoreply\b/i,
-  /\bOOO\b/,
-  /\bPR #\d+/i,
-  /\b\[JIRA\]/i,
-  /\b\[GitHub\]/i,
-  /\bbuild (passed|failed|broken)\b/i,
-  /\bpipeline (passed|failed)\b/i,
-  /\bCI\/CD\b/i,
-  /\bdeployment (succeeded|failed)\b/i,
-  /\b(limited time|exclusive|special) offer\b/i,
-  /\b\d+% off\b/i,
-  /\bfree (trial|demo|consultation)\b/i,
-  /\bdon't miss\b/i,
-  /\blast chance\b/i,
-  /\bact now\b/i,
-  /\bebook\b/i,
-  /\bwebinar\b/i,
-  /\bwhitepaper\b/i,
+  /\b(new|recent) (sign-?in|login)\b/i, /\bsecurity (alert|notice)\b/i,
+  /\bout of office\b/i, /\bautomatic reply\b/i, /\bautoreply\b/i, /\bOOO\b/,
+  /\bPR #\d+/i, /\b\[JIRA\]/i, /\b\[GitHub\]/i,
+  /\bbuild (passed|failed|broken)\b/i, /\bpipeline (passed|failed)\b/i,
+  /\bCI\/CD\b/i, /\bdeployment (succeeded|failed)\b/i,
+  /\b(limited time|exclusive|special) offer\b/i, /\b\d+% off\b/i,
+  /\bfree (trial|demo|consultation)\b/i, /\bdon't miss\b/i,
+  /\blast chance\b/i, /\bact now\b/i, /\bebook\b/i,
+  /\bwebinar\b/i, /\bwhitepaper\b/i,
 ]
 
-// Patterns that suggest someone is asking the user something directly
 const QUESTION_PATTERNS = [
-  /\?\s*$/m,                       // ends with question mark
-  /\bcan you\b/i,
-  /\bcould you\b/i,
-  /\bwould you\b/i,
-  /\bwhat (do you|are your|is your)\b/i,
-  /\bwhat('s| is) (the|your)\b/i,
+  /\?\s*$/m,
+  /\bcan you\b/i, /\bcould you\b/i, /\bwould you\b/i,
+  /\bwhat (do you|are your|is your)\b/i, /\bwhat('s| is) (the|your)\b/i,
   /\bhow (do you|should we|would you|can we)\b/i,
   /\bdo you (have|know|think|want|need|prefer)\b/i,
   /\bare you (able|available|free|okay|interested)\b/i,
   /\bwhen (can you|will you|are you|should we|do you)\b/i,
   /\bwhere (should|do|can|is)\b/i,
-  /\bthoughts on\b/i,
-  /\bwhat do you think\b/i,
+  /\bthoughts on\b/i, /\bwhat do you think\b/i,
   /\byour (thoughts|opinion|feedback|input|take)\b/i,
-  /\blet me know\b/i,
-  /\bget back to me\b/i,
+  /\blet me know\b/i, /\bget back to me\b/i,
   /\bplease (confirm|advise|review|respond|reply|send|share|update|let me know)\b/i,
-  /\bwaiting (for|on) your\b/i,
-  /\bany update\b/i,
+  /\bwaiting (for|on) your\b/i, /\bany update\b/i,
   /\bneed your (approval|sign-?off|input|feedback|response|decision)\b/i,
-  /\bpending your\b/i,
-  /\bfollowing up\b/i,
-  /\bjust checking in\b/i,
-  /\bcircling back\b/i,
-  /\bwanted to check\b/i,
-  /\bwanted to follow up\b/i,
+  /\bpending your\b/i, /\bfollowing up\b/i, /\bjust checking in\b/i,
+  /\bcircling back\b/i, /\bwanted to check\b/i, /\bwanted to follow up\b/i,
   /\bI would like to schedule\b/i,
   /\bI('d| would) like to (set up|arrange|book|plan)\b/i,
   /\bI('d| would) appreciate your\b/i,
-  /\bconvenient time\b/i,
-  /\bwhen (works|is good) for you\b/i,
+  /\bconvenient time\b/i, /\bwhen (works|is good) for you\b/i,
   /\bare (they|the .+) (meeting|aligned|up to)\b/i,
-  /\bmeeting your expectations\b/i,
-  /\byour feedback\b/i,
+  /\bmeeting your expectations\b/i, /\byour feedback\b/i,
   /\bschedule a (quick |brief )?(call|meeting|chat|sync)\b/i,
 ]
 
@@ -154,7 +96,7 @@ export interface EmailInput {
 }
 
 // ============================================================
-// User preference checks — VIP / blocked / feedback
+// User preference checks
 // ============================================================
 
 function extractDomain(email: string): string {
@@ -178,7 +120,6 @@ function isBlockedSender(email: EmailInput, prefs?: UserEmailPreferences): boole
   const senderEmail = email.fromEmail.toLowerCase()
   const senderDomain = extractDomain(email.fromEmail)
 
-  // Check explicit blocks
   const explicitlyBlocked = prefs.blockedSenders.some(blocked => {
     if (blocked.email && senderEmail === blocked.email.toLowerCase()) return true
     if (blocked.domain && senderDomain === blocked.domain.toLowerCase()) return true
@@ -186,7 +127,6 @@ function isBlockedSender(email: EmailInput, prefs?: UserEmailPreferences): boole
   })
   if (explicitlyBlocked) return true
 
-  // Check feedback-derived blocks (3+ invalid marks on a domain)
   if (prefs.feedbackBlockedDomains.has(senderDomain)) return true
   if (prefs.feedbackBlockedEmails.has(senderEmail)) return true
 
@@ -198,59 +138,128 @@ function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
   return (order[urgency] ?? 3) <= (order[minUrgency] ?? 3)
 }
 
-/**
- * Tier 1: Fast, free check — is this clearly automated/sales noise?
- */
 function isLikelyAutomated(email: EmailInput): boolean {
-  // Check sender patterns
-  if (AUTOMATED_SENDER_PATTERNS.some(p => p.test(email.fromEmail))) {
-    return true
-  }
-
-  // Check subject patterns
-  if (AUTOMATED_SUBJECT_PATTERNS.some(p => p.test(email.subject))) {
-    return true
-  }
-
-  // Very short body with no question marks = probably automated
-  if (email.bodyPreview.length < 30 && !email.bodyPreview.includes('?')) {
-    return true
-  }
-
+  if (AUTOMATED_SENDER_PATTERNS.some(p => p.test(email.fromEmail))) return true
+  if (AUTOMATED_SUBJECT_PATTERNS.some(p => p.test(email.subject))) return true
+  if (email.bodyPreview.length < 30 && !email.bodyPreview.includes('?')) return true
   return false
 }
 
-/**
- * Tier 1b: Does this email likely contain a question or request?
- */
 function likelyNeedsResponse(email: EmailInput): boolean {
   const text = email.subject + ' ' + email.bodyPreview
   return QUESTION_PATTERNS.some(p => p.test(text))
 }
 
 // ============================================================
-// TIER 2: Haiku triage — binary classification (~$0.0003/call)
+// Tool definitions for structured output
+// ============================================================
+
+const TRIAGE_TOOL: Anthropic.Messages.Tool = {
+  name: 'classify_email',
+  description: 'Classify whether an email needs a personal response.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      needs_response: {
+        type: 'boolean',
+        description: 'true if email contains a direct question/request/action directed at recipient',
+      },
+    },
+    required: ['needs_response'],
+  },
+}
+
+const EMAIL_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
+  name: 'analyze_email',
+  description: 'Analyze an email for response needs, urgency, and classification.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      needsResponse: { type: 'boolean' },
+      urgency: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+      reason: { type: 'string', description: 'Brief explanation' },
+      questionSummary: { type: 'string', description: 'The specific question/request, or null' },
+      category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
+      confidence: { type: 'number' },
+      expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
+    },
+    required: ['needsResponse', 'urgency', 'reason', 'questionSummary', 'category', 'confidence'],
+  },
+}
+
+const BATCH_EMAIL_TOOL: Anthropic.Messages.Tool = {
+  name: 'analyze_emails_batch',
+  description: 'Analyze multiple emails for response needs.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of email number to analysis',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            needsResponse: { type: 'boolean' },
+            urgency: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+            reason: { type: 'string' },
+            questionSummary: { type: 'string' },
+            category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
+            confidence: { type: 'number' },
+            expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
+          },
+          required: ['needsResponse', 'urgency', 'reason', 'category', 'confidence'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
+// ============================================================
+// Shared system prompt for Sonnet analysis (cached)
+// ============================================================
+
+const SONNET_SYSTEM_PROMPT = `Analyze emails for response needs.
+
+Urgency:
+- critical: Boss/client/stakeholder time-sensitive question; blocking work; today/tomorrow meeting
+- high: Clear question expecting prompt reply; feedback requests; scheduling "this week"; vendor follow-ups; someone waiting
+- medium: Reasonable request, answer within days
+- low: Nice-to-respond; introductions; optional
+
+IMPLICIT SIGNALS (upgrade even without deadline words):
+- Meeting scheduling -> high+ (need reply to book)
+- "Let me know" / "convenient time" -> high (waiting)
+- Vendor follow-ups -> high (business relationship)
+- Feedback requests on their work -> high (may be blocked)
+- Follow-ups referencing prior conversation -> high (delayed = rude)
+- Multiple questions -> boost urgency
+- "This week" / "earliest convenience" -> high
+- Direct personalized emails -> medium minimum
+
+expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" -> this_week; open-ended -> no_rush
+
+needsResponse=false for: sales/marketing, automated notifications, newsletters, transactional, mass-sent, calendar invites (no question), FYI-only`
+
+// ============================================================
+// TIER 2: Haiku triage via tool_use (~$0.0003)
 // ============================================================
 async function haikuTriage(email: EmailInput): Promise<boolean> {
   try {
-    const emailText = [
-      `From: ${email.fromName} <${email.fromEmail}>`,
-      `Subject: ${email.subject}`,
-      `Date: ${email.receivedAt}`,
-      '',
-      email.bodyPreview,
-    ].join('\n')
+    const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\n\n${email.bodyPreview}`
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 10,
-      system: `You classify emails. Does this email contain a direct question, request, or action item specifically directed at the recipient that is waiting for a response? Ignore sales pitches, automated notifications, newsletters, marketing emails, and mass-sent emails. Reply ONLY "yes" or "no".`,
+      max_tokens: 64,
+      system: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? Ignore sales, automated, newsletters, mass emails.',
+      tools: [TRIAGE_TOOL],
+      tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      return content.text.trim().toLowerCase().startsWith('yes')
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      return (toolBlock.input as { needs_response: boolean }).needs_response === true
     }
   } catch (error) {
     console.error('Missed email Haiku triage failed:', (error as Error).message)
@@ -260,79 +269,33 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
 }
 
 // ============================================================
-// TIER 3: Sonnet deep analysis — extract question & urgency
+// TIER 3: Sonnet deep analysis via tool_use
 // ============================================================
 async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): Promise<MissedEmailClassification> {
   const daysSince = Math.floor(
     (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
   )
 
-  const emailText = [
-    `From: ${email.fromName} <${email.fromEmail}>`,
-    `Subject: ${email.subject}`,
-    `Date: ${email.receivedAt} (${daysSince} days ago)`,
-    '',
-    email.bodyPreview,
-  ].join('\n')
+  const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)\n\n${email.bodyPreview}`
 
-  const communityRulesBlock = communityPatterns && communityPatterns.length > 0
-    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+  const communityBlock = communityPatterns && communityPatterns.length > 0
+    ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : ''
+
+  const systemText = SONNET_SYSTEM_PROMPT + communityBlock
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 512,
-    system: `You analyze emails to determine if they need a response from the recipient.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "needsResponse": true/false,
-  "urgency": "critical|high|medium|low",
-  "reason": "Brief explanation of why this needs attention",
-  "questionSummary": "The specific question or request being asked, or null",
-  "category": "question|request|decision|follow_up|introduction",
-  "confidence": 0.0-1.0,
-  "expectedResponseTime": "same_day|next_day|this_week|no_rush|null"
-}
-
-Urgency guidelines:
-- critical: Direct question from a boss, client, or stakeholder about something time-sensitive; blocking someone's work; meeting request for today/tomorrow
-- high: Clear question or request expecting a prompt reply; someone asking for your feedback/input; scheduling requests for "this week"; vendor/service-provider follow-ups checking on deliverables or satisfaction; someone explicitly waiting for a reply
-- medium: Reasonable request or question that should be answered within a few days
-- low: Nice-to-respond but not critical; introductions; optional requests
-
-IMPLICIT URGENCY SIGNALS (upgrade urgency even without explicit deadline words):
-- Meeting/call scheduling requests → at least "high" (they need your reply to book time)
-- "Please let me know" / "let me know when" / "a convenient time" → at least "high" (they are waiting)
-- Vendor/service-provider follow-ups (checking on work quality, deliverables, satisfaction) → at least "high" (business relationship requires responsiveness)
-- Someone asking for your feedback on their work → at least "high" (they may be blocked)
-- Follow-up emails referencing prior conversations or work → at least "high" (shows ongoing relationship, delayed reply is rude)
-- Multiple questions in one email → boost urgency (more effort = more expectation of reply)
-- "This week" / "when you have a moment" / "at your earliest convenience" → "high" (polite but expects prompt reply)
-- Direct, personalized emails from real people (not templates) → at minimum "medium"
-
-RESPONSE TIME ESTIMATION:
-- Meeting scheduling, feedback requests, vendor follow-ups → "same_day" or "next_day"
-- "This week" language → "this_week"
-- Open-ended / "when you get a chance" → "no_rush"
-- If the email has been sitting for longer than its expected response time, that makes it MORE urgent, not less
-
-ALWAYS mark as needsResponse: false for:
-- Sales/marketing/cold outreach emails
-- Automated notifications (CI/CD, JIRA, GitHub, etc.)
-- Newsletters, digests, promotional content
-- Transactional emails (receipts, confirmations, shipping)
-- Emails where the sender is clearly not expecting a personal reply
-- Mass-sent emails / mailing lists
-- Calendar invites with no question
-- Simple FYI/informational emails with no ask${communityRulesBlock}`,
-    messages: [{ role: 'user', content: `Analyze this email:\n\n${emailText}` }],
+    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
+    tools: [EMAIL_ANALYSIS_TOOL],
+    tool_choice: { type: 'tool', name: 'analyze_email' },
+    messages: [{ role: 'user', content: emailText }],
   })
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const jsonStr = extractJSON(content.text)
-    return JSON.parse(jsonStr)
+  const toolBlock = message.content.find((b) => b.type === 'tool_use')
+  if (toolBlock && toolBlock.type === 'tool_use') {
+    return toolBlock.input as MissedEmailClassification
   }
 
   return {
@@ -345,23 +308,15 @@ ALWAYS mark as needsResponse: false for:
   }
 }
 
-function extractJSON(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) return fenceMatch[1].trim()
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (jsonMatch) return jsonMatch[0]
-  return text.trim()
-}
-
 // ============================================================
-// Urgency escalation — boost urgency when response is overdue
+// Urgency escalation for overdue emails
 // ============================================================
 
 const RESPONSE_TIME_HOURS: Record<string, number> = {
   same_day: 8,
   next_day: 24,
-  this_week: 96,  // ~4 business days
-  no_rush: 168,   // 7 days
+  this_week: 96,
+  no_rush: 168,
 }
 
 function escalateForAge(result: MissedEmailClassification, receivedAt: string): void {
@@ -373,7 +328,6 @@ function escalateForAge(result: MissedEmailClassification, receivedAt: string): 
   const hoursSinceReceived = (Date.now() - new Date(receivedAt).getTime()) / (1000 * 60 * 60)
   if (hoursSinceReceived <= expectedHours) return
 
-  // Email has been waiting longer than expected — escalate urgency one level
   const escalation: Record<string, 'critical' | 'high' | 'medium'> = {
     low: 'medium',
     medium: 'high',
@@ -383,7 +337,7 @@ function escalateForAge(result: MissedEmailClassification, receivedAt: string): 
   if (result.urgency !== 'critical') {
     const escalatedUrgency = escalation[result.urgency]
     if (escalatedUrgency) {
-      result.reason = `${result.reason} (overdue — expected response within ${result.expectedResponseTime.replace('_', ' ')})`
+      result.reason = `${result.reason} (overdue -- expected response within ${result.expectedResponseTime.replace('_', ' ')})`
       result.urgency = escalatedUrgency
     }
   }
@@ -417,24 +371,19 @@ export async function classifyMissedEmail(
 ): Promise<MissedEmailClassification | null> {
   _stats.total_scanned++
 
-  // TIER 0: User preference overrides
-  // Blocked senders are always filtered out
   if (isBlockedSender(email, prefs)) {
     _stats.tier1_automated++
     return null
   }
 
-  // VIP senders skip automated/question filters — go straight to AI analysis
   const vip = isVipSender(email, prefs)
 
   if (!vip) {
-    // TIER 1a: Is this clearly automated/sales?
     if (isLikelyAutomated(email)) {
       _stats.tier1_automated++
       return null
     }
 
-    // TIER 1b: Does it even look like it needs a response?
     if (!likelyNeedsResponse(email)) {
       _stats.tier1_no_question++
       return null
@@ -443,7 +392,6 @@ export async function classifyMissedEmail(
 
   try {
     if (!vip) {
-      // TIER 2: Haiku yes/no triage (skip for VIPs)
       const needsResponse = await haikuTriage(email)
       if (!needsResponse) {
         _stats.tier2_filtered++
@@ -451,23 +399,19 @@ export async function classifyMissedEmail(
       }
     }
 
-    // TIER 3: Sonnet full analysis (with community-learned patterns)
     _stats.tier3_analyzed++
     let communityPatterns: string[] = []
     try {
       communityPatterns = await getActiveCommunityPatterns('email')
     } catch {
-      // Non-fatal — proceed without community patterns
+      // Non-fatal
     }
     const result = await sonnetAnalyze(email, communityPatterns)
 
-    // Escalate urgency if email has been waiting longer than expected response time
     escalateForAge(result, email.receivedAt)
 
-    // VIPs always pass through if Sonnet says it needs response (lower threshold)
     const confidenceThreshold = vip ? 0.3 : 0.6
     if (result.needsResponse && result.confidence >= confidenceThreshold) {
-      // Boost VIP urgency
       if (vip && result.urgency !== 'critical') {
         const boost: Record<string, 'critical' | 'high' | 'medium'> = {
           high: 'critical',
@@ -477,12 +421,10 @@ export async function classifyMissedEmail(
         result.urgency = boost[result.urgency] || result.urgency
       }
 
-      // Check urgency threshold
       if (prefs && !meetsUrgencyThreshold(result.urgency, prefs.minUrgency)) {
         return null
       }
 
-      // Check category is enabled
       if (prefs && !prefs.enabledCategories.includes(result.category)) {
         return null
       }
@@ -492,13 +434,12 @@ export async function classifyMissedEmail(
       return result
     }
 
-    // Even if Sonnet says no, VIPs with any question-like content get surfaced
     if (vip && likelyNeedsResponse(email)) {
       _stats.needs_response++
       return {
         needsResponse: true,
         urgency: 'medium',
-        reason: 'VIP contact — surfaced by default',
+        reason: 'VIP contact -- surfaced by default',
         questionSummary: null,
         category: 'question',
         confidence: 0.5,
@@ -515,8 +456,7 @@ export async function classifyMissedEmail(
 }
 
 // ============================================================
-// BATCH MODE: Classify multiple emails efficiently
-// Groups Tier 3 analysis into a single Sonnet call
+// BATCH MODE
 // ============================================================
 export async function classifyMissedEmailBatch(
   emails: Array<{ id: string } & EmailInput>,
@@ -524,12 +464,11 @@ export async function classifyMissedEmailBatch(
 ): Promise<Map<string, MissedEmailClassification>> {
   const results = new Map<string, MissedEmailClassification>()
 
-  // Tier 0 + 1: Pre-filter with user preferences
+  // Tier 0 + 1: Pre-filter
   const candidates: Array<{ id: string; vip: boolean } & EmailInput> = []
   for (const email of emails) {
     _stats.total_scanned++
 
-    // Blocked senders always filtered
     if (isBlockedSender(email, prefs)) {
       _stats.tier1_automated++
       continue
@@ -554,7 +493,7 @@ export async function classifyMissedEmailBatch(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage each candidate (VIPs skip this)
+  // Tier 2: Haiku triage via tool_use (VIPs skip)
   const triaged: typeof candidates = []
   for (const email of candidates) {
     if (email.vip) {
@@ -571,17 +510,17 @@ export async function classifyMissedEmailBatch(
 
   if (triaged.length === 0) return results
 
-  // Tier 3: Batch Sonnet analysis (with community-learned patterns)
+  // Tier 3: Batch Sonnet analysis via tool_use
   _stats.tier3_analyzed += triaged.length
 
   let communityPatterns: string[] = []
   try {
     communityPatterns = await getActiveCommunityPatterns('email')
   } catch {
-    // Non-fatal — proceed without community patterns
+    // Non-fatal
   }
-  const communityRulesBlock = communityPatterns.length > 0
-    ? `\n\nCOMMUNITY-LEARNED PATTERNS (apply these rules — they come from real user feedback):\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+  const communityBlock = communityPatterns.length > 0
+    ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : ''
 
   const numberedEmails = triaged
@@ -589,58 +528,19 @@ export async function classifyMissedEmailBatch(
       const daysSince = Math.floor(
         (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
       )
-      return [
-        `[${i + 1}]`,
-        `From: ${email.fromName} <${email.fromEmail}>`,
-        `Subject: ${email.subject}`,
-        `Date: ${email.receivedAt} (${daysSince} days ago)`,
-        '',
-        email.bodyPreview,
-      ].join('\n')
+      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)\n\n${email.bodyPreview}`
     })
     .join('\n\n---\n\n')
 
   try {
+    const systemText = SONNET_SYSTEM_PROMPT + communityBlock
+
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: `You analyze batches of emails to determine which ones need a response from the recipient.
-
-Each email is numbered [1], [2], etc.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "results": {
-    "1": {"needsResponse": true, "urgency": "high", "reason": "...", "questionSummary": "...", "category": "question", "confidence": 0.9, "expectedResponseTime": "same_day"},
-    "2": {"needsResponse": false, "urgency": "low", "reason": "Sales email", "questionSummary": null, "category": "question", "confidence": 0.95, "expectedResponseTime": null}
-  }
-}
-
-Urgency guidelines:
-- critical: Direct question from boss/client/stakeholder; blocking someone's work; time-sensitive decision; meeting request for today/tomorrow
-- high: Clear question or request expecting a prompt reply; someone asking for your feedback/input; scheduling requests for "this week"; vendor/service-provider follow-ups checking on deliverables or satisfaction; someone explicitly waiting for a reply
-- medium: Reasonable request that should be answered within a few days
-- low: Nice-to-respond but not critical; introductions; optional requests
-
-IMPLICIT URGENCY SIGNALS (upgrade urgency even without explicit deadline words):
-- Meeting/call scheduling requests → at least "high" (they need your reply to book time)
-- "Please let me know" / "let me know when" / "a convenient time" → at least "high" (they are waiting)
-- Vendor/service-provider follow-ups → at least "high" (business relationship requires responsiveness)
-- Someone asking for your feedback on their work → at least "high" (they may be blocked)
-- Follow-up emails referencing prior conversations → at least "high" (delayed reply is rude)
-- Multiple questions in one email → boost urgency
-- "This week" / "at your earliest convenience" → "high" (polite but expects prompt reply)
-- Direct, personalized emails from real people → at minimum "medium"
-
-expectedResponseTime: "same_day" | "next_day" | "this_week" | "no_rush" | null
-
-ALWAYS mark needsResponse: false for:
-- Sales/marketing/cold outreach
-- Automated notifications (CI/CD, JIRA, GitHub, etc.)
-- Newsletters, digests, promotional content
-- Transactional emails (receipts, confirmations)
-- Mass-sent emails / mailing lists
-- Simple FYI/informational with no ask${communityRulesBlock}`,
+      system: [{ type: 'text', text: `Analyze batched emails numbered [1], [2], etc.\n\n${systemText}`, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
+      tools: [BATCH_EMAIL_TOOL],
+      tool_choice: { type: 'tool', name: 'analyze_emails_batch' },
       messages: [
         {
           role: 'user',
@@ -649,29 +549,24 @@ ALWAYS mark needsResponse: false for:
       ],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      const jsonStr = extractJSON(content.text)
-      const parsed = JSON.parse(jsonStr)
-      const batchResults = parsed.results || {}
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      const batchResults = (toolBlock.input as { results: Record<string, MissedEmailClassification> }).results || {}
 
       triaged.forEach((email, i) => {
         const key = String(i + 1)
         const classification = batchResults[key]
         if (!classification) return
 
-        // Escalate urgency if email has been waiting longer than expected
         escalateForAge(classification, email.receivedAt)
 
         const confidenceThreshold = email.vip ? 0.3 : 0.6
         if (classification.needsResponse && (classification.confidence || 0) >= confidenceThreshold) {
-          // Boost VIP urgency
           if (email.vip && classification.urgency !== 'critical') {
             const boost: Record<string, string> = { high: 'critical', medium: 'high', low: 'medium' }
-            classification.urgency = boost[classification.urgency] || classification.urgency
+            classification.urgency = (boost[classification.urgency] || classification.urgency) as any
           }
 
-          // Check preference filters
           if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
           if (prefs && !prefs.enabledCategories.includes(classification.category)) return
 
@@ -679,12 +574,11 @@ ALWAYS mark needsResponse: false for:
           _stats.needs_response++
           results.set(email.id, classification)
         } else if (email.vip && likelyNeedsResponse(email)) {
-          // VIPs with questions always surface
           _stats.needs_response++
           results.set(email.id, {
             needsResponse: true,
             urgency: 'medium',
-            reason: 'VIP contact — surfaced by default',
+            reason: 'VIP contact -- surfaced by default',
             questionSummary: null,
             category: 'question',
             confidence: 0.5,

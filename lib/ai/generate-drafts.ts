@@ -4,23 +4,67 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-function extractJSON(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) {
-    return fenceMatch[1].trim()
-  }
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (jsonMatch) {
-    return jsonMatch[0]
-  }
-  return text.trim()
-}
-
 function daysSince(dateStr: string): number {
   const created = new Date(dateStr)
   const now = new Date()
   return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
 }
+
+// ============================================================
+// Tool definitions for structured output
+// ============================================================
+
+const SINGLE_DRAFT_TOOL: Anthropic.Messages.Tool = {
+  name: 'generate_draft',
+  description: 'Generate a follow-up email draft for an overdue commitment.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      subject: {
+        type: 'string',
+        description: 'Email subject line, under 60 characters',
+      },
+      body: {
+        type: 'string',
+        description: 'Follow-up message body, under 150 words. Friendly, not robotic.',
+      },
+    },
+    required: ['subject', 'body'],
+  },
+}
+
+const BATCH_DRAFT_TOOL: Anthropic.Messages.Tool = {
+  name: 'generate_batch_drafts',
+  description: 'Generate follow-up drafts for multiple commitments.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of commitment number (string) to draft',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            subject: { type: 'string' },
+            body: { type: 'string' },
+          },
+          required: ['subject', 'body'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
+const SYSTEM_PROMPT = `Write short, professional but casual follow-up messages for overdue commitments. Sound like a real person, not a bot.
+
+Rules:
+- Subject: under 60 chars
+- Body: under 150 words
+- Reference the commitment naturally
+- Acknowledge elapsed time gently if significant
+- No passive-aggression, no excessive exclamation marks
+- Sign off casually (e.g. "Thanks," or "Cheers,"), no sender name`
 
 export async function generateFollowUpDraft(commitment: {
   title: string
@@ -32,49 +76,29 @@ export async function generateFollowUpDraft(commitment: {
   const days = daysSince(commitment.created_at)
   const recipientName = commitment.recipient_name || 'there'
   const sourceContext = commitment.source
-    ? `This commitment was tracked from ${commitment.source}.`
+    ? `Source: ${commitment.source}`
     : ''
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    system: `You write short, professional but casual follow-up messages for commitments that haven't been completed yet. The tone should sound like a real person checking in — friendly, not robotic or pushy.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "subject": "short email subject line",
-  "body": "the follow-up message body"
-}
-
-Guidelines:
-- Keep the subject line under 60 characters
-- Keep the body under 150 words
-- Reference the specific commitment naturally
-- If it's been a while since the commitment was made, acknowledge the time gently
-- Don't be passive-aggressive
-- Don't use exclamation marks excessively
-- Sign off casually (e.g., "Thanks," or "Cheers,") but do NOT include a sender name`,
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } } as any],
+    tools: [SINGLE_DRAFT_TOOL],
+    tool_choice: { type: 'tool', name: 'generate_draft' },
     messages: [
       {
         role: 'user',
-        content: `Write a follow-up message for this commitment:
-
-Title: ${commitment.title}
-${commitment.description ? 'Details: ' + commitment.description : ''}
-Made: ${days} day(s) ago
-Recipient first name: ${recipientName}
-${sourceContext}`,
+        content: `Title: ${commitment.title}\n${commitment.description ? 'Details: ' + commitment.description + '\n' : ''}Made: ${days} day(s) ago\nRecipient: ${recipientName}\n${sourceContext}`.trim(),
       },
     ],
   })
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const jsonStr = extractJSON(content.text)
-    const parsed = JSON.parse(jsonStr)
+  const toolBlock = message.content.find((b) => b.type === 'tool_use')
+  if (toolBlock && toolBlock.type === 'tool_use') {
+    const result = toolBlock.input as { subject: string; body: string }
     return {
-      subject: parsed.subject || 'Following up',
-      body: parsed.body || '',
+      subject: result.subject || 'Following up',
+      body: result.body || '',
     }
   }
 
@@ -95,7 +119,7 @@ export async function generateFollowUpDraftsBatch(
 
   if (commitments.length === 0) return results
 
-  // For a single commitment, use the single function
+  // Single commitment: use the single function
   if (commitments.length === 1) {
     const c = commitments[0]
     try {
@@ -107,7 +131,7 @@ export async function generateFollowUpDraftsBatch(
     return results
   }
 
-  // Batch: send all commitments in one prompt
+  // Batch: single prompt with tool_use
   const numbered = commitments
     .map((c, i) => {
       const days = daysSince(c.created_at)
@@ -126,26 +150,9 @@ export async function generateFollowUpDraftsBatch(
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 2048,
-      system: `You write short, professional but casual follow-up messages for commitments that haven't been completed yet. The tone should sound like a real person checking in — friendly, not robotic or pushy.
-
-You will receive multiple commitments numbered [1], [2], etc.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "results": {
-    "1": { "subject": "short subject line", "body": "follow-up message" },
-    "2": { "subject": "...", "body": "..." }
-  }
-}
-
-Guidelines:
-- Keep each subject line under 60 characters
-- Keep each body under 150 words
-- Reference the specific commitment naturally
-- If it's been a while since the commitment was made, acknowledge the time gently
-- Don't be passive-aggressive
-- Don't use exclamation marks excessively
-- Sign off casually (e.g., "Thanks," or "Cheers,") but do NOT include a sender name`,
+      system: [{ type: 'text', text: SYSTEM_PROMPT + '\n\nYou will receive multiple commitments numbered [1], [2], etc. Generate a draft for each.', cache_control: { type: 'ephemeral' } } as any],
+      tools: [BATCH_DRAFT_TOOL],
+      tool_choice: { type: 'tool', name: 'generate_batch_drafts' },
       messages: [
         {
           role: 'user',
@@ -154,11 +161,9 @@ Guidelines:
       ],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      const jsonStr = extractJSON(content.text)
-      const parsed = JSON.parse(jsonStr)
-      const batchResults = parsed.results || {}
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      const batchResults = (toolBlock.input as { results: Record<string, { subject: string; body: string }> }).results || {}
 
       commitments.forEach((c, i) => {
         const key = String(i + 1)
