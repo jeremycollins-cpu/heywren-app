@@ -275,7 +275,8 @@ export default function BriefingsPage() {
       const now = new Date().toISOString()
       const sevenDaysLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
-      const { data: events } = await supabase
+      const userEmail = userData.user.email?.toLowerCase() || ''
+      const { data: rawEvents } = await supabase
         .from('outlook_calendar_events')
         .select('id, subject, organizer_name, organizer_email, attendees, start_time, end_time, location, body_preview, is_cancelled')
         .eq('team_id', teamId)
@@ -283,6 +284,13 @@ export default function BriefingsPage() {
         .gte('start_time', now)
         .lte('start_time', sevenDaysLater)
         .order('start_time', { ascending: true })
+
+      // Filter to only events involving this user (organizer or attendee)
+      const events = (rawEvents || []).filter((evt: any) => {
+        if ((evt.organizer_email || '').toLowerCase() === userEmail) return true
+        const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
+        return attendeesStr.includes(userEmail)
+      })
 
       if (!events || events.length === 0) {
         // Check if Outlook is connected via server-side API (bypasses RLS)
@@ -315,7 +323,6 @@ export default function BriefingsPage() {
       }))
 
       // ── Fetch messages for health score calculation — scoped to user's emails ──
-      const userEmail = userData.user.email?.toLowerCase() || ''
       const { data: emailData } = await supabase
         .from('outlook_messages')
         .select('from_email, from_name, received_at, to_recipients')

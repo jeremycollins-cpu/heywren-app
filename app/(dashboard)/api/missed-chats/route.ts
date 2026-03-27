@@ -194,11 +194,12 @@ export async function POST() {
     }
   }
 
-  // Get existing missed_chats to avoid duplicates
+  // Get existing missed_chats to avoid duplicates — scoped to this user
   const { data: existing } = await adminDb
     .from('missed_chats')
     .select('message_ts')
     .eq('team_id', teamId)
+    .eq('user_id', user.id)
 
   const existingTs = new Set((existing || []).map((e: { message_ts: string }) => e.message_ts))
 

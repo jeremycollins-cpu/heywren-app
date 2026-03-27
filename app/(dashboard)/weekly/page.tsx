@@ -152,7 +152,7 @@ export default function WeeklyPage() {
 
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-        const { data: calData, error: calError } = await supabase
+        const { data: rawCalData, error: calError } = await supabase
           .from('outlook_calendar_events')
           .select('id, subject, start_time, end_time, organizer_name, attendees, commitments_found, processed')
           .eq('team_id', teamId)
@@ -161,6 +161,12 @@ export default function WeeklyPage() {
           .order('start_time', { ascending: true })
 
         if (calError) throw calError
+
+        // Filter to only events involving this user (organizer or attendee)
+        const calData = (rawCalData || []).filter((evt: any) => {
+          const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
+          return attendeesStr.includes(email.toLowerCase())
+        })
 
         if (data) setCommitments(data)
         if (calData) setCalendarEvents(calData)
