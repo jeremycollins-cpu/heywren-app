@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { WebClient } from '@slack/web-api'
 
 // GET — Fetch pending/snoozed missed chats for current user's team
 export async function GET() {
@@ -72,7 +73,7 @@ export async function POST() {
   // Get the Slack integration to find the authenticated user's Slack ID
   const { data: integration } = await adminDb
     .from('integrations')
-    .select('config')
+    .select('config, access_token')
     .eq('team_id', teamId)
     .eq('provider', 'slack')
     .maybeSingle()
@@ -83,6 +84,10 @@ export async function POST() {
 
   // Look for the user's Slack user ID in the integration config
   let slackUserId = integration.config?.authed_user_id || null
+
+  // Set up Slack client for resolving user/channel names
+  const slackToken = integration.access_token
+  const slack = slackToken ? new WebClient(slackToken) : null
 
   // Scan window: last 30 days
   const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
@@ -197,10 +202,49 @@ export async function POST() {
 
   const existingTs = new Set((existing || []).map((e: { message_ts: string }) => e.message_ts))
 
+  // Batch-resolve Slack user IDs and channel IDs to human-readable names
+  const newMessages = missedMessages.filter(msg => !existingTs.has(msg.message_ts))
+  const userNameCache = new Map<string, string>()
+  const channelNameCache = new Map<string, string>()
+
+  if (slack && newMessages.length > 0) {
+    // Collect unique sender IDs and channel IDs
+    const uniqueUserIds = [...new Set(newMessages.map(m => m.user_id).filter(Boolean))]
+    const uniqueChannelIds = [...new Set(newMessages.map(m => m.channel_id).filter(Boolean))]
+
+    // Resolve user names in parallel (with error handling per user)
+    await Promise.all(uniqueUserIds.map(async (uid) => {
+      try {
+        const result = await slack.users.info({ user: uid })
+        const u = result.user
+        const name = u?.profile?.display_name || u?.profile?.real_name || u?.real_name || u?.name
+        if (name) userNameCache.set(uid, name)
+      } catch (e) {
+        console.warn(`Failed to resolve Slack user ${uid}:`, e)
+      }
+    }))
+
+    // Resolve channel names in parallel
+    await Promise.all(uniqueChannelIds.map(async (chId) => {
+      try {
+        const result = await slack.conversations.info({ channel: chId })
+        const ch = result.channel as { name?: string; is_im?: boolean; user?: string }
+        if (ch?.name) {
+          channelNameCache.set(chId, ch.name)
+        } else if (ch?.is_im && ch?.user) {
+          // For DMs, use the other person's name
+          const dmName = userNameCache.get(ch.user)
+          if (dmName) channelNameCache.set(chId, `DM with ${dmName}`)
+        }
+      } catch (e) {
+        console.warn(`Failed to resolve Slack channel ${chId}:`, e)
+      }
+    }))
+  }
+
   // Insert new missed chats
   let insertedCount = 0
-  const toInsert = missedMessages
-    .filter(msg => !existingTs.has(msg.message_ts))
+  const toInsert = newMessages
     .map(msg => {
       const text = msg.message_text || ''
       // Simple urgency heuristic
@@ -238,6 +282,8 @@ export async function POST() {
         slack_message_id: msg.id,
         channel_id: msg.channel_id,
         sender_user_id: msg.user_id,
+        sender_name: userNameCache.get(msg.user_id) || null,
+        channel_name: channelNameCache.get(msg.channel_id) || null,
         message_text: text,
         message_ts: msg.message_ts,
         thread_ts: msg.thread_ts || null,
@@ -260,6 +306,42 @@ export async function POST() {
       console.error('Failed to insert missed chats:', insertError)
     } else {
       insertedCount = toInsert.length
+    }
+  }
+
+  // Backfill sender_name for any existing records that are missing it
+  if (slack && userNameCache.size > 0) {
+    const { data: missingNames } = await adminDb
+      .from('missed_chats')
+      .select('id, sender_user_id')
+      .eq('team_id', teamId)
+      .is('sender_name', null)
+      .in('status', ['pending', 'snoozed'])
+      .limit(100)
+
+    if (missingNames && missingNames.length > 0) {
+      // Resolve any sender IDs not already in cache
+      const uncached = [...new Set(missingNames.map((m: { sender_user_id: string }) => m.sender_user_id))]
+        .filter(uid => !userNameCache.has(uid))
+      await Promise.all(uncached.map(async (uid) => {
+        try {
+          const result = await slack.users.info({ user: uid })
+          const u = result.user
+          const name = u?.profile?.display_name || u?.profile?.real_name || u?.real_name || u?.name
+          if (name) userNameCache.set(uid, name)
+        } catch (e) { /* skip */ }
+      }))
+
+      // Update records that now have a resolved name
+      for (const record of missingNames) {
+        const name = userNameCache.get(record.sender_user_id)
+        if (name) {
+          await adminDb
+            .from('missed_chats')
+            .update({ sender_name: name })
+            .eq('id', record.id)
+        }
+      }
     }
   }
 
