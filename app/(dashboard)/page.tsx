@@ -14,6 +14,8 @@ import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { HeroStats } from '@/components/dashboard/hero-stats'
 import { ForecastSection } from '@/components/dashboard/forecast-section'
+import { AnalyticsSection } from '@/components/dashboard/analytics-section'
+import { SectionErrorBoundary } from '@/components/ui/error-boundary'
 import { MentionsSection } from '@/components/dashboard/mentions-section'
 import { NudgeCard } from '@/components/dashboard/nudge-card'
 import { TodaysFocus } from '@/components/dashboard/todays-focus'
@@ -291,25 +293,34 @@ export default function DashboardPage() {
         />
       </div>
 
-      <ForecastSection commitments={commitments} />
-      <MentionsSection mentions={mentions} />
+      <SectionErrorBoundary fallbackTitle="Analytics failed to load">
+        <AnalyticsSection commitments={commitments} />
+      </SectionErrorBoundary>
+      <SectionErrorBoundary fallbackTitle="Forecast failed to load">
+        <ForecastSection commitments={commitments} />
+      </SectionErrorBoundary>
+      <SectionErrorBoundary fallbackTitle="Mentions failed to load">
+        <MentionsSection mentions={mentions} />
+      </SectionErrorBoundary>
 
       {openCommitments.filter(c => daysSince(c.created_at) > 3).length > 0 && (
-        <section className="space-y-4" aria-label="Items needing follow-through">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Needs Follow-through</h2>
-          {openCommitments
-            .filter(c => daysSince(c.created_at) > 3)
-            .slice(0, 3)
-            .map(c => (
-              <NudgeCard
-                key={c.id}
-                commitment={c}
-                onDone={id => handleAction(markDone, id, 'Marked as done!')}
-                onSnooze={id => handleAction(snooze, id, 'Snoozed — timer reset')}
-                onDismiss={id => handleAction(dismiss, id, 'Dismissed')}
-              />
-            ))}
-        </section>
+        <SectionErrorBoundary fallbackTitle="Nudge section failed to load">
+          <section className="space-y-4" aria-label="Items needing follow-through">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Needs Follow-through</h2>
+            {openCommitments
+              .filter(c => daysSince(c.created_at) > 3)
+              .slice(0, 3)
+              .map(c => (
+                <NudgeCard
+                  key={c.id}
+                  commitment={c}
+                  onDone={id => handleAction(markDone, id, 'Marked as done!')}
+                  onSnooze={id => handleAction(snooze, id, 'Snoozed — timer reset')}
+                  onDismiss={id => handleAction(dismiss, id, 'Dismissed')}
+                />
+              ))}
+          </section>
+        </SectionErrorBoundary>
       )}
     </div>
   )
