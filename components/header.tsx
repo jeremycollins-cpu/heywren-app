@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff } from 'lucide-react'
-import { useRealtime } from '@/lib/hooks/use-realtime'
 import toast from 'react-hot-toast'
 
 interface HeaderProps {
@@ -71,29 +70,37 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }
   }
 
-  // Sync status: track last activity timestamp from realtime
+  // Sync status: fetch real last sync time from API
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
-  const [syncActive, setSyncActive] = useState(false)
+  const [syncLoaded, setSyncLoaded] = useState(false)
 
-  useRealtime({
-    table: 'commitments',
-    onInsert: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
-    onUpdate: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
-  })
-
-  useRealtime({
-    table: 'slack_messages',
-    onInsert: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
-  })
+  useEffect(() => {
+    const fetchSyncStatus = async () => {
+      try {
+        const res = await fetch('/api/sync/status', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.lastSync) setLastSyncTime(new Date(data.lastSync))
+        }
+      } catch { /* ignore */ }
+      setSyncLoaded(true)
+    }
+    fetchSyncStatus()
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchSyncStatus, 120000)
+    return () => clearInterval(interval)
+  }, [])
 
   function formatSyncTime(date: Date | null): string {
-    if (!date) return 'Listening...'
+    if (!syncLoaded) return ''
+    if (!date) return 'No data yet'
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
-    if (seconds < 10) return 'Just now'
-    if (seconds < 60) return `${seconds}s ago`
+    if (seconds < 60) return 'Just now'
     const minutes = Math.floor(seconds / 60)
     if (minutes < 60) return `${minutes}m ago`
-    return `${Math.floor(minutes / 60)}h ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
   }
 
   // Re-render the sync time label periodically
@@ -121,23 +128,22 @@ export default function Header({ onMenuClick }: HeaderProps) {
       </button>
 
       {/* Sync status indicator */}
-      <div className="hidden sm:flex items-center gap-1.5 ml-2">
-        <div className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-          syncActive
-            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-            : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-        }`}>
-          {syncActive ? (
-            <span className="relative w-2 h-2" aria-hidden="true">
-              <span className="absolute inset-0 bg-green-400 rounded-full animate-ping opacity-75" />
-              <span className="relative block w-2 h-2 bg-green-500 rounded-full" />
-            </span>
-          ) : (
-            <Wifi className="w-3 h-3" />
-          )}
-          <span>{syncActive ? 'Syncing' : `Last sync: ${formatSyncTime(lastSyncTime)}`}</span>
+      {syncLoaded && (
+        <div className="hidden sm:flex items-center gap-1.5 ml-2">
+          <div className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+            lastSyncTime
+              ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+              : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+          }`}>
+            {lastSyncTime ? (
+              <Wifi className="w-3 h-3" />
+            ) : (
+              <WifiOff className="w-3 h-3" />
+            )}
+            <span>Last sync: {formatSyncTime(lastSyncTime)}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1" />
 
