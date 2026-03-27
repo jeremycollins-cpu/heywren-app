@@ -6,9 +6,6 @@
 //   1. Validates whether the signal is actionable and not spam/noise
 //   2. Extracts a concrete detection pattern from the example
 //   3. Checks for duplicates against existing community patterns
-//
-// High-confidence validated signals get promoted to community_patterns,
-// which are injected into the detection prompts for all users.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
@@ -45,6 +42,30 @@ interface SignalInput {
   sourcePlatform: string | null
 }
 
+// ============================================================
+// Tool definition for structured validation output
+// ============================================================
+
+const VALIDATION_TOOL: Anthropic.Messages.Tool = {
+  name: 'report_validation',
+  description: 'Report validation results for a community signal submission.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      isValid: { type: 'boolean' },
+      confidence: { type: 'number', description: '0.0-1.0' },
+      reason: { type: 'string', description: 'Why valid/invalid -- be specific' },
+      extractedPattern: { type: 'string', description: 'Human-readable pattern description' },
+      patternType: { type: 'string', enum: ['urgency_boost', 'new_detection', 'priority_rule', 'sender_context', 'response_time'] },
+      patternRule: { type: 'string', description: 'Concise rule for injection into AI detection prompt' },
+      appliesTo: { type: 'string', enum: ['email', 'slack', 'both'] },
+      isDuplicate: { type: 'boolean' },
+      duplicateOf: { type: 'string', description: 'Description of existing pattern it duplicates, or null' },
+    },
+    required: ['isValid', 'confidence', 'reason', 'isDuplicate'],
+  },
+}
+
 /**
  * Validates a community signal submission and extracts an actionable pattern.
  */
@@ -53,63 +74,62 @@ export async function validateCommunitySignal(
   existingPatterns: Array<{ id: string; pattern_description: string; pattern_rule: string }>
 ): Promise<ValidationResult> {
   const existingPatternsText = existingPatterns.length > 0
-    ? existingPatterns.map((p, i) => `[${i + 1}] ${p.pattern_description} → ${p.pattern_rule}`).join('\n')
-    : '(none yet)'
+    ? existingPatterns.map((p, i) => `[${i + 1}] ${p.pattern_description} -> ${p.pattern_rule}`).join('\n')
+    : '(none)'
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1024,
-    system: `You validate community feedback for HeyWren, an AI tool that detects commitments, missed emails, and action items in Slack messages and Outlook emails.
+    system: [{ type: 'text', text: `Validate community feedback for HeyWren (AI commitment/missed-email detector for Slack + Outlook).
 
-Users submit examples of things HeyWren missed or got wrong. Your job is to:
-1. Determine if the feedback is valid and actionable (not spam, vague complaints, or duplicates)
-2. Extract a concrete, reusable detection pattern that would fix this class of problem
-3. Check if a similar pattern already exists
+Users submit examples of misses or errors. Your job:
+1. Is it valid and actionable (not spam, vague, or duplicate)?
+2. Extract a reusable detection pattern for this class of problem.
+3. Check against existing patterns.
 
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "isValid": true/false,
-  "confidence": 0.0-1.0,
-  "reason": "Why this signal is valid/invalid — be specific",
-  "extractedPattern": "A human-readable description of the pattern, e.g. 'Vendor/service-provider follow-up emails requesting feedback should be classified as high urgency'",
-  "patternType": "urgency_boost|new_detection|priority_rule|sender_context|response_time|null",
-  "patternRule": "A concise rule that can be injected into an AI detection prompt, e.g. 'When a vendor or service provider sends a follow-up email asking about satisfaction, deliverable quality, or requesting a meeting, classify as urgency: high with expectedResponseTime: same_day'",
-  "appliesTo": "email|slack|both|null",
-  "isDuplicate": true/false,
-  "duplicateOf": "description of the existing pattern it duplicates, or null"
-}
+Criteria:
+- VALID: specific example + clear expected behavior + real detection gap + broadly applicable
+- INVALID: vague ("it doesn't work"), spam, too personal, no actionable fix
+- DUPLICATE: core pattern already exists (even if worded differently)
 
-Validation criteria:
-- VALID: Specific example with clear expected behavior; describes a real detection gap; pattern would help other users
-- INVALID: Vague ("it doesn't work"), spam, personal preference without broader applicability, complaint without actionable fix
-- DUPLICATE: The core pattern already exists in the existing patterns list (even if worded differently)
-
-Pattern extraction guidelines:
-- Be specific enough to be actionable but general enough to help all users
-- Focus on the CLASS of problem, not the specific instance
-- The patternRule should be phrased as an instruction to an AI classifier
-- Good: "Emails containing 'please let me know a convenient time' are scheduling requests expecting same-day response"
-- Bad: "Flag emails from Fareed at outsourcetel.com" (too specific to one sender)`,
+Pattern rules:
+- Specific enough to act on, general enough for all users
+- Focus on the CLASS, not the instance
+- Phrase as instruction to an AI classifier
+- Good: "Emails with 'please let me know a convenient time' are scheduling requests expecting same-day response"
+- Bad: "Flag emails from Fareed at outsourcetel.com"`, cache_control: { type: 'ephemeral' } }],
+    tools: [VALIDATION_TOOL],
+    tool_choice: { type: 'tool', name: 'report_validation' },
     messages: [{
       role: 'user',
-      content: `Validate this community signal:
+      content: `Validate this signal:
 
 Type: ${signal.signalType}
 Title: ${signal.title}
 Description: ${signal.description}
-${signal.exampleContent ? `Example content:\n${signal.exampleContent}` : ''}
-Expected behavior: ${signal.expectedBehavior}
+${signal.exampleContent ? `Example:\n${signal.exampleContent}` : ''}
+Expected: ${signal.expectedBehavior}
 Platform: ${signal.sourcePlatform || 'not specified'}
 
-Existing community patterns:
+Existing patterns:
 ${existingPatternsText}`,
     }],
   })
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const jsonStr = extractJSON(content.text)
-    return JSON.parse(jsonStr)
+  const toolBlock = message.content.find((b) => b.type === 'tool_use')
+  if (toolBlock && toolBlock.type === 'tool_use') {
+    const result = toolBlock.input as ValidationResult
+    return {
+      isValid: result.isValid ?? false,
+      confidence: result.confidence ?? 0,
+      reason: result.reason ?? 'Unknown',
+      extractedPattern: result.extractedPattern ?? null,
+      patternType: result.patternType ?? null,
+      patternRule: result.patternRule ?? null,
+      appliesTo: result.appliesTo ?? null,
+      isDuplicate: result.isDuplicate ?? false,
+      duplicateOf: result.duplicateOf ?? null,
+    }
   }
 
   return {
@@ -125,14 +145,6 @@ ${existingPatternsText}`,
   }
 }
 
-function extractJSON(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) return fenceMatch[1].trim()
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (jsonMatch) return jsonMatch[0]
-  return text.trim()
-}
-
 /**
  * Validates a signal and updates the database.
  * If confidence >= 0.8 and valid, auto-promotes to a community pattern.
@@ -140,7 +152,6 @@ function extractJSON(text: string): string {
 export async function validateAndPromoteSignal(signalId: string): Promise<void> {
   const supabase = getAdminClient()
 
-  // Fetch the signal
   const { data: signal, error } = await supabase
     .from('community_signals')
     .select('*')
@@ -152,7 +163,6 @@ export async function validateAndPromoteSignal(signalId: string): Promise<void> 
     return
   }
 
-  // Fetch existing patterns for duplicate checking
   const { data: existingPatterns } = await supabase
     .from('community_patterns')
     .select('id, pattern_description, pattern_rule')
@@ -170,7 +180,6 @@ export async function validateAndPromoteSignal(signalId: string): Promise<void> 
     existingPatterns || []
   )
 
-  // Update the signal with validation results
   const validationStatus = result.isDuplicate
     ? 'duplicate'
     : result.isValid && result.confidence >= 0.8
@@ -189,7 +198,6 @@ export async function validateAndPromoteSignal(signalId: string): Promise<void> 
     })
     .eq('id', signalId)
 
-  // Auto-promote high-confidence valid signals to community patterns
   if (validationStatus === 'promoted' && result.patternRule && result.patternType) {
     await supabase
       .from('community_patterns')

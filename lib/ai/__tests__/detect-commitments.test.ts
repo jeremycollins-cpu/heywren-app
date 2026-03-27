@@ -3,8 +3,8 @@
  *
  * The module uses a 3-tier approach:
  *   Tier 1: Free regex pre-filter (likelyContainsCommitment)
- *   Tier 2: Haiku triage (cheap yes/no API call)
- *   Tier 3: Sonnet full analysis (expensive extraction)
+ *   Tier 2: Haiku triage (cheap yes/no via tool_use)
+ *   Tier 3: Sonnet full analysis (extraction via tool_use)
  *
  * We test the exported functions and the internal logic by mocking the Anthropic SDK.
  */
@@ -29,18 +29,49 @@ jest.mock('@anthropic-ai/sdk', () => {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function makeHaikuResponse(answer: 'yes' | 'no') {
+/**
+ * Build a mock Haiku triage response (tool_use with classify_message).
+ */
+function makeHaikuResponse(hasCommitment: boolean) {
   return {
-    content: [{ type: 'text', text: answer }],
+    content: [
+      {
+        type: 'tool_use',
+        id: 'toolu_test',
+        name: 'classify_message',
+        input: { has_commitment: hasCommitment },
+      },
+    ],
   }
 }
 
+/**
+ * Build a mock Sonnet response (tool_use with extract_commitments).
+ */
 function makeSonnetResponse(commitments: DetectedCommitment[]) {
   return {
     content: [
       {
-        type: 'text',
-        text: JSON.stringify({ commitments }),
+        type: 'tool_use',
+        id: 'toolu_test',
+        name: 'extract_commitments',
+        input: { commitments },
+      },
+    ],
+  }
+}
+
+/**
+ * Build a mock Sonnet batch response (tool_use with extract_batch_commitments).
+ */
+function makeBatchSonnetResponse(results: Record<string, DetectedCommitment[]>) {
+  return {
+    content: [
+      {
+        type: 'tool_use',
+        id: 'toolu_test',
+        name: 'extract_batch_commitments',
+        input: { results },
       },
     ],
   }
@@ -179,7 +210,7 @@ describe('detectCommitments - Tier 1 filtering', () => {
 
   it('passes messages with commitment keywords to Tier 2', async () => {
     mockCreate
-      .mockResolvedValueOnce(makeHaikuResponse('no'))
+      .mockResolvedValueOnce(makeHaikuResponse(false))
 
     const result = await detectCommitments(
       "I'll send you the report by Friday"
@@ -197,7 +228,7 @@ describe('detectCommitments - Tier 2 and Tier 3', () => {
   })
 
   it('stops at Tier 2 when Haiku says no', async () => {
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse('no'))
+    mockCreate.mockResolvedValueOnce(makeHaikuResponse(false))
 
     const result = await detectCommitments(
       "I'll get back to you on the project timeline soon"
@@ -220,7 +251,7 @@ describe('detectCommitments - Tier 2 and Tier 3', () => {
     ]
 
     mockCreate
-      .mockResolvedValueOnce(makeHaikuResponse('yes'))
+      .mockResolvedValueOnce(makeHaikuResponse(true))
       .mockResolvedValueOnce(makeSonnetResponse(expectedCommitments))
 
     const result = await detectCommitments(
@@ -233,7 +264,7 @@ describe('detectCommitments - Tier 2 and Tier 3', () => {
 
   it('handles Sonnet returning empty commitments array', async () => {
     mockCreate
-      .mockResolvedValueOnce(makeHaikuResponse('yes'))
+      .mockResolvedValueOnce(makeHaikuResponse(true))
       .mockResolvedValueOnce(makeSonnetResponse([]))
 
     const result = await detectCommitments(
@@ -270,7 +301,7 @@ describe('detectCommitments - Tier 2 and Tier 3', () => {
     expect(mockCreate).toHaveBeenCalledTimes(2)
   })
 
-  it('handles Sonnet response wrapped in markdown code fences', async () => {
+  it('handles Sonnet tool_use response correctly', async () => {
     const commitments: DetectedCommitment[] = [
       {
         title: 'Review PR',
@@ -281,15 +312,8 @@ describe('detectCommitments - Tier 2 and Tier 3', () => {
     ]
 
     mockCreate
-      .mockResolvedValueOnce(makeHaikuResponse('yes'))
-      .mockResolvedValueOnce({
-        content: [
-          {
-            type: 'text',
-            text: '```json\n' + JSON.stringify({ commitments }) + '\n```',
-          },
-        ],
-      })
+      .mockResolvedValueOnce(makeHaikuResponse(true))
+      .mockResolvedValueOnce(makeSonnetResponse(commitments))
 
     const result = await detectCommitments(
       "I will review the pull request by end of day"
@@ -329,30 +353,21 @@ describe('detectCommitmentsBatch', () => {
     ]
 
     // Haiku triage for message 'a' -> yes
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse('yes'))
+    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
     // Haiku triage for message 'c' -> yes
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse('yes'))
-    // Sonnet batch analysis
-    mockCreate.mockResolvedValueOnce({
-      content: [
+    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
+    // Sonnet batch analysis via tool_use
+    mockCreate.mockResolvedValueOnce(makeBatchSonnetResponse({
+      '1': [
         {
-          type: 'text',
-          text: JSON.stringify({
-            results: {
-              '1': [
-                {
-                  title: 'Send report',
-                  description: 'Send report by Friday',
-                  priority: 'high',
-                  confidence: 0.9,
-                },
-              ],
-              '2': [],
-            },
-          }),
+          title: 'Send report',
+          description: 'Send report by Friday',
+          priority: 'high',
+          confidence: 0.9,
         },
       ],
-    })
+      '2': [],
+    }))
 
     const results = await detectCommitmentsBatch(messages)
 
@@ -367,7 +382,7 @@ describe('detectCommitmentsBatch', () => {
       { id: '1', text: "I'll think about whether we need to schedule a meeting" },
     ]
 
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse('no'))
+    mockCreate.mockResolvedValueOnce(makeHaikuResponse(false))
 
     const results = await detectCommitmentsBatch(messages)
     expect(results.get('1')).toEqual([])
@@ -380,7 +395,7 @@ describe('detectCommitmentsBatch', () => {
       { id: '1', text: "I promise to deliver the project plan by next Monday" },
     ]
 
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse('yes'))
+    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
     mockCreate.mockRejectedValueOnce(new Error('API error'))
 
     const results = await detectCommitmentsBatch(messages)
