@@ -6,6 +6,27 @@ export const metadata: Metadata = {
   title: 'HeyWren - AI-Powered Follow-Through',
   description: 'Nothing falls through the cracks. HeyWren monitors Slack for commitments and nudges you to follow through.',
   keywords: ['productivity', 'slack', 'ai', 'follow-through', 'commitments', 'team accountability'],
+  metadataBase: new URL('https://heywren.com'),
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: 'HeyWren - AI-Powered Follow-Through',
+    description: 'Nothing falls through the cracks. HeyWren monitors Slack for commitments and nudges you to follow through.',
+    type: 'website',
+    siteName: 'HeyWren',
+    url: '/',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'HeyWren - AI-Powered Follow-Through',
+    description: 'Nothing falls through the cracks. HeyWren monitors Slack for commitments and nudges you to follow through.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 }
 
 export default function RootLayout({

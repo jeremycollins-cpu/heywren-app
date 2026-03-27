@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowRight, MessageSquare } from 'lucide-react'
+import { ArrowRight, MessageSquare, RefreshCw, AlertCircle, Loader2, Hash, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface SlackChannel {
   id: string
   name: string
+  num_members: number
   is_member: boolean
 }
 
@@ -20,8 +21,32 @@ export default function ChannelsSetupPage() {
   const [monitorAll, setMonitorAll] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [hasSlack, setHasSlack] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [loadingChannels, setLoadingChannels] = useState(false)
 
   const supabase = createClient()
+
+  const fetchChannels = useCallback(async () => {
+    setLoadingChannels(true)
+    setFetchError(null)
+    try {
+      const res = await fetch('/api/integrations/slack/channels', { cache: 'no-store' })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || `Failed to load channels (${res.status})`)
+      }
+      const data = await res.json()
+      const fetchedChannels: SlackChannel[] = data.channels || []
+      setChannels(fetchedChannels)
+      // Pre-select channels where the bot is already a member
+      setSelectedChannels(fetchedChannels.filter((c) => c.is_member).map((c) => c.id))
+    } catch (err: any) {
+      console.error('Error fetching channels:', err)
+      setFetchError(err.message || 'Failed to load channels')
+    } finally {
+      setLoadingChannels(false)
+    }
+  }, [])
 
   useEffect(() => {
     checkSlackIntegration()
@@ -63,17 +88,8 @@ export default function ChannelsSetupPage() {
       const hasSlackIntegration = integrations.some((i: any) => i.provider === 'slack')
       setHasSlack(!!hasSlackIntegration)
 
-      // For demo purposes, show mock channels
       if (hasSlackIntegration) {
-        const mockChannels = [
-          { id: 'C001', name: 'general', is_member: true },
-          { id: 'C002', name: 'team', is_member: true },
-          { id: 'C003', name: 'projects', is_member: true },
-          { id: 'C004', name: 'random', is_member: true },
-          { id: 'C005', name: 'announcements', is_member: true },
-        ]
-        setChannels(mockChannels)
-        setSelectedChannels(mockChannels.map((c) => c.id))
+        await fetchChannels()
       }
 
       setInitializing(false)
@@ -123,7 +139,8 @@ export default function ChannelsSetupPage() {
 
   if (initializing) {
     return (
-      <div className="text-center">
+      <div className="text-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-3" />
         <p className="text-gray-500">Loading channels...</p>
       </div>
     )
@@ -190,65 +207,128 @@ export default function ChannelsSetupPage() {
         </p>
       </div>
 
-      {/* Monitor All Toggle */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between">
-        <div>
-          <p className="font-medium text-gray-900">Monitor all public channels</p>
-          <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they&apos;re created</p>
-        </div>
-        <button
-          onClick={() => {
-            setMonitorAll(!monitorAll)
-            if (!monitorAll) {
-              setSelectedChannels(channels.map((c) => c.id))
-            }
-          }}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            monitorAll ? 'bg-indigo-600' : 'bg-gray-300'
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              monitorAll ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </div>
-
-      {/* Channels List */}
-      {!monitorAll && (
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-gray-700">Select specific channels</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {channels.map((channel) => (
-              <label
-                key={channel.id}
-                className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedChannels.includes(channel.id)}
-                  onChange={() => toggleChannel(channel.id)}
-                  className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <span className="font-medium text-gray-900">#{channel.name}</span>
-              </label>
-            ))}
+      {/* Error State */}
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-800">Failed to load channels</p>
+            <p className="text-sm text-red-700 mt-1">{fetchError}</p>
           </div>
+          <button
+            onClick={fetchChannels}
+            disabled={loadingChannels}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingChannels ? 'animate-spin' : ''}`} />
+            Retry
+          </button>
         </div>
       )}
 
-      {monitorAll && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
-          <p className="font-medium mb-1">All channels selected</p>
-          <p>HeyWren will monitor all public channels in your Slack workspace.</p>
+      {/* Loading Channels */}
+      {loadingChannels && !fetchError && (
+        <div className="text-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">Fetching channels from Slack...</p>
+        </div>
+      )}
+
+      {/* Channels Content (only when loaded successfully) */}
+      {!loadingChannels && !fetchError && channels.length > 0 && (
+        <>
+          {/* Monitor All Toggle */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-gray-900">Monitor all public channels</p>
+              <p className="text-sm text-gray-600 mt-1">Automatically monitor new channels as they&apos;re created</p>
+            </div>
+            <button
+              onClick={() => {
+                setMonitorAll(!monitorAll)
+                if (!monitorAll) {
+                  setSelectedChannels(channels.map((c) => c.id))
+                }
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                monitorAll ? 'bg-indigo-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  monitorAll ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Channels List */}
+          {!monitorAll && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">Select specific channels</p>
+                <p className="text-sm text-gray-500">
+                  {selectedChannels.length} of {channels.length} selected
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {channels.map((channel) => (
+                  <label
+                    key={channel.id}
+                    className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition ${
+                      selectedChannels.includes(channel.id)
+                        ? 'border-indigo-300 bg-indigo-50/50'
+                        : 'border-gray-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedChannels.includes(channel.id)}
+                      onChange={() => toggleChannel(channel.id)}
+                      className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <Hash className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span className="font-medium text-gray-900 truncate">{channel.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Users className="w-3 h-3 text-gray-400" />
+                        <span className="text-xs text-gray-500">
+                          {channel.num_members} {channel.num_members === 1 ? 'member' : 'members'}
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {monitorAll && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
+              <p className="font-medium mb-1">All channels selected</p>
+              <p>HeyWren will monitor all {channels.length} public channels in your Slack workspace.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Empty state: Slack connected but no channels found */}
+      {!loadingChannels && !fetchError && channels.length === 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+          <Hash className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm font-medium text-gray-700">No public channels found</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Your Slack workspace doesn&apos;t appear to have any public channels, or the bot may not have permission to see them.
+          </p>
         </div>
       )}
 
       {/* Continue Button */}
       <button
         onClick={handleContinue}
-        disabled={loading}
+        disabled={loading || loadingChannels}
         className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-medium rounded-lg hover:from-indigo-700 hover:to-violet-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {loading ? 'Saving...' : (

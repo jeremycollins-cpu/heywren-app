@@ -36,6 +36,12 @@ interface DashboardState {
   snooze: (id: string) => Promise<void>
   dismiss: (id: string) => Promise<void>
   clearError: () => void
+
+  // Real-time actions
+  addCommitment: (commitment: Commitment) => void
+  updateCommitment: (commitment: Commitment) => void
+  removeCommitment: (id: string) => void
+  addMention: (mention: SlackMention) => void
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -139,5 +145,31 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       .eq('id', id)
     if (error) throw error
     set(s => ({ commitments: s.commitments.filter(c => c.id !== id) }))
+  },
+
+  // Real-time actions — called from useRealtime hook
+  addCommitment: (commitment: Commitment) => {
+    set(s => {
+      // Avoid duplicates
+      if (s.commitments.some(c => c.id === commitment.id)) return s
+      return { commitments: [commitment, ...s.commitments] }
+    })
+  },
+
+  updateCommitment: (commitment: Commitment) => {
+    set(s => ({
+      commitments: s.commitments.map(c => c.id === commitment.id ? { ...c, ...commitment } : c),
+    }))
+  },
+
+  removeCommitment: (id: string) => {
+    set(s => ({ commitments: s.commitments.filter(c => c.id !== id) }))
+  },
+
+  addMention: (mention: SlackMention) => {
+    set(s => {
+      if (s.mentions.some(m => m.id === mention.id)) return s
+      return { mentions: [mention, ...s.mentions].slice(0, 10) }
+    })
   },
 }))

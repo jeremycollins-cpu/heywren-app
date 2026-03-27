@@ -4,6 +4,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -783,7 +784,7 @@ export default function CommitmentsPage() {
                       className="w-4 h-4 rounded cursor-pointer mt-1 flex-shrink-0"
                     />
                   )}
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white leading-snug flex-1">{c.title}</h3>
+                  <Link href={`/commitments/${c.id}`} className="text-base font-bold text-gray-900 dark:text-white leading-snug flex-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{c.title}</Link>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {c.source_url && (
                       <a
