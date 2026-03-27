@@ -34,6 +34,7 @@ export default function SyncPage() {
   const [error, setError] = useState<string | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [commitmentStats, setCommitmentStats] = useState({ total: 0, open: 0, completed: 0, thisWeek: 0 })
+  const [dataCounts, setDataCounts] = useState({ emails: 0, slackMessages: 0, calendarEvents: 0 })
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -111,6 +112,18 @@ export default function SyncPage() {
           open: allCommitments.filter((c: { status: string }) => c.status === 'open' || c.status === 'overdue').length,
           completed: allCommitments.filter((c: { status: string }) => c.status === 'completed').length,
           thisWeek: allCommitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
+        })
+
+        // Fetch data counts (emails, slack messages, calendar events in HeyWren)
+        const [emailCount, slackCount, calendarCount] = await Promise.all([
+          supabase.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+          supabase.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+          supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+        ])
+        setDataCounts({
+          emails: emailCount.count || 0,
+          slackMessages: slackCount.count || 0,
+          calendarEvents: calendarCount.count || 0,
         })
       }
     } catch (err) {
@@ -329,6 +342,45 @@ export default function SyncPage() {
           <p className="text-xs text-gray-400 mt-1">new commitments found</p>
         </div>
       </div>
+
+      {/* Data in HeyWren */}
+      {(dataCounts.emails > 0 || dataCounts.slackMessages > 0 || dataCounts.calendarEvents > 0) && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Data in HeyWren</h2>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Mail className="w-4 h-4 text-blue-500" />
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Emails</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{dataCounts.emails.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">synced from Outlook</p>
+            </div>
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="w-4 h-4 text-purple-500" />
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Slack Messages</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{dataCounts.slackMessages.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">synced from Slack</p>
+            </div>
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4 text-teal-500" />
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Calendar Events</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{dataCounts.calendarEvents.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">synced from Outlook</p>
+            </div>
+          </div>
+          {dataCounts.emails === 0 && hasOutlook && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">No emails synced yet. Click &ldquo;Sync Outlook History&rdquo; below to pull in your emails.</p>
+          )}
+          {dataCounts.slackMessages === 0 && hasSlack && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">No Slack messages synced yet. Click &ldquo;Sync Slack History&rdquo; below to pull in your messages.</p>
+          )}
+        </div>
+      )}
 
       {/* Connected Sources */}
       <div>

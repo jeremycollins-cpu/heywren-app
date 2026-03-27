@@ -66,7 +66,43 @@ export async function GET() {
     return new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
   })
 
-  return NextResponse.json({ missedChats: sorted })
+  // Count total evaluated slack messages scoped to this user:
+  // Only DMs and channels where the user participated
+  const adminDb = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  // Get user's slack_user_id
+  const slackUserId = (await supabase
+    .from('profiles')
+    .select('slack_user_id')
+    .eq('id', user.id)
+    .single()
+  ).data?.slack_user_id
+
+  let totalEvaluated = 0
+  if (slackUserId) {
+    // Count DMs/group DMs (D* and G* channels) sent to the user
+    const { count: dmCount } = await adminDb
+      .from('slack_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', profile.current_team_id)
+      .or('channel_id.like.D%,channel_id.like.G%')
+
+    // Count channel messages where the user sent or was mentioned
+    const { count: channelCount } = await adminDb
+      .from('slack_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', profile.current_team_id)
+      .not('channel_id', 'like', 'D%')
+      .not('channel_id', 'like', 'G%')
+      .or(`user_id.eq.${slackUserId},message_text.ilike.%<@${slackUserId}>%`)
+
+    totalEvaluated = (dmCount || 0) + (channelCount || 0)
+  }
+
+  return NextResponse.json({ missedChats: sorted, totalEvaluated })
 }
 
 // POST — Scan Slack messages for mentions that were never replied to

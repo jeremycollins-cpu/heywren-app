@@ -55,7 +55,29 @@ export async function GET(request: NextRequest) {
 
     if (!data.ok) {
       console.error('Slack token exchange failed:', data.error)
-      return NextResponse.json({ error: data.error || 'Failed to get access token' }, { status: 400 })
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?slack=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
+    }
+
+    // Validate token actually works before saving
+    const slack = new WebClient(data.access_token)
+    try {
+      const authTest = await slack.auth.test()
+      if (!authTest.ok) {
+        console.error('Slack auth.test failed:', authTest.error)
+        const errorRedirect = redirect === 'onboarding'
+          ? '/onboarding/integrations?slack=error'
+          : '/integrations?status=error'
+        return NextResponse.redirect(new URL(errorRedirect, request.url))
+      }
+    } catch (testErr) {
+      console.error('Slack token validation failed:', testErr)
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?slack=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
     }
 
     // Resolve team using shared utility (handles all fallbacks + fixes inconsistencies)
@@ -100,7 +122,10 @@ export async function GET(request: NextRequest) {
 
     if (upsertError) {
       console.error('Failed to store Slack integration:', upsertError)
-      return NextResponse.json({ error: 'Failed to store integration: ' + upsertError.message }, { status: 500 })
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?slack=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
     }
 
     const redirectUrl = redirect === 'onboarding'

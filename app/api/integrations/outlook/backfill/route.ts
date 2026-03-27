@@ -227,22 +227,29 @@ export async function POST(request: NextRequest) {
         }
 
         // Batch insert commitments
+        let commitInsertOk = true
         if (commitmentRows.length > 0) {
           const { error: commitErr } = await supabase.from('commitments').insert(commitmentRows)
           if (commitErr) {
-            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message)
+            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message, commitErr.details, commitErr.hint, 'Code:', commitErr.code, 'Row sample:', JSON.stringify(commitmentRows[0]))
+            commitInsertOk = false
           } else {
             totalCommitments += commitmentRows.length
           }
         }
 
-        // Batch mark as processed
-        for (const { dbId, count } of processedIds) {
-          await supabase
-            .from('outlook_messages')
-            .update({ processed: true, commitments_found: count })
-            .eq('id', dbId)
-          processedMessages++
+        // Only mark as processed if commitment inserts succeeded (or there were no commitments)
+        if (commitInsertOk) {
+          for (const { dbId, count } of processedIds) {
+            await supabase
+              .from('outlook_messages')
+              .update({ processed: true, commitments_found: count })
+              .eq('id', dbId)
+            processedMessages++
+          }
+        } else {
+          // Still count as processed for progress tracking, but don't mark in DB
+          processedMessages += processedIds.length
         }
       } catch (batchErr) {
         console.error('Batch AI error:', (batchErr as Error).message)
@@ -408,6 +415,7 @@ export async function POST(request: NextRequest) {
         for (const item of batch) {
           const commitments = batchResults.get(item.id) || []
 
+          let itemInsertOk = true
           for (const commitment of commitments) {
             const { error: commitErr } = await supabase.from('commitments').insert({
               team_id: teamId,
@@ -434,15 +442,19 @@ export async function POST(request: NextRequest) {
                 message: commitErr.message, details: commitErr.details,
                 hint: commitErr.hint, code: commitErr.code,
               }))
+              itemInsertOk = false
             } else {
               totalCommitments++
             }
           }
 
-          await supabase
-            .from('outlook_messages')
-            .update({ processed: true, commitments_found: commitments.length })
-            .eq('id', item.dbId)
+          // Only mark as processed if all commitment inserts succeeded
+          if (itemInsertOk) {
+            await supabase
+              .from('outlook_messages')
+              .update({ processed: true, commitments_found: commitments.length })
+              .eq('id', item.dbId)
+          }
         }
       } catch (batchErr) {
         console.error('Batch AI error:', (batchErr as Error).message)
@@ -590,6 +602,7 @@ export async function POST(request: NextRequest) {
           for (const item of calBatch) {
             const commitments = batchResults.get(item.id) || []
 
+            let calInsertOk = true
             for (const commitment of commitments) {
               const { error: commitErr } = await supabase.from('commitments').insert({
                 team_id: teamId,
@@ -616,16 +629,20 @@ export async function POST(request: NextRequest) {
                   message: commitErr.message, details: commitErr.details,
                   hint: commitErr.hint, code: commitErr.code,
                 }))
+                calInsertOk = false
               } else {
                 calendarCommitments++
                 totalCommitments++
               }
             }
 
-            await supabase
-              .from('outlook_calendar_events')
-              .update({ processed: true, commitments_found: commitments.length })
-              .eq('id', item.dbId)
+            // Only mark as processed if inserts succeeded
+            if (calInsertOk) {
+              await supabase
+                .from('outlook_calendar_events')
+                .update({ processed: true, commitments_found: commitments.length })
+                .eq('id', item.dbId)
+            }
           }
         } catch (batchErr) {
           console.error('Calendar batch AI error:', (batchErr as Error).message)

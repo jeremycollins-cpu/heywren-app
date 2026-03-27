@@ -144,60 +144,75 @@ function IntegrationsSetupContent() {
         return
       }
 
-      // Show success toasts immediately from URL params
-      const slackJustConnected = searchParams.get('slack') === 'connected'
-      const outlookJustConnected = searchParams.get('outlook') === 'connected'
+      // Show toasts from URL params
+      const slackParam = searchParams.get('slack')
+      const outlookParam = searchParams.get('outlook')
 
-      if (slackJustConnected) {
-        toast.success('Slack connected successfully!')
+      if (slackParam === 'error') {
+        toast.error('Slack connection failed. Please try again.')
       }
-      if (outlookJustConnected) {
-        toast.success('Outlook connected successfully!')
+      if (outlookParam === 'error') {
+        toast.error('Outlook connection failed. Please try again.')
       }
 
-      // Try server-side API first, then client-side fallback
+      // Fetch real integration status from DB — retry up to 3 times for just-completed OAuth
+      const justConnected = slackParam === 'connected' || outlookParam === 'connected'
       let fetched: Integration[] = []
-      try {
-        const res = await fetch('/api/integrations/status', { cache: 'no-store' })
-        if (res.ok) {
-          const data = await res.json()
-          fetched = data.integrations?.map((i: any) => ({ id: i.id, provider: i.provider })) || []
-        }
-      } catch { /* fall through */ }
+      const maxAttempts = justConnected ? 3 : 1
 
-      // Client-side fallback if server-side session fails
-      if (fetched.length === 0) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id')
-          .eq('id', authData.user.id)
-          .single()
-        if (profile?.current_team_id) {
-          const { data: intData } = await supabase
-            .from('integrations')
-            .select('id, provider')
-            .eq('team_id', profile.current_team_id)
-            .eq('user_id', authData.user.id)
-          fetched = (intData || []).map((i: any) => ({ id: i.id, provider: i.provider }))
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Small delay on retries to let DB write propagate
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1000))
+
+        try {
+          const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+          if (res.ok) {
+            const data = await res.json()
+            fetched = data.integrations?.map((i: any) => ({ id: i.id, provider: i.provider })) || []
+          }
+        } catch { /* fall through */ }
+
+        // Client-side fallback if server-side session fails
+        if (fetched.length === 0) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('current_team_id')
+            .eq('id', authData.user.id)
+            .single()
+          if (profile?.current_team_id) {
+            const { data: intData } = await supabase
+              .from('integrations')
+              .select('id, provider')
+              .eq('team_id', profile.current_team_id)
+              .eq('user_id', authData.user.id)
+            fetched = (intData || []).map((i: any) => ({ id: i.id, provider: i.provider }))
+          }
         }
+
+        // If we found the just-connected integration, stop retrying
+        const found = (slackParam === 'connected' && fetched.some(i => i.provider === 'slack'))
+          || (outlookParam === 'connected' && fetched.some(i => i.provider === 'outlook'))
+          || !justConnected
+        if (found || fetched.length > 0) break
       }
 
-      // If OAuth just completed but not yet in DB, add from URL params
-      if (slackJustConnected && !fetched.some(i => i.provider === 'slack')) {
-        fetched.push({ id: 'pending-slack', provider: 'slack' })
+      // Show success toasts only if integration is actually confirmed in DB
+      if (slackParam === 'connected' && fetched.some(i => i.provider === 'slack')) {
+        toast.success('Slack connected successfully!')
+      } else if (slackParam === 'connected') {
+        toast.error('Slack connection could not be confirmed. Please try again.')
       }
-      if (outlookJustConnected && !fetched.some(i => i.provider === 'outlook')) {
-        fetched.push({ id: 'pending-outlook', provider: 'outlook' })
+      if (outlookParam === 'connected' && fetched.some(i => i.provider === 'outlook')) {
+        toast.success('Outlook connected successfully!')
+      } else if (outlookParam === 'connected') {
+        toast.error('Outlook connection could not be confirmed. Please try again.')
       }
 
       setIntegrations(fetched)
       setChecking(false)
     } catch (err) {
       console.error('Error checking integrations:', err)
-      const fallback: Integration[] = []
-      if (searchParams.get('slack') === 'connected') fallback.push({ id: 'pending-slack', provider: 'slack' })
-      if (searchParams.get('outlook') === 'connected') fallback.push({ id: 'pending-outlook', provider: 'outlook' })
-      setIntegrations(fallback)
+      setIntegrations([])
       setChecking(false)
     }
   }

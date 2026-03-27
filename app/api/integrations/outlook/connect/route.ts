@@ -73,13 +73,25 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error('Token exchange error:', tokenData.error, tokenData.error_description)
-      return NextResponse.json({ error: tokenData.error_description || 'Failed to get access token' }, { status: 400 })
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?outlook=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
     }
 
-    // Get user profile from Microsoft Graph
+    // Validate token by fetching user profile from Microsoft Graph
     const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: 'Bearer ' + tokenData.access_token },
     })
+
+    if (!profileResponse.ok) {
+      console.error('Outlook token validation failed — Graph /me returned', profileResponse.status)
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?outlook=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
+    }
+
     const profileData = await profileResponse.json()
 
     // Resolve team using shared utility (handles all fallbacks + fixes inconsistencies)
@@ -106,7 +118,10 @@ export async function GET(request: NextRequest) {
 
     if (upsertError) {
       console.error('Failed to store Outlook integration:', upsertError)
-      return NextResponse.json({ error: 'Failed to store integration: ' + upsertError.message }, { status: 500 })
+      const errorRedirect = redirect === 'onboarding'
+        ? '/onboarding/integrations?outlook=error'
+        : '/integrations?status=error'
+      return NextResponse.redirect(new URL(errorRedirect, request.url))
     }
 
     const redirectUrl = redirect === 'onboarding'

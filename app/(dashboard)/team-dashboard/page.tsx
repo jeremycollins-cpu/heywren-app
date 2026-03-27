@@ -123,6 +123,10 @@ export default function TeamDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'achievements' | 'challenges'>('leaderboard')
   const [showCreateChallenge, setShowCreateChallenge] = useState(false)
+  const [evalMetrics, setEvalMetrics] = useState<{
+    emailsEvaluated: number; emailsMissed: number;
+    chatsEvaluated: number; chatsMissed: number;
+  } | null>(null)
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -142,6 +146,22 @@ export default function TeamDashboardPage() {
 
   useEffect(() => {
     loadDashboard()
+    // Fetch evaluation metrics
+    async function fetchEvalMetrics() {
+      try {
+        const [emailRes, chatRes] = await Promise.all([
+          fetch('/api/missed-emails').then(r => r.ok ? r.json() : null),
+          fetch('/api/missed-chats').then(r => r.ok ? r.json() : null),
+        ])
+        setEvalMetrics({
+          emailsEvaluated: emailRes?.totalEvaluated || 0,
+          emailsMissed: emailRes?.missedEmails?.length || 0,
+          chatsEvaluated: chatRes?.totalEvaluated || 0,
+          chatsMissed: chatRes?.missedChats?.length || 0,
+        })
+      } catch { /* ignore */ }
+    }
+    fetchEvalMetrics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -268,6 +288,40 @@ export default function TeamDashboardPage() {
           color="green"
         />
       </div>
+
+      {/* Communication Coverage */}
+      {evalMetrics && (evalMetrics.emailsEvaluated > 0 || evalMetrics.chatsEvaluated > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {evalMetrics.emailsEvaluated > 0 && (
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Inbox className="w-4 h-4 text-indigo-500" />
+                <p className="text-xs font-medium text-gray-500">Emails Evaluated</p>
+              </div>
+              <div className="flex items-end gap-2">
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{evalMetrics.emailsEvaluated.toLocaleString()}</p>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {evalMetrics.emailsMissed} need{evalMetrics.emailsMissed === 1 ? 's' : ''} response ({evalMetrics.emailsEvaluated > 0 ? Math.round((evalMetrics.emailsMissed / evalMetrics.emailsEvaluated) * 100) : 0}% missed rate)
+              </p>
+            </div>
+          )}
+          {evalMetrics.chatsEvaluated > 0 && (
+            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Inbox className="w-4 h-4 text-purple-500" />
+                <p className="text-xs font-medium text-gray-500">Slack Messages Evaluated</p>
+              </div>
+              <div className="flex items-end gap-2">
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{evalMetrics.chatsEvaluated.toLocaleString()}</p>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {evalMetrics.chatsMissed} need{evalMetrics.chatsMissed === 1 ? 's' : ''} response ({evalMetrics.chatsEvaluated > 0 ? Math.round((evalMetrics.chatsMissed / evalMetrics.chatsEvaluated) * 100) : 0}% missed rate)
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs: Leaderboard / Achievements / Challenges */}
       <div>

@@ -262,20 +262,29 @@ export async function POST(request: NextRequest) {
             }, { onConflict: 'team_id,source_message_id' })
           }
 
-          await supabase
-            .from('slack_messages')
-            .update({ processed: true, commitments_found: commitments.length })
-            .eq('id', item.dbId)
           processedMessages++
         }
 
         // Batch insert all outbound commitments from this chunk
+        let slackCommitInsertOk = true
         if (commitmentRows.length > 0) {
           const { error: commitErr } = await supabase.from('commitments').insert(commitmentRows)
           if (commitErr) {
-            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message)
+            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message, commitErr.details, commitErr.hint, 'Code:', commitErr.code, 'Row sample:', JSON.stringify(commitmentRows[0]))
+            slackCommitInsertOk = false
           } else {
             totalCommitments += commitmentRows.length
+          }
+        }
+
+        // Only mark messages as processed if commitment inserts succeeded
+        if (slackCommitInsertOk) {
+          for (const item of chunk) {
+            const commitments = batchResults.get(item.id) || []
+            await supabase
+              .from('slack_messages')
+              .update({ processed: true, commitments_found: commitments.length })
+              .eq('id', item.dbId)
           }
         }
       } catch (batchErr) {
@@ -541,6 +550,7 @@ export async function POST(request: NextRequest) {
 
               const outbound2 = commitments.filter(c => c.direction !== 'inbound')
               const inbound2 = commitments.filter(c => c.direction === 'inbound')
+              let itemInsertFailed = false
 
               for (const commitment of outbound2) {
                 const { error: commitErr } = await supabase.from('commitments').insert({
@@ -570,6 +580,7 @@ export async function POST(request: NextRequest) {
                     message: commitErr.message, details: commitErr.details,
                     hint: commitErr.hint, code: commitErr.code,
                   }))
+                  itemInsertFailed = true
                 } else {
                   totalCommitments++
                 }
@@ -602,10 +613,12 @@ export async function POST(request: NextRequest) {
                 }, { onConflict: 'team_id,source_message_id' })
               }
 
-              await supabase
-                .from('slack_messages')
-                .update({ processed: true, commitments_found: commitments.length })
-                .eq('id', item.dbId)
+              if (!itemInsertFailed) {
+                await supabase
+                  .from('slack_messages')
+                  .update({ processed: true, commitments_found: commitments.length })
+                  .eq('id', item.dbId)
+              }
             }
           } catch (batchErr) {
             console.error('Batch AI error:', (batchErr as Error).message)

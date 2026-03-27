@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers } from 'lucide-react'
+import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface WaitingItem {
@@ -62,6 +62,7 @@ export default function WaitingRoomPage() {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [filter, setFilter] = useState<'all' | 'critical' | 'email' | 'slack'>('all')
+  const [sortOrder, setSortOrder] = useState<'oldest' | 'newest' | 'urgency'>('urgency')
 
   const fetchItems = useCallback(async () => {
     try {
@@ -198,13 +199,20 @@ export default function WaitingRoomPage() {
       result.push({ key: item.id, primary: item, items: [item] })
     }
 
-    // Sort groups by primary item urgency then days waiting
-    result.sort((a, b) => {
-      const ua = urgencyOrder[a.primary.urgency] ?? 2
-      const ub = urgencyOrder[b.primary.urgency] ?? 2
-      if (ua !== ub) return ua - ub
-      return b.primary.days_waiting - a.primary.days_waiting
-    })
+    // Sort groups based on user-selected sort order
+    if (sortOrder === 'oldest') {
+      result.sort((a, b) => b.primary.days_waiting - a.primary.days_waiting)
+    } else if (sortOrder === 'newest') {
+      result.sort((a, b) => a.primary.days_waiting - b.primary.days_waiting)
+    } else {
+      // Default: urgency first, then longest waiting
+      result.sort((a, b) => {
+        const ua = urgencyOrder[a.primary.urgency] ?? 2
+        const ub = urgencyOrder[b.primary.urgency] ?? 2
+        if (ua !== ub) return ua - ub
+        return b.primary.days_waiting - a.primary.days_waiting
+      })
+    }
 
     return result
   })()
@@ -279,26 +287,48 @@ export default function WaitingRoomPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-1 bg-gray-100 dark:bg-surface-dark rounded-lg p-0.5 w-fit">
-        {([
-          { key: 'all' as const, label: 'All' },
-          { key: 'critical' as const, label: 'Urgent' },
-          { key: 'email' as const, label: 'Email' },
-          { key: 'slack' as const, label: 'Slack' },
-        ]).map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-              filter === f.key
-                ? 'bg-white dark:bg-surface-dark-secondary text-gray-900 dark:text-white shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Filters + Sort */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-surface-dark rounded-lg p-0.5">
+          {([
+            { key: 'all' as const, label: 'All' },
+            { key: 'critical' as const, label: 'Urgent' },
+            { key: 'email' as const, label: 'Email' },
+            { key: 'slack' as const, label: 'Slack' },
+          ]).map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                filter === f.key
+                  ? 'bg-white dark:bg-surface-dark-secondary text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-surface-dark rounded-lg p-0.5">
+          {([
+            { key: 'urgency' as const, label: 'By Urgency' },
+            { key: 'oldest' as const, label: 'Oldest First' },
+            { key: 'newest' as const, label: 'Newest First' },
+          ]).map(s => (
+            <button
+              key={s.key}
+              onClick={() => setSortOrder(s.key)}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                sortOrder === s.key
+                  ? 'bg-white dark:bg-surface-dark-secondary text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              {s.key === sortOrder && <ArrowUpDown className="w-3 h-3" />}
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Empty state */}
