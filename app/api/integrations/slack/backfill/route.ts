@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, getDetectionStats } from '@/lib/ai/detect-commitments'
+import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
 // Process max 500 messages per request to stay within 300s timeout
 const MAX_MESSAGES_PER_RUN = 500
@@ -101,6 +102,14 @@ export async function POST(request: NextRequest) {
 
   const slackToken = integration.access_token
 
+  // Resolve the user's Slack identity for relevance filtering
+  const { data: userProfile } = await supabase
+    .from('profiles')
+    .select('slack_user_id')
+    .eq('id', userId)
+    .single()
+  const userSlackId: string | null = userProfile?.slack_user_id || null
+
   // Test the token
   const authTest = await slackGet('https://slack.com/api/auth.test', slackToken, 0)
   if (!authTest.ok) {
@@ -115,21 +124,23 @@ export async function POST(request: NextRequest) {
   // ================================================================
   const { data: unprocessed, count: unprocessedCount } = await supabase
     .from('slack_messages')
-    .select('id, message_ts, message_text, channel_id', { count: 'exact' })
+    .select('id, message_ts, message_text, channel_id, user_id', { count: 'exact' })
     .eq('team_id', teamId)
     .eq('processed', false)
     .limit(MAX_MESSAGES_PER_RUN)
 
   let totalCommitments = 0
   let processedMessages = 0
+  let totalSkippedLowRelevance = 0
+  const channelMemberCounts = new Map<string, number>()
 
   if (unprocessed && unprocessed.length > 0) {
     console.log('Processing ' + unprocessed.length + ' unprocessed Slack messages (of ' + unprocessedCount + ' total)')
 
-    const batch: Array<{ id: string; text: string; dbId: string }> = []
+    const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string; channelId: string }> = []
     for (const msg of unprocessed) {
       if (msg.message_text && msg.message_text.length >= 15) {
-        batch.push({ id: msg.message_ts, text: msg.message_text, dbId: msg.id })
+        batch.push({ id: msg.message_ts, text: msg.message_text, dbId: msg.id, authorSlackId: msg.user_id || 'unknown', channelId: msg.channel_id })
       } else {
         // Mark short messages as processed with 0 commitments
         await supabase
@@ -152,6 +163,40 @@ export async function POST(request: NextRequest) {
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
 
+          // Score relevance for this stored message
+          // Fetch channel member count if not cached
+          if (!channelMemberCounts.has(item.channelId)) {
+            try {
+              const chInfo = await slackGet(
+                `https://slack.com/api/conversations.info?channel=${item.channelId}`,
+                slackToken, 1
+              )
+              if (chInfo.ok && chInfo.channel?.num_members != null) {
+                channelMemberCounts.set(item.channelId, chInfo.channel.num_members)
+              }
+            } catch {
+              // Non-fatal
+            }
+          }
+
+          const rel = scoreRelevance({
+            messageAuthorSlackId: item.authorSlackId,
+            channelId: item.channelId,
+            messageText: item.text,
+            targetUserSlackId: userSlackId,
+            channelMemberCount: channelMemberCounts.get(item.channelId),
+          })
+
+          if (rel.score < RELEVANCE_THRESHOLD) {
+            totalSkippedLowRelevance++
+            await supabase
+              .from('slack_messages')
+              .update({ processed: true, commitments_found: 0 })
+              .eq('id', item.dbId)
+            processedMessages++
+            continue
+          }
+
           for (const commitment of commitments) {
             const { error: commitErr } = await supabase.from('commitments').insert({
               team_id: teamId,
@@ -171,6 +216,8 @@ export async function POST(request: NextRequest) {
                 channelName: commitment.channelOrThread || null,
                 confidence: commitment.confidence,
                 assigneeName: commitment.assignee || null,
+                relevanceScore: rel.score,
+                relevanceReason: rel.reason,
               },
             })
             if (commitErr) {
@@ -205,6 +252,7 @@ export async function POST(request: NextRequest) {
           total_channels: 0,
           messages_scanned: processedMessages,
           commitments_detected: totalCommitments,
+      skipped_low_relevance: totalSkippedLowRelevance,
           remaining_unprocessed: remainingUnprocessed,
           ai_stats: {
             skipped_by_keyword_filter: aiStats.tier1_filtered,
@@ -230,6 +278,7 @@ export async function POST(request: NextRequest) {
         channels_processed: 0,
         messages_scanned: processedMessages,
         commitments_detected: totalCommitments,
+      skipped_low_relevance: totalSkippedLowRelevance,
         ai_stats: {
           skipped_by_keyword_filter: aiStats.tier1_filtered,
           skipped_by_haiku_triage: aiStats.tier2_filtered,
@@ -334,6 +383,22 @@ export async function POST(request: NextRequest) {
     processedChannels++
     let messageCursor: string | undefined
 
+    // Fetch channel member count once per channel for relevance scoring
+    if (!channelMemberCounts.has(channel.id)) {
+      try {
+        const chInfo = await slackGet(
+          `https://slack.com/api/conversations.info?channel=${channel.id}`,
+          slackToken, 1
+        )
+        if (chInfo.ok && chInfo.channel?.num_members != null) {
+          channelMemberCounts.set(channel.id, chInfo.channel.num_members)
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+    const channelMemberCount = channelMemberCounts.get(channel.id)
+
     try {
       do {
         if (Date.now() - startTime > TIME_BUDGET_MS) break
@@ -361,7 +426,7 @@ export async function POST(request: NextRequest) {
           (msg: any) => msg.type === 'message' && !msg.bot_id && !msg.subtype && msg.text && msg.text.length >= 15
         )
 
-        const batch: Array<{ id: string; text: string; dbId: string }> = []
+        const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string }> = []
 
         for (const msg of messages) {
           totalMessages++
@@ -402,7 +467,7 @@ export async function POST(request: NextRequest) {
           }
 
           totalNewMessages++
-          batch.push({ id: msg.ts, text: msg.text, dbId })
+          batch.push({ id: msg.ts, text: msg.text, dbId, authorSlackId: msg.user || 'unknown' })
         }
 
         // Process batch through AI
@@ -413,6 +478,24 @@ export async function POST(request: NextRequest) {
 
             for (const item of batch) {
               const commitments = batchResults.get(item.id) || []
+
+              // Score relevance for this message
+              const rel = scoreRelevance({
+                messageAuthorSlackId: item.authorSlackId || 'unknown',
+                channelId: channel.id,
+                messageText: item.text,
+                targetUserSlackId: userSlackId,
+                channelMemberCount,
+              })
+
+              if (rel.score < RELEVANCE_THRESHOLD) {
+                totalSkippedLowRelevance++
+                await supabase
+                  .from('slack_messages')
+                  .update({ processed: true, commitments_found: 0 })
+                  .eq('id', item.dbId)
+                continue
+              }
 
               for (const commitment of commitments) {
                 const { error: commitErr } = await supabase.from('commitments').insert({
@@ -433,6 +516,8 @@ export async function POST(request: NextRequest) {
                     channelName: commitment.channelOrThread || null,
                     confidence: commitment.confidence,
                     assigneeName: commitment.assignee || null,
+                    relevanceScore: rel.score,
+                    relevanceReason: rel.reason,
                   },
                 })
                 if (commitErr) {
@@ -480,6 +565,7 @@ export async function POST(request: NextRequest) {
       messages_scanned: totalMessages + processedMessages,
       new_messages_processed: totalNewMessages,
       commitments_detected: totalCommitments,
+      skipped_low_relevance: totalSkippedLowRelevance,
       ai_stats: {
         skipped_by_keyword_filter: aiStats.tier1_filtered,
         skipped_by_haiku_triage: aiStats.tier2_filtered,

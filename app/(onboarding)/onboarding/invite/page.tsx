@@ -205,7 +205,7 @@ export default function InviteTeamPage() {
         <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
           Step 4 of 4
         </div>
-        <h2 className="text-3xl font-bold text-gray-900">Invite your team</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Invite your team</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
           HeyWren works best when your whole team is on board to track commitments together
         </p>

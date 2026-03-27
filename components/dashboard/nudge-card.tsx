@@ -95,9 +95,9 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeC
   const whyNow = buildWhyNow(c)
 
   return (
-    <article className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${borderColor} rounded-brand p-5`}>
+    <article className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${borderColor} rounded-brand p-4 sm:p-5`}>
       {/* Badge row */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 mb-2">
         <span className={`px-2 py-0.5 rounded text-xs font-bold ${badgeColor}`}>{urgency}</span>
         <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">Score: {score}</span>
         {metaUrgency === 'critical' && urgency !== 'URGENT' && (
@@ -142,7 +142,7 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeC
       )}
 
       {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
         <button onClick={() => onDone(c.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">Done</button>
         <SnoozeButton onSnooze={onSnooze} commitmentId={c.id} />
         <button onClick={() => onDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Dismiss</button>

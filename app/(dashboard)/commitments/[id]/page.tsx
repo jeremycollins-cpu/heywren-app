@@ -173,7 +173,7 @@ export default function CommitmentDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
         <div className="animate-pulse space-y-4">
           <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
           <div className="h-8 w-3/4 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -195,7 +195,7 @@ export default function CommitmentDetailPage() {
   const isOpen = !['completed', 'likely_complete', 'dismissed'].includes(commitment.status)
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6 animate-fade-in-up">
+    <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4 sm:space-y-6 animate-fade-in-up">
       {/* Back link */}
       <Link
         href="/commitments"

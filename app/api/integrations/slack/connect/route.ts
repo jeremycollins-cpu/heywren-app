@@ -73,10 +73,20 @@ export async function GET(request: NextRequest) {
           authed_user_id: data.authed_user?.id || null,
           slack_team_id: data.team?.id,
           slack_team_name: data.team?.name,
+          connected_by: userId,
         },
       },
       { onConflict: 'team_id,provider' }
     )
+
+    // Link the connecting user's Slack identity to their profile
+    // so we can determine message relevance later
+    if (data.authed_user?.id) {
+      await supabase
+        .from('profiles')
+        .update({ slack_user_id: data.authed_user.id })
+        .eq('id', userId)
+    }
 
     if (upsertError) {
       console.error('Failed to store Slack integration:', upsertError)
