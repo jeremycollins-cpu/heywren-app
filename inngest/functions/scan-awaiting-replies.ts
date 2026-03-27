@@ -533,9 +533,10 @@ export async function scanTeamAwaitingReplies(
       .eq('id', userId)
       .single()
 
-    if (userProfile2?.full_name) {
+    if (userProfile2?.full_name || userProfile2?.slack_user_id) {
+      const userName = userProfile2.full_name || 'the user'
       const userContext: UserContext = {
-        userName: userProfile2.full_name,
+        userName,
         slackUserId: userProfile2.slack_user_id || null,
       }
 
@@ -552,6 +553,8 @@ export async function scanTeamAwaitingReplies(
         .order('created_at', { ascending: false })
         .limit(200)
 
+      console.log(`Inbound scan: found ${otherMessages?.length || 0} messages from other people`)
+
       if (otherMessages && otherMessages.length > 0) {
         // Filter to messages with commitment-like language
         const candidates = otherMessages.filter(m => {
@@ -567,6 +570,8 @@ export async function scanTeamAwaitingReplies(
             /\bwill (send|check|look|get|do|handle|take care)\b/.test(text)
           )
         })
+
+        console.log(`Inbound scan: ${candidates.length} messages have commitment-like language`)
 
         if (candidates.length > 0) {
           // Get existing awaiting_replies to avoid duplicates

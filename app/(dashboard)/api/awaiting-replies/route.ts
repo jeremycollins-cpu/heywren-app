@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       .in('status', ['waiting', 'snoozed'])
       .order('urgency', { ascending: true })
       .order('sent_at', { ascending: true })
-      .limit(50)
+      .limit(200)
 
     const { data: items, error } = await query
 
