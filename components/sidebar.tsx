@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
 import { WrenFullLogo } from '@/components/logo'
@@ -12,6 +12,7 @@ import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
+  ChevronDown, ChevronRight,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -36,6 +37,50 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
+
+  // Collapsible sections: track which sections are expanded
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['Overview', 'Action Queue']))
+
+  const toggleSection = useCallback((label: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev)
+      if (next.has(label)) {
+        next.delete(label)
+      } else {
+        next.add(label)
+      }
+      return next
+    })
+  }, [])
+
+  // Auto-expand sections that have active badge counts > 0
+  const sectionBadgeTotals = useMemo(() => {
+    const totals: Record<string, number> = {}
+    // We compute this after sections are defined, but badges are available here
+    // Map section labels to their cumulative badge counts
+    totals['Overview'] = badges.overdue + badges.openCommitments
+    totals['Intelligence'] = 0
+    totals['Action Queue'] = badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
+    totals['Automation'] = 0
+    totals['Community'] = 0
+    return totals
+  }, [badges])
+
+  useEffect(() => {
+    const toExpand: string[] = []
+    for (const [label, total] of Object.entries(sectionBadgeTotals)) {
+      if (total > 0 && !expandedSections.has(label)) {
+        toExpand.push(label)
+      }
+    }
+    if (toExpand.length > 0) {
+      setExpandedSections(prev => {
+        const next = new Set(prev)
+        toExpand.forEach(l => next.add(l))
+        return next
+      })
+    }
+  }, [sectionBadgeTotals]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -299,62 +344,83 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
           {/* Navigation */}
           <nav aria-label="Main navigation" className="flex-1 px-3 py-3 overflow-y-auto">
-            {sections.map((section) => (
-              <div key={section.label} className="mb-3">
-                <p className="px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                  {section.label}
-                </p>
-                <ul role="list" className="space-y-0.5">
-                  {section.links.map(({ href, label, icon: Icon, tourId, badge, badgeColor }) => {
-                    const active = isActive(href)
-                    const { locked, requiredPlan } = isLocked(href)
-                    return (
-                      <li key={href}>
-                        <Link
-                          href={href}
-                          data-tour={tourId}
-                          onClick={() => open && onToggle()}
-                          aria-current={active ? 'page' : undefined}
-                          title={locked ? `Requires ${requiredPlan} plan` : undefined}
-                          className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
-                            active
-                              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                              : locked
-                                ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'
-                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
-                          }`}
-                        >
-                          <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
-                            active
-                              ? 'text-indigo-600 dark:text-indigo-400'
-                              : locked
-                                ? 'text-gray-300 dark:text-gray-600'
-                                : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
-                          }`} />
-                          <span className="truncate">{label}</span>
-                          {locked && (
-                            <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
-                              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
-                                {requiredPlan}
-                              </span>
-                              <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                            </div>
-                          )}
-                          {!locked && badge > 0 && (
-                            <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${badgeColor} px-1`}>
-                              {badge > 99 ? '99+' : badge}
-                            </span>
-                          )}
-                          {!locked && badge === 0 && active && (
-                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
-                          )}
-                        </Link>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ))}
+            {sections.map((section) => {
+              const isExpanded = expandedSections.has(section.label)
+              const sectionBadgeTotal = section.links.reduce((sum, l) => sum + l.badge, 0)
+              return (
+                <div key={section.label} className="mb-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.label)}
+                    className="w-full flex items-center gap-1 px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-150"
+                    aria-expanded={isExpanded}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
+                    ) : (
+                      <ChevronRight aria-hidden="true" className="w-3 h-3 flex-shrink-0 transition-transform duration-200" />
+                    )}
+                    <span>{section.label}</span>
+                    {!isExpanded && sectionBadgeTotal > 0 && (
+                      <span className="ml-auto min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold text-white bg-indigo-500 px-1">
+                        {sectionBadgeTotal > 99 ? '99+' : sectionBadgeTotal}
+                      </span>
+                    )}
+                  </button>
+                  {isExpanded && (
+                    <ul role="list" className="space-y-0.5">
+                      {section.links.map(({ href, label, icon: Icon, tourId, badge, badgeColor }) => {
+                        const active = isActive(href)
+                        const { locked, requiredPlan } = isLocked(href)
+                        return (
+                          <li key={href}>
+                            <Link
+                              href={href}
+                              data-tour={tourId}
+                              onClick={() => open && onToggle()}
+                              aria-current={active ? 'page' : undefined}
+                              title={locked ? `Requires ${requiredPlan} plan` : undefined}
+                              className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                                active
+                                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                                  : locked
+                                    ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'
+                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
+                              }`}
+                            >
+                              <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                                active
+                                  ? 'text-indigo-600 dark:text-indigo-400'
+                                  : locked
+                                    ? 'text-gray-300 dark:text-gray-600'
+                                    : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                              }`} />
+                              <span className="truncate">{label}</span>
+                              {locked && (
+                                <div className="ml-auto flex items-center gap-1.5" aria-label={`Requires ${requiredPlan}`}>
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400 hidden group-hover:inline">
+                                    {requiredPlan}
+                                  </span>
+                                  <Lock aria-hidden="true" className="w-3 h-3 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                                </div>
+                              )}
+                              {!locked && badge > 0 && (
+                                <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${badgeColor} px-1`}>
+                                  {badge > 99 ? '99+' : badge}
+                                </span>
+                              )}
+                              {!locked && badge === 0 && active && (
+                                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-scale-in" aria-hidden="true" />
+                              )}
+                            </Link>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
 
             {/* Admin Section */}
             {isAdmin && (
