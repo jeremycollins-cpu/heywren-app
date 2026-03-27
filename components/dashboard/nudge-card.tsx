@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import type { Commitment } from '@/lib/stores/dashboard-store'
 
@@ -141,11 +142,17 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeC
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => onDone(c.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">Done</button>
-        <button onClick={() => onSnooze(c.id)} className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600 transition-colors">Snooze</button>
+        <SnoozeButton onSnooze={onSnooze} commitmentId={c.id} />
         <button onClick={() => onDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Dismiss</button>
-        {c.source_url ? (
+        <Link
+          href={`/commitments/${c.id}`}
+          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          Details
+        </Link>
+        {c.source_url && (
           <a
             href={c.source_url}
             target="_blank"
@@ -154,15 +161,47 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeC
           >
             Open Source
           </a>
-        ) : (
-          <Link
-            href={`/commitments/${c.id}`}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
-            View Trace
-          </Link>
         )}
       </div>
     </article>
+  )
+}
+
+function SnoozeButton({ onSnooze, commitmentId }: { onSnooze: (id: string) => void; commitmentId: string }) {
+  const [showPicker, setShowPicker] = useState(false)
+
+  const options = [
+    { label: '1 hour', value: 'default' },
+    { label: '4 hours', value: '4h' },
+    { label: 'Tomorrow', value: '1d' },
+    { label: '3 days', value: '3d' },
+    { label: '1 week', value: '1w' },
+  ]
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowPicker(!showPicker)}
+        className="px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-medium hover:bg-yellow-600 transition-colors"
+      >
+        Snooze ▾
+      </button>
+      {showPicker && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowPicker(false)} />
+          <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg shadow-lg py-1 min-w-[120px]">
+            {options.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => { onSnooze(commitmentId); setShowPicker(false) }}
+                className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
