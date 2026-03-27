@@ -5,7 +5,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -23,6 +22,7 @@ interface WaitingItem {
   days_waiting: number
   status: string
   permalink: string | null
+  channel_id: string | null
   channel_name: string | null
   conversation_id: string | null
 }
@@ -58,7 +58,6 @@ const categoryLabels: Record<string, string> = {
 }
 
 export default function WaitingRoomPage() {
-  const supabase = createClient()
   const [items, setItems] = useState<WaitingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
@@ -66,11 +65,7 @@ export default function WaitingRoomPage() {
 
   const fetchItems = useCallback(async () => {
     try {
-      // Pass userId as fallback for server-side session issues
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData?.user?.id
-      const url = userId ? `/api/awaiting-replies?userId=${userId}` : '/api/awaiting-replies'
-      const res = await fetch(url)
+      const res = await fetch('/api/awaiting-replies')
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setItems(data.items || [])
@@ -87,11 +82,10 @@ export default function WaitingRoomPage() {
   const runScan = useCallback(async () => {
     setScanning(true)
     try {
-      const { data: userData } = await supabase.auth.getUser()
       const res = await fetch('/api/awaiting-replies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userData?.user?.id }),
+        body: JSON.stringify({}),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
@@ -163,17 +157,25 @@ export default function WaitingRoomPage() {
     return true
   })
 
-  // Group email items by conversation_id, keep Slack items ungrouped
+  // Group items by thread: emails by conversation_id, Slack by channel_id
   const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
   const groups: ConversationGroup[] = (() => {
     const convMap = new Map<string, WaitingItem[]>()
     const ungrouped: WaitingItem[] = []
 
     for (const item of filteredItems) {
+      // Group emails by conversation_id
       if (item.conversation_id && item.source === 'outlook') {
-        const existing = convMap.get(item.conversation_id)
+        const key = `outlook:${item.conversation_id}`
+        const existing = convMap.get(key)
         if (existing) existing.push(item)
-        else convMap.set(item.conversation_id, [item])
+        else convMap.set(key, [item])
+      // Group Slack messages by channel_id
+      } else if (item.channel_id && item.source === 'slack') {
+        const key = `slack:${item.channel_id}`
+        const existing = convMap.get(key)
+        if (existing) existing.push(item)
+        else convMap.set(key, [item])
       } else {
         ungrouped.push(item)
       }
@@ -319,10 +321,16 @@ export default function WaitingRoomPage() {
           const item = group.primary
           const isGrouped = group.items.length > 1
           const isExpanded = expandedGroups.has(group.key)
-          const urg = urgencyConfig[item.urgency] || urgencyConfig.medium
+          // For grouped items, use the highest urgency across the group
+          const groupUrgency = isGrouped
+            ? (['critical', 'high', 'medium', 'low'] as const).find(u => group.items.some(i => i.urgency === u)) || item.urgency
+            : item.urgency
+          const urg = urgencyConfig[groupUrgency] || urgencyConfig.medium
           const catLabel = categoryLabels[item.category] || 'Message sent'
           const recipientDisplay = item.to_name || item.to_recipients.split(',')[0].trim()
-          const daysText = item.days_waiting === 0 ? 'Today' : item.days_waiting === 1 ? '1 day' : `${item.days_waiting} days`
+          // For groups, show the longest waiting time
+          const maxWait = isGrouped ? Math.max(...group.items.map(i => i.days_waiting)) : item.days_waiting
+          const daysText = maxWait === 0 ? 'Today' : maxWait === 1 ? '1 day' : `${maxWait} days`
           // For grouped items, show the subject from the conversation (strip Re:/Fw: prefixes for cleaner display)
           const threadSubject = item.subject?.replace(/^(re:\s*|fw:\s*|fwd:\s*)+/i, '').trim() || null
 
@@ -345,10 +353,14 @@ export default function WaitingRoomPage() {
                       {item.source === 'slack' ? 'SLACK' : 'EMAIL'}
                     </span>
                     {isGrouped && (
-                      <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                      <button
+                        onClick={() => toggleGroup(group.key)}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition cursor-pointer"
+                      >
                         <Layers className="w-3 h-3" />
                         {group.items.length} messages
-                      </span>
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
                     )}
                     <span className="flex items-center gap-1 text-xs text-gray-400">
                       <Clock className="w-3 h-3" />
