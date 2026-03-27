@@ -327,6 +327,7 @@ export default function BriefingsPage() {
         .from('outlook_messages')
         .select('from_email, from_name, received_at, to_recipients')
         .eq('team_id', teamId)
+        .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
         .order('received_at', { ascending: false })
         .limit(1000)
 

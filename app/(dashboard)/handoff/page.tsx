@@ -140,6 +140,8 @@ export default function HandoffPage() {
       return
     }
 
+    const userEmail = userData.user.email || ''
+
     // ── Fetch team members with profiles ──
     const { data: members } = await supabase
       .from('team_members')
@@ -174,6 +176,7 @@ export default function HandoffPage() {
       .from('outlook_calendar_events')
       .select('id, subject, organizer_name, organizer_email, start_time, end_time')
       .eq('team_id', teamId)
+      .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
       .eq('is_cancelled', false)
       .gte('end_time', now)
       .order('start_time', { ascending: true })
