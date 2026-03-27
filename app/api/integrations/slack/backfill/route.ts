@@ -105,12 +105,12 @@ export async function POST(request: NextRequest) {
   // Resolve the user's identity for AI context and relevance filtering
   const { data: userProfile } = await supabase
     .from('profiles')
-    .select('full_name, slack_user_id')
+    .select('display_name, slack_user_id')
     .eq('id', userId)
     .single()
   const userSlackId: string | null = userProfile?.slack_user_id || null
-  const userContext: UserContext | undefined = userProfile?.full_name
-    ? { userName: userProfile.full_name, slackUserId: userSlackId }
+  const userContext: UserContext | undefined = userProfile?.display_name
+    ? { userName: userProfile.display_name, slackUserId: userSlackId }
     : undefined
 
   // Test the token
