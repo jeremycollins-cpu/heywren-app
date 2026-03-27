@@ -186,7 +186,7 @@ const BATCH_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
 // ============================================================
 // Shared system prompt (cached across calls via ephemeral)
 // ============================================================
-const SYSTEM_PROMPT = `Extract commitments, promises, and action items from messages.
+const BASE_SYSTEM_PROMPT = `Extract commitments, promises, and action items from messages.
 
 Rules:
 - Title: WHO + WHAT, specific enough to understand alone. Bad: "Look into it". Good: "Mike to investigate payment timeout errors for Acme Corp".
@@ -196,16 +196,40 @@ Rules:
 - Only items with confidence >= 0.5.
 - Empty array if none found.`
 
+function buildSystemPrompt(userContext?: UserContext): string {
+  if (!userContext) return BASE_SYSTEM_PROMPT
+  return `You are extracting commitments for ${userContext.userName}.
+
+CRITICAL FILTER: Only extract commitments that DIRECTLY involve ${userContext.userName}:
+1. Commitments ${userContext.userName} personally made ("I will...", "I'll handle...")
+2. Tasks explicitly assigned TO ${userContext.userName} or requested OF ${userContext.userName}
+3. Action items where ${userContext.userName} is the owner or directly responsible
+
+DO NOT extract:
+- Commitments made by OTHER people in the channel that don't involve ${userContext.userName}
+- General team announcements or status updates by others
+- Other people's promises, deliverables, or action items
+- Vague references where someone else will do something
+
+When in doubt, return an empty array. It's better to miss a commitment than to show irrelevant noise.
+
+${BASE_SYSTEM_PROMPT}`
+}
+
 // ============================================================
 // TIER 2: Cheap Haiku triage (yes/no) via tool_use
 // ~$0.0003 per call -- guaranteed structured boolean
 // ============================================================
-async function haiku_triage(text: string): Promise<boolean> {
+async function haiku_triage(text: string, userContext?: UserContext): Promise<boolean> {
   try {
+    const systemPrompt = userContext
+      ? `You are filtering Slack messages for ${userContext.userName}. Does this message contain a commitment, action item, or follow-up that ${userContext.userName} personally needs to act on, was asked to do, or promised to do? Say NO for commitments made by OTHER people that don't involve ${userContext.userName}. Use the classify_message tool.`
+      : 'Does this message contain a commitment, promise, action item, task assignment, deadline, or follow-up? Use the classify_message tool.'
+
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: 'Does this message contain a commitment, promise, action item, task assignment, deadline, or follow-up? Use the classify_message tool.',
+      system: systemPrompt,
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_message' },
       messages: [{ role: 'user', content: text }],
@@ -226,12 +250,12 @@ async function haiku_triage(text: string): Promise<boolean> {
 // TIER 3: Full Sonnet analysis via tool_use
 // ~$0.003 per call, guaranteed structured JSON
 // ============================================================
-async function sonnet_analyze(text: string, communityPatterns?: string[]): Promise<DetectedCommitment[]> {
+async function sonnet_analyze(text: string, communityPatterns?: string[], userContext?: UserContext): Promise<DetectedCommitment[]> {
   const communityBlock = communityPatterns && communityPatterns.length > 0
     ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : ''
 
-  const systemText = SYSTEM_PROMPT + communityBlock
+  const systemText = buildSystemPrompt(userContext) + communityBlock
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -273,8 +297,18 @@ export function getDetectionStats() {
   return stats
 }
 
+/**
+ * Optional context about the user viewing commitments.
+ * When provided, the AI will only extract commitments relevant to this user.
+ */
+export interface UserContext {
+  userName: string
+  slackUserId?: string | null
+}
+
 export async function detectCommitments(
-  messageText: string
+  messageText: string,
+  userContext?: UserContext
 ): Promise<DetectedCommitment[]> {
   // TIER 1: Free keyword pre-filter
   if (!likelyContainsCommitment(messageText)) {
@@ -284,7 +318,7 @@ export async function detectCommitments(
 
   try {
     // TIER 2: Haiku triage ($0.0003)
-    const hasCommitment = await haiku_triage(messageText)
+    const hasCommitment = await haiku_triage(messageText, userContext)
     if (!hasCommitment) {
       _stats.tier2_filtered++
       return []
@@ -298,7 +332,7 @@ export async function detectCommitments(
     } catch {
       // Non-fatal
     }
-    const commitments = await sonnet_analyze(messageText, communityPatterns)
+    const commitments = await sonnet_analyze(messageText, communityPatterns, userContext)
 
     if (commitments.length > 0) {
       console.log(
@@ -322,7 +356,8 @@ export async function detectCommitments(
 // BATCH MODE: Process multiple messages in one Sonnet call
 // ============================================================
 export async function detectCommitmentsBatch(
-  messages: Array<{ id: string; text: string }>
+  messages: Array<{ id: string; text: string }>,
+  userContext?: UserContext
 ): Promise<Map<string, DetectedCommitment[]>> {
   const results = new Map<string, DetectedCommitment[]>()
 
@@ -338,7 +373,7 @@ export async function detectCommitmentsBatch(
   // Tier 2: Haiku triage -- parallel
   const triageResults = await Promise.all(
     candidates.map(async (msg) => {
-      const hasCommitment = await haiku_triage(msg.text)
+      const hasCommitment = await haiku_triage(msg.text, userContext)
       return { msg, hasCommitment }
     })
   )
@@ -361,7 +396,24 @@ export async function detectCommitmentsBatch(
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 8192,
-      system: [{ type: 'text', text: `Extract commitments from batched numbered messages [1], [2], etc.
+      system: [{ type: 'text', text: userContext
+        ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}.
+
+CRITICAL FILTER: Only extract commitments that DIRECTLY involve ${userContext.userName}:
+1. Commitments ${userContext.userName} personally made ("I will...", "I'll handle...")
+2. Tasks explicitly assigned TO ${userContext.userName} or requested OF ${userContext.userName}
+3. Action items where ${userContext.userName} is the owner or directly responsible
+
+DO NOT extract commitments made by other people that don't involve ${userContext.userName}. When in doubt, return an empty array for that message.
+
+Rules:
+- Title: WHO + WHAT, standalone.
+- Description: business context.
+- originalQuote: verbatim excerpt.
+- stakeholders: anyone involved.
+- Only confidence >= 0.5.
+- Empty array if none.`
+        : `Extract commitments from batched numbered messages [1], [2], etc.
 
 Rules:
 - Title: WHO + WHAT, standalone.
