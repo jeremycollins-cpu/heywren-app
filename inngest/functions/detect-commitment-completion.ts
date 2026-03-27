@@ -48,7 +48,8 @@ export const detectCommitmentCompletion = inngest.createFunction(
           .select('team_id')
           .eq('provider', 'slack')
           .filter('config->>slack_team_id', 'eq', slackTeamId)
-          .single()
+          .limit(1)
+          .maybeSingle()
         return data?.team_id || null
       }
 

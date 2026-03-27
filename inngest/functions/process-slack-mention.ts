@@ -50,7 +50,8 @@ async function getBotToken(
     .select('team_id, access_token, config')
     .eq('provider', 'slack')
     .filter('config->>slack_team_id', 'eq', slackTeamId)
-    .single()
+    .limit(1)
+    .maybeSingle()
 
   if (error || !integration) {
     console.error('No Slack integration found for team:', slackTeamId, error)

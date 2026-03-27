@@ -89,11 +89,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No team found for user' }, { status: 400 })
   }
 
-  // Get the Slack access token
+  // Get the Slack access token for this user
   const { data: integration } = await supabase
     .from('integrations')
     .select('access_token, config')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'slack')
     .single()
 

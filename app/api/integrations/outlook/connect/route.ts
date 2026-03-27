@@ -85,11 +85,12 @@ export async function GET(request: NextRequest) {
     // Resolve team using shared utility (handles all fallbacks + fixes inconsistencies)
     const { teamId } = await ensureTeamForUser(userId)
 
-    // Upsert the integration
+    // Upsert the integration (per-user)
     const supabase = getAdminClient()
     const { error: upsertError } = await supabase.from('integrations').upsert(
       {
         team_id: teamId,
+        user_id: userId,
         provider: 'outlook',
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || null,
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
           token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
         },
       },
-      { onConflict: 'team_id,provider' }
+      { onConflict: 'team_id,user_id,provider' }
     )
 
     if (upsertError) {

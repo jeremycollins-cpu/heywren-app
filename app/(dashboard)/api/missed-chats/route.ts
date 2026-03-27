@@ -70,11 +70,12 @@ export async function POST() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Get the Slack integration to find the authenticated user's Slack ID
+  // Get the Slack integration for this user
   const { data: integration } = await adminDb
     .from('integrations')
     .select('config, access_token')
     .eq('team_id', teamId)
+    .eq('user_id', user.id)
     .eq('provider', 'slack')
     .maybeSingle()
 

@@ -146,11 +146,12 @@ export async function scanTeamAwaitingReplies(
 ) {
   const startTime = Date.now()
 
-  // Get Outlook integration
+  // Get Outlook integration for this user
   const { data: integration } = await supabase
     .from('integrations')
     .select('id, access_token, refresh_token, config')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'outlook')
     .single()
 
@@ -367,6 +368,7 @@ export async function scanTeamAwaitingReplies(
     .from('integrations')
     .select('config, access_token')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'slack')
     .maybeSingle()
 
@@ -783,9 +785,10 @@ export const scanAwaitingReplies = inngest.createFunction(
     const results = await step.run('scan-all-teams', async () => {
       const supabase = getAdminClient()
 
+      // Get all users with Outlook integrations
       const { data: integrations } = await supabase
         .from('integrations')
-        .select('team_id')
+        .select('team_id, user_id')
         .eq('provider', 'outlook')
 
       if (!integrations || integrations.length === 0) {
@@ -795,19 +798,8 @@ export const scanAwaitingReplies = inngest.createFunction(
       const teamResults: any[] = []
 
       for (const int of integrations) {
-        // Get team owner or first admin
-        const { data: member } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', int.team_id)
-          .in('role', ['owner', 'admin'])
-          .limit(1)
-          .single()
-
-        if (!member) continue
-
         try {
-          const result = await scanTeamAwaitingReplies(supabase, int.team_id, member.user_id)
+          const result = await scanTeamAwaitingReplies(supabase, int.team_id, int.user_id)
           teamResults.push(result)
         } catch (err) {
           console.error(`Team ${int.team_id}: Scan failed:`, (err as Error).message)

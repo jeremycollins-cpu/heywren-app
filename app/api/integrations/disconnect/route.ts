@@ -55,12 +55,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
 
-    // Delete the integration scoped to both id and team_id
+    // Delete the integration scoped to id, team_id, AND user_id
     const { error, count } = await supabaseAdmin
       .from('integrations')
       .delete({ count: 'exact' })
       .eq('id', id)
       .eq('team_id', teamId)
+      .eq('user_id', userId)
 
     if (error) {
       console.error('Error deleting integration:', error)

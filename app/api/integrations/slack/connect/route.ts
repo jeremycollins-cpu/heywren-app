@@ -61,11 +61,12 @@ export async function GET(request: NextRequest) {
     // Resolve team using shared utility (handles all fallbacks + fixes inconsistencies)
     const { teamId } = await ensureTeamForUser(userId)
 
-    // Upsert the integration (update if exists)
+    // Upsert the integration (update if exists for this user)
     const supabase = getAdminClient()
     const { error: upsertError } = await supabase.from('integrations').upsert(
       {
         team_id: teamId,
+        user_id: userId,
         provider: 'slack',
         access_token: data.access_token,
         refresh_token: data.refresh_token || null,
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
           connected_by: userId,
         },
       },
-      { onConflict: 'team_id,provider' }
+      { onConflict: 'team_id,user_id,provider' }
     )
 
     // Link the connecting user's Slack identity to their profile

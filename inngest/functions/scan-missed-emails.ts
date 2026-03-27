@@ -182,10 +182,10 @@ export const scanMissedEmails = inngest.createFunction(
   async () => {
     const supabase = getAdminClient()
 
-    // Get all teams with Outlook integrations
+    // Get all users with Outlook integrations
     const { data: integrations, error } = await supabase
       .from('integrations')
-      .select('team_id')
+      .select('team_id, user_id')
       .eq('provider', 'outlook')
 
     if (error || !integrations) {
@@ -193,25 +193,16 @@ export const scanMissedEmails = inngest.createFunction(
       return { success: false, error: error?.message }
     }
 
-    console.log(`Missed email scan: ${integrations.length} team(s) to scan`)
+    console.log(`Missed email scan: ${integrations.length} user integration(s) to scan`)
 
     const results = []
 
     for (const integration of integrations) {
-      // Get a team member to associate missed emails with
-      const { data: members } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', integration.team_id)
-        .limit(1)
-
-      if (!members || members.length === 0) continue
-
       try {
         const result = await scanTeamMissedEmails(
           supabase,
           integration.team_id,
-          members[0].user_id
+          integration.user_id
         )
         results.push(result)
         console.log(`Team ${integration.team_id} missed email scan:`, result)

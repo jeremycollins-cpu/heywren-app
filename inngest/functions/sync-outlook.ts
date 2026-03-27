@@ -468,10 +468,10 @@ export const syncOutlook = inngest.createFunction(
   async () => {
     const supabase = getAdminClient()
 
-    // Get all teams with active Outlook integrations
+    // Get all users with active Outlook integrations
     const { data: integrations, error } = await supabase
       .from('integrations')
-      .select('id, team_id, access_token, refresh_token, config')
+      .select('id, team_id, user_id, access_token, refresh_token, config')
       .eq('provider', 'outlook')
 
     if (error || !integrations) {
@@ -479,30 +479,20 @@ export const syncOutlook = inngest.createFunction(
       return { success: false, error: error?.message }
     }
 
-    console.log(`Outlook daily sync: ${integrations.length} team(s) to sync`)
+    console.log(`Outlook daily sync: ${integrations.length} user integration(s) to sync`)
 
     const results = []
 
     for (const integration of integrations) {
-      // Get any team member to use as creator_id for commitments
-      const { data: members } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', integration.team_id)
-        .limit(1)
-
-      if (!members || members.length === 0) {
-        console.error(`Team ${integration.team_id}: No members found, skipping`)
-        continue
-      }
+      const syncUserId = integration.user_id
 
       try {
-        const result = await syncTeamOutlook(supabase, integration.team_id, members[0].user_id, integration)
+        const result = await syncTeamOutlook(supabase, integration.team_id, syncUserId, integration)
         results.push(result)
-        console.log(`Team ${integration.team_id} sync complete:`, result)
+        console.log(`User ${syncUserId} (team ${integration.team_id}) sync complete:`, result)
       } catch (err) {
-        console.error(`Team ${integration.team_id} sync failed:`, (err as Error).message)
-        results.push({ success: false, teamId: integration.team_id, error: (err as Error).message })
+        console.error(`User ${syncUserId} (team ${integration.team_id}) sync failed:`, (err as Error).message)
+        results.push({ success: false, teamId: integration.team_id, userId: syncUserId, error: (err as Error).message })
       }
     }
 
