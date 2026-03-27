@@ -18,6 +18,10 @@ export interface DetectedCommitment {
   stakeholders?: Array<{ name: string; role: 'owner' | 'assignee' | 'stakeholder' }>
   originalQuote?: string
   channelOrThread?: string
+  /** 'outbound' = user made this commitment; 'inbound' = someone promised something TO the user */
+  direction?: 'outbound' | 'inbound'
+  /** Who made the promise (for inbound commitments) */
+  promiserName?: string
 }
 
 // ============================================================
@@ -145,8 +149,10 @@ const COMMITMENT_SCHEMA = {
       },
     },
     originalQuote: { type: 'string' as const, description: 'Exact sentence(s) from message, max 200 chars' },
+    direction: { type: 'string' as const, enum: ['outbound', 'inbound'], description: 'outbound = the target user made this commitment; inbound = someone else promised something TO the target user' },
+    promiserName: { type: 'string' as const, description: 'For inbound commitments: name of the person who made the promise' },
   },
-  required: ['title', 'description', 'priority', 'confidence'],
+  required: ['title', 'description', 'priority', 'confidence', 'direction'],
 }
 
 const COMMITMENT_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
@@ -200,16 +206,23 @@ function buildSystemPrompt(userContext?: UserContext): string {
   if (!userContext) return BASE_SYSTEM_PROMPT
   return `You are extracting commitments for ${userContext.userName}.
 
-CRITICAL FILTER: Only extract commitments that DIRECTLY involve ${userContext.userName}:
-1. Commitments ${userContext.userName} personally made ("I will...", "I'll handle...")
-2. Tasks explicitly assigned TO ${userContext.userName} or requested OF ${userContext.userName}
-3. Action items where ${userContext.userName} is the owner or directly responsible
+Extract TWO types of commitments — both require the "direction" field:
+
+OUTBOUND (direction: "outbound") — commitments ${userContext.userName} personally made:
+- "I will...", "I'll handle...", "Let me take care of..."
+- Tasks explicitly assigned to ${userContext.userName}
+- Action items where ${userContext.userName} is the owner
+
+INBOUND (direction: "inbound") — promises someone ELSE made TO ${userContext.userName}:
+- Someone says "I will get back to you", "I'll report back", "I will reach out and let you know"
+- Someone promises to deliver something, follow up, or take action on ${userContext.userName}'s behalf
+- Someone commits to a deadline or next step that ${userContext.userName} is waiting on
+- Set "promiserName" to the name of the person who made the promise
 
 DO NOT extract:
-- Commitments made by OTHER people in the channel that don't involve ${userContext.userName}
-- General team announcements or status updates by others
-- Other people's promises, deliverables, or action items
-- Vague references where someone else will do something
+- Commitments between OTHER people that don't involve ${userContext.userName} at all
+- General team announcements or status updates not directed at ${userContext.userName}
+- Vague statements with no clear action or promise
 
 When in doubt, return an empty array. It's better to miss a commitment than to show irrelevant noise.
 
@@ -223,7 +236,7 @@ ${BASE_SYSTEM_PROMPT}`
 async function haiku_triage(text: string, userContext?: UserContext): Promise<boolean> {
   try {
     const systemPrompt = userContext
-      ? `You are filtering Slack messages for ${userContext.userName}. Does this message contain a commitment, action item, or follow-up that ${userContext.userName} personally needs to act on, was asked to do, or promised to do? Say NO for commitments made by OTHER people that don't involve ${userContext.userName}. Use the classify_message tool.`
+      ? `You are filtering Slack messages for ${userContext.userName}. Does this message contain EITHER: (1) a commitment/action item that ${userContext.userName} personally needs to act on, OR (2) a promise someone ELSE made TO ${userContext.userName} (e.g. "I will get back to you", "I'll report back", "I will reach out")? Say YES for both types. Say NO only for commitments between other people that don't involve ${userContext.userName} at all. Use the classify_message tool.`
       : 'Does this message contain a commitment, promise, action item, task assignment, deadline, or follow-up? Use the classify_message tool.'
 
     const message = await client.messages.create({
@@ -399,12 +412,12 @@ export async function detectCommitmentsBatch(
       system: [{ type: 'text', text: userContext
         ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}.
 
-CRITICAL FILTER: Only extract commitments that DIRECTLY involve ${userContext.userName}:
-1. Commitments ${userContext.userName} personally made ("I will...", "I'll handle...")
-2. Tasks explicitly assigned TO ${userContext.userName} or requested OF ${userContext.userName}
-3. Action items where ${userContext.userName} is the owner or directly responsible
+Extract TWO types — both require the "direction" field:
 
-DO NOT extract commitments made by other people that don't involve ${userContext.userName}. When in doubt, return an empty array for that message.
+OUTBOUND (direction: "outbound") — commitments ${userContext.userName} personally made.
+INBOUND (direction: "inbound") — promises someone ELSE made TO ${userContext.userName} (e.g. "I will get back to you", "I'll report back"). Set "promiserName" to who made the promise.
+
+DO NOT extract commitments between other people that don't involve ${userContext.userName}. When in doubt, return an empty array for that message.
 
 Rules:
 - Title: WHO + WHAT, standalone.

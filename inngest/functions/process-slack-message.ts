@@ -215,10 +215,14 @@ export const processSlackMessage = inngest.createFunction(
       ? `https://slack.com/archives/${channelId}/p${messageTs.replace('.', '')}`
       : null
 
-    // ── Create commitment records (with CORRECT columns and enums) ──
+    // ── Separate outbound (user's commitments) from inbound (promises TO user) ──
+    const outboundCommitments = commitments.filter(c => c.direction !== 'inbound')
+    const inboundCommitments = commitments.filter(c => c.direction === 'inbound')
+
+    // ── Create commitment records for OUTBOUND (things user committed to) ──
     const insertResults = await step.run('insert-commitments', async () => {
       return Promise.all(
-        commitments.map(async (commitment) => {
+        outboundCommitments.map(async (commitment) => {
           const metadata: Record<string, unknown> = {}
           if (commitment.urgency) metadata.urgency = commitment.urgency
           if (commitment.tone) metadata.tone = commitment.tone
@@ -256,6 +260,50 @@ export const processSlackMessage = inngest.createFunction(
           return data
         })
       )
+    })
+
+    // ── Route INBOUND commitments to Waiting Room ──
+    // These are promises others made TO the user (e.g. "I will report back")
+    const waitingRoomResults = await step.run('insert-waiting-room', async () => {
+      if (inboundCommitments.length === 0) return { inserted: 0 }
+
+      let inserted = 0
+      for (const commitment of inboundCommitments) {
+        const daysSince = 0 // Just received
+        const text = commitment.originalQuote || commitment.title
+        const hasQuestion = /\?|can you|could you|would you|please/i.test(text)
+
+        const { error } = await supabase
+          .from('awaiting_replies')
+          .upsert({
+            team_id: teamId,
+            user_id: creatorId,
+            source: 'slack',
+            source_message_id: event.data.ts,
+            conversation_id: event.data.thread_ts || event.data.ts,
+            permalink: slackPermalink,
+            channel_id: event.data.channel_id,
+            to_recipients: commitment.promiserName || 'Unknown',
+            to_name: commitment.promiserName || 'Someone in channel',
+            subject: commitment.title,
+            body_preview: (commitment.originalQuote || commitment.description || '').slice(0, 500),
+            sent_at: new Date().toISOString(),
+            urgency: commitment.urgency === 'critical' ? 'critical' : commitment.urgency === 'high' ? 'high' : 'medium',
+            category: hasQuestion ? 'question' : 'follow_up',
+            wait_reason: commitment.promiserName
+              ? `${commitment.promiserName} promised: ${commitment.title}`
+              : `Someone promised: ${commitment.title}`,
+            days_waiting: daysSince,
+            status: 'waiting',
+          }, { onConflict: 'team_id,source_message_id' })
+
+        if (error) {
+          console.error('Failed to insert waiting room item:', error.message)
+        } else {
+          inserted++
+        }
+      }
+      return { inserted }
     })
 
     const successCount = insertResults.filter(Boolean).length
@@ -373,6 +421,11 @@ export const processSlackMessage = inngest.createFunction(
       }
     })
 
-    return { success: true, commitments: successCount, completions: completionResult }
+    return {
+      success: true,
+      commitments: successCount,
+      waitingRoom: waitingRoomResults?.inserted || 0,
+      completions: completionResult,
+    }
   }
 )

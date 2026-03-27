@@ -140,10 +140,10 @@ export async function POST(request: NextRequest) {
   if (unprocessed && unprocessed.length > 0) {
     console.log('Processing ' + unprocessed.length + ' unprocessed Slack messages (of ' + unprocessedCount + ' total)')
 
-    const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string; channelId: string }> = []
+    const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string; channelId: string; messageTs: string }> = []
     for (const msg of unprocessed) {
       if (msg.message_text && msg.message_text.length >= 15) {
-        batch.push({ id: msg.message_ts, text: msg.message_text, dbId: msg.id, authorSlackId: msg.user_id || 'unknown', channelId: msg.channel_id })
+        batch.push({ id: msg.message_ts, text: msg.message_text, dbId: msg.id, authorSlackId: msg.user_id || 'unknown', channelId: msg.channel_id, messageTs: msg.message_ts })
       } else {
         // Mark short messages as processed with 0 commitments
         await supabase
@@ -200,7 +200,10 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          for (const commitment of commitments) {
+          const outbound = commitments.filter(c => c.direction !== 'inbound')
+          const inbound = commitments.filter(c => c.direction === 'inbound')
+
+          for (const commitment of outbound) {
             const { error: commitErr } = await supabase.from('commitments').insert({
               team_id: teamId,
               creator_id: userId,
@@ -231,6 +234,33 @@ export async function POST(request: NextRequest) {
             } else {
               totalCommitments++
             }
+          }
+
+          // Route inbound commitments to Waiting Room
+          for (const commitment of inbound) {
+            const permalink = item.channelId && item.messageTs
+              ? `https://slack.com/archives/${item.channelId}/p${item.messageTs.replace('.', '')}`
+              : null
+            await supabase.from('awaiting_replies').upsert({
+              team_id: teamId,
+              user_id: userId,
+              source: 'slack',
+              source_message_id: item.messageTs || item.dbId,
+              permalink,
+              channel_id: item.channelId || null,
+              to_recipients: commitment.promiserName || 'Unknown',
+              to_name: commitment.promiserName || 'Someone',
+              subject: commitment.title,
+              body_preview: (commitment.originalQuote || commitment.description || '').slice(0, 500),
+              sent_at: new Date().toISOString(),
+              urgency: commitment.urgency === 'critical' ? 'critical' : commitment.urgency === 'high' ? 'high' : 'medium',
+              category: 'follow_up',
+              wait_reason: commitment.promiserName
+                ? `${commitment.promiserName} promised: ${commitment.title}`
+                : `Someone promised: ${commitment.title}`,
+              days_waiting: 0,
+              status: 'waiting',
+            }, { onConflict: 'team_id,source_message_id' })
           }
 
           await supabase
@@ -429,7 +459,7 @@ export async function POST(request: NextRequest) {
           (msg: any) => msg.type === 'message' && !msg.bot_id && !msg.subtype && msg.text && msg.text.length >= 15
         )
 
-        const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string }> = []
+        const batch: Array<{ id: string; text: string; dbId: string; authorSlackId: string; channelId: string; messageTs: string }> = []
 
         for (const msg of messages) {
           totalMessages++
@@ -470,7 +500,7 @@ export async function POST(request: NextRequest) {
           }
 
           totalNewMessages++
-          batch.push({ id: msg.ts, text: msg.text, dbId, authorSlackId: msg.user || 'unknown' })
+          batch.push({ id: msg.ts, text: msg.text, dbId, authorSlackId: msg.user || 'unknown', channelId: channel.id, messageTs: msg.ts })
         }
 
         // Process batch through AI
@@ -500,7 +530,10 @@ export async function POST(request: NextRequest) {
                 continue
               }
 
-              for (const commitment of commitments) {
+              const outbound2 = commitments.filter(c => c.direction !== 'inbound')
+              const inbound2 = commitments.filter(c => c.direction === 'inbound')
+
+              for (const commitment of outbound2) {
                 const { error: commitErr } = await supabase.from('commitments').insert({
                   team_id: teamId,
                   creator_id: userId,
@@ -531,6 +564,33 @@ export async function POST(request: NextRequest) {
                 } else {
                   totalCommitments++
                 }
+              }
+
+              // Route inbound commitments to Waiting Room
+              for (const commitment of inbound2) {
+                const permalink = item.channelId && item.messageTs
+                  ? `https://slack.com/archives/${item.channelId}/p${item.messageTs.replace('.', '')}`
+                  : null
+                await supabase.from('awaiting_replies').upsert({
+                  team_id: teamId,
+                  user_id: userId,
+                  source: 'slack',
+                  source_message_id: item.messageTs || item.dbId,
+                  permalink,
+                  channel_id: item.channelId || null,
+                  to_recipients: commitment.promiserName || 'Unknown',
+                  to_name: commitment.promiserName || 'Someone',
+                  subject: commitment.title,
+                  body_preview: (commitment.originalQuote || commitment.description || '').slice(0, 500),
+                  sent_at: new Date().toISOString(),
+                  urgency: commitment.urgency === 'critical' ? 'critical' : commitment.urgency === 'high' ? 'high' : 'medium',
+                  category: 'follow_up',
+                  wait_reason: commitment.promiserName
+                    ? `${commitment.promiserName} promised: ${commitment.title}`
+                    : `Someone promised: ${commitment.title}`,
+                  days_waiting: 0,
+                  status: 'waiting',
+                }, { onConflict: 'team_id,source_message_id' })
               }
 
               await supabase
