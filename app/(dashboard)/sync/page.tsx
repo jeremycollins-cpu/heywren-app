@@ -149,8 +149,16 @@ export default function SyncPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setError(data.error || 'Slack sync failed')
-        toast.error(data.error || 'Slack sync failed')
+        const isNotConnected = data.error?.toLowerCase().includes('not connected') || data.error?.toLowerCase().includes('missing access token')
+        if (isNotConnected) {
+          setError('Slack is not connected to your account. Please connect it first.')
+          toast.error('Slack not connected — go to Settings → Integrations to connect', { duration: 5000 })
+          // Refresh integrations list so UI updates
+          loadDataHealth()
+        } else {
+          setError(data.error || 'Slack sync failed')
+          toast.error(data.error || 'Slack sync failed')
+        }
       } else {
         setSlackResult(data.summary)
         toast.success(`Slack sync complete! Found ${data.summary.commitments_detected} commitments.`)
@@ -188,8 +196,15 @@ export default function SyncPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setError(data.error || 'Outlook sync failed')
-        toast.error(data.error || 'Outlook sync failed')
+        const isNotConnected = data.error?.toLowerCase().includes('not connected') || data.error?.toLowerCase().includes('missing access token')
+        if (isNotConnected) {
+          setError('Outlook is not connected to your account. Please connect it first.')
+          toast.error('Outlook not connected — go to Settings → Integrations to connect', { duration: 5000 })
+          loadDataHealth()
+        } else {
+          setError(data.error || 'Outlook sync failed')
+          toast.error(data.error || 'Outlook sync failed')
+        }
       } else {
         setOutlookResult(data.summary)
         toast.success(`Outlook sync complete! Found ${data.summary.commitments_detected} commitments.`)
@@ -350,7 +365,7 @@ export default function SyncPage() {
             {hasSlack ? (
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  Scans public channels, private channels, and DMs from the last 30 days to find commitments and promises.
+                  Scans public channels, private channels, and DMs to find commitments and promises. May need multiple clicks for large histories.
                 </p>
                 <button
                   onClick={handleSlackSync}
@@ -364,7 +379,7 @@ export default function SyncPage() {
                   {syncingSlack ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Syncing Slack...</>
                   ) : (
-                    <><RefreshCw className="w-4 h-4" /> Sync Last 30 Days</>
+                    <><RefreshCw className="w-4 h-4" /> Sync Slack History</>
                   )}
                 </button>
               </div>
@@ -442,7 +457,7 @@ export default function SyncPage() {
             {hasOutlook ? (
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  Scans your inbox and sent emails from the last 30 days to find commitments, promises, and action items.
+                  Scans your inbox and sent emails to find commitments, promises, and action items. May need multiple clicks for large inboxes.
                 </p>
                 <button
                   onClick={handleOutlookSync}
@@ -456,7 +471,7 @@ export default function SyncPage() {
                   {syncingOutlook ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Syncing Outlook...</>
                   ) : (
-                    <><Mail className="w-4 h-4" /> Sync Last 30 Days</>
+                    <><Mail className="w-4 h-4" /> Sync Outlook History</>
                   )}
                 </button>
               </div>
@@ -512,10 +527,17 @@ export default function SyncPage() {
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-              <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+                {error.includes('not connected') && (
+                  <Link href="/integrations" className="text-sm font-medium text-red-700 dark:text-red-400 underline hover:no-underline mt-1 inline-block">
+                    Go to Settings → Integrations to connect
+                  </Link>
+                )}
+              </div>
             </div>
-            <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-xs font-medium">Dismiss</button>
+            <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-xs font-medium flex-shrink-0">Dismiss</button>
           </div>
         </div>
       )}
