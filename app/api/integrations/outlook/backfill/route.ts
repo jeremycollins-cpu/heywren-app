@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
         if (commitmentRows.length > 0) {
           const { error: commitErr } = await supabase.from('commitments').insert(commitmentRows)
           if (commitErr) {
-            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message)
+            console.error('BATCH COMMITMENT INSERT FAILED:', commitErr.message, commitErr.details, commitErr.hint, 'Code:', commitErr.code, 'Row sample:', JSON.stringify(commitmentRows[0]))
             commitInsertOk = false
           } else {
             totalCommitments += commitmentRows.length
