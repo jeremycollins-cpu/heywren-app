@@ -123,7 +123,7 @@ export function AnalyticsSection({ commitments }: AnalyticsSectionProps) {
     <section className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-brand p-5">
       <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Analytics</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Weekly trend */}
         <div>
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Weekly Trend</h3>

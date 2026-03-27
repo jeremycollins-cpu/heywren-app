@@ -57,7 +57,7 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
 
   return (
     <div
-      className="p-6 max-w-[1200px] mx-auto space-y-6"
+      className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-6"
       role="status"
       aria-busy="true"
       aria-label="Loading dashboard"
@@ -88,7 +88,7 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
       </div>
 
       {/* Stat cards row 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
@@ -96,7 +96,7 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
       </div>
 
       {/* Stat cards row 2 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />

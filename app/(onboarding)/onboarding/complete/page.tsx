@@ -111,7 +111,7 @@ export default function OnboardingCompletePage() {
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-4xl font-bold text-gray-900">You&apos;re all set!</h2>
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">You&apos;re all set!</h2>
           <p className="text-lg text-gray-600">
             Wren is now working in the background to find your commitments.
           </p>

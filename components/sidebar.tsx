@@ -297,7 +297,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 w-64 bg-white dark:bg-surface-dark-secondary border-r border-gray-200 dark:border-border-dark transform transition-transform duration-300 ease-brand z-50 lg:z-0 ${
+        className={`fixed lg:static inset-y-0 left-0 w-[260px] sm:w-64 bg-white dark:bg-surface-dark-secondary border-r border-gray-200 dark:border-border-dark transform transition-transform duration-300 ease-brand z-50 lg:z-0 ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -322,7 +322,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
                 {totalActionItems} item{totalActionItems !== 1 ? 's' : ''} need attention
               </p>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center flex-wrap gap-2 sm:gap-3 mt-1">
                 {badges.overdue > 0 && (
                   <span className="text-[10px] text-red-600 dark:text-red-400 font-medium">{badges.overdue} overdue</span>
                 )}
@@ -380,7 +380,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                               onClick={() => open && onToggle()}
                               aria-current={active ? 'page' : undefined}
                               title={locked ? `Requires ${requiredPlan} plan` : undefined}
-                              className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                              className={`group flex items-center gap-3 px-3 py-2.5 sm:py-2 rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
                                 active
                                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                                   : locked
@@ -439,7 +439,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                       onClick={() => open && onToggle()}
                       aria-current={active ? 'page' : undefined}
                       title={locked ? `Requires ${requiredPlan} plan` : undefined}
-                      className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                      className={`group flex items-center gap-3 px-3 py-2.5 sm:py-2 rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
                         active
                           ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                           : locked

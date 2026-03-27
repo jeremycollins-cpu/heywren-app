@@ -47,7 +47,7 @@ function OnboardingITGuide({ showSlack, showOutlook }: { showSlack: boolean; sho
       </button>
 
       {expanded && (
-        <div className="mt-4 ml-8 space-y-5">
+        <div className="mt-4 ml-4 sm:ml-8 space-y-5">
           {/* General Steps */}
           <div className="space-y-3">
             <div className="flex gap-3">
@@ -296,14 +296,14 @@ function IntegrationsSetupContent() {
           <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
           Step 2 of 4 — Most Important
         </div>
-        <h2 className="text-3xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Connect your tools</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Connect your tools</h2>
         <p className="text-gray-500 max-w-lg mx-auto text-sm">
           HeyWren monitors your conversations to detect commitments. Connect at least one tool to get started.
         </p>
       </div>
 
       {/* Integration Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Slack Card */}
         <div className={`relative rounded-xl border-2 transition-all p-6 flex flex-col ${
           isSlackConnected

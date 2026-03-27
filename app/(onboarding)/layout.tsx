@@ -63,7 +63,7 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
             style={{ width: `${progressPercentage}%`, background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
           />
         </div>
-        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center">
             <WrenFullLogo width={100} />
           </Link>
@@ -82,7 +82,7 @@ export default function OnboardingLayout({ children }: OnboardingLayoutProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex items-center justify-center min-h-screen px-4 py-24">
+      <div className="flex items-center justify-center min-h-screen px-4 py-12 sm:py-24">
         <div className="w-full max-w-2xl">
           {children}
         </div>

@@ -156,7 +156,7 @@ export default function ChannelsSetupPage() {
           <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
             Step 3 of 4
           </div>
-          <h2 className="text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
           <p className="text-gray-600 max-w-lg mx-auto">
             Slack isn&apos;t connected yet. You can go back to connect it, or skip this step and configure channels later from settings.
           </p>
@@ -201,7 +201,7 @@ export default function ChannelsSetupPage() {
         <div className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
           Step 3 of 4
         </div>
-        <h2 className="text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Choose channels to monitor</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
           Wren will listen for commitments in these channels. Pick the ones where your team makes decisions and promises. You can always change this later.
         </p>

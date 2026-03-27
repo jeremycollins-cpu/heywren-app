@@ -104,11 +104,11 @@ export default function DashboardPage() {
 
   if (commitments.length === 0 && mentions.length === 0 && integrationCount === 0) {
     return (
-      <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
+      <div className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-6 animate-fade-in-up">
         <PageHeader title="Welcome to HeyWren" description="Let's get your AI follow-through engine running" />
 
         {/* Getting Started Hero */}
-        <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-8">
+        <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-5 sm:p-8">
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
               <span className="text-3xl text-white" aria-hidden="true">W</span>
@@ -176,7 +176,7 @@ export default function DashboardPage() {
 
   if (commitments.length === 0 && integrationCount > 0) {
     return (
-      <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
+      <div className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-6 animate-fade-in-up">
         <PageHeader title="Wren is scanning your messages..." description={`${integrationCount} tool${integrationCount > 1 ? 's' : ''} connected`} />
         <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-8 text-center">
           <div className="flex justify-center mb-4">
@@ -220,7 +220,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-6 animate-fade-in-up">
+    <div className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-6 animate-fade-in-up">
       {error && <AlertBanner variant="error" message={error} onDismiss={clearError} />}
 
       <PageHeader
@@ -245,7 +245,7 @@ export default function DashboardPage() {
         onMarkDone={id => handleAction(markDone, id, 'Marked as done!')}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Active Items" value={openCommitments.length} color="#6366f1" barPercent={Math.min(openCommitments.length / 20 * 100, 100)} />
         <StatCard label="Urgent" value={urgentCount} color="#f59e0b" barPercent={Math.min(urgentCount / 10 * 100, 100)} />
         <StatCard label="Overdue" value={overdueCount} color="#ef4444" barPercent={Math.min(overdueCount / 5 * 100, 100)} />
@@ -266,7 +266,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           label="Sources connected"
           value={integrationCount}

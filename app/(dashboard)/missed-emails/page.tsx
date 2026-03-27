@@ -261,9 +261,9 @@ export default function MissedEmailsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Missed Emails</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Missed Emails</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
             Emails waiting for your response that may have slipped through the cracks. Sales and automated emails are filtered out.
           </p>
@@ -288,7 +288,7 @@ export default function MissedEmailsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <button
           onClick={() => setFilter('critical')}
           className={`bg-white dark:bg-surface-dark-secondary border rounded-lg p-4 text-left transition hover:shadow-md ${
@@ -400,7 +400,7 @@ export default function MissedEmailsPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       {/* Top row: badges */}
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-2 flex-wrap">
                         <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${config.color}`}>
                           {config.label}
                         </span>
@@ -642,7 +642,7 @@ export default function MissedEmailsPage() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
+      <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 sm:p-6">
         <h3 className="font-semibold text-indigo-900 dark:text-indigo-200 mb-2">How Missed Emails Works</h3>
         <p className="text-sm text-indigo-800 dark:text-indigo-300 mb-3">
           HeyWren uses AI to scan your inbox and surface emails where someone is waiting for your response.
@@ -661,7 +661,7 @@ export default function MissedEmailsPage() {
       {/* Feedback Reason Modal */}
       {feedbackModal?.show && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setFeedbackModal(null)}>
-          <div className="bg-white dark:bg-surface-dark-secondary rounded-xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-surface-dark-secondary rounded-xl p-4 sm:p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Why isn&apos;t this helpful?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Your feedback trains the AI to be smarter for everyone.

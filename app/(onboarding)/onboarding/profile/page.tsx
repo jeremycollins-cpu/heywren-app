@@ -167,7 +167,7 @@ export default function ProfileSetupPage() {
           <Briefcase className="w-6 h-6" />
         </div>
         {/* Step indicator is shown in the layout header */}
-        <h2 className="text-3xl font-bold text-gray-900">Let&apos;s set up your workspace</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Let&apos;s set up your workspace</h2>
         <p className="text-gray-600 max-w-lg mx-auto">
           Tell us a bit about yourself so Wren can tailor follow-through to your role and team.
         </p>

@@ -161,7 +161,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             aria-haspopup="true"
           >
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-gray-900 dark:text-white" style={{ letterSpacing: '-0.01em' }}>
+              <p className="text-sm font-medium text-gray-900 dark:text-white max-w-[140px] truncate" style={{ letterSpacing: '-0.01em' }}>
                 {user?.user_metadata?.full_name || user?.email || 'User'}
               </p>
             </div>
