@@ -32,16 +32,6 @@ export interface UserCommunicationProfile {
   peakActivityHours: number[]
 }
 
-function extractJSON(text: string): string {
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) return fenceMatch[1].trim()
-  const jsonMatch = text.match(/\[[\s\S]*\]/)
-  if (jsonMatch) return jsonMatch[0]
-  const objMatch = text.match(/\{[\s\S]*\}/)
-  if (objMatch) return objMatch[0]
-  return text.trim()
-}
-
 export function buildCommunicationProfile(
   commitments: any[],
   missedEmails: any[]
@@ -50,7 +40,6 @@ export function buildCommunicationProfile(
   const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
   const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
 
-  // Filter to last 30 days
   const recent = commitments.filter(
     c => new Date(c.created_at).getTime() >= thirtyDaysAgo
   )
@@ -58,13 +47,11 @@ export function buildCommunicationProfile(
     m => new Date(m.received_at || m.created_at).getTime() >= thirtyDaysAgo
   )
 
-  // Completion rate
   const completed = recent.filter(c => c.status === 'completed')
   const completionRate = recent.length > 0
     ? Math.round((completed.length / recent.length) * 100)
     : 0
 
-  // Avg completion days (from created_at to completed_at)
   const completionDays = completed
     .filter((c: any) => c.completed_at)
     .map((c: any) => {
@@ -76,20 +63,18 @@ export function buildCommunicationProfile(
     ? Math.round((completionDays.reduce((a: number, b: number) => a + b, 0) / completionDays.length) * 10) / 10
     : 0
 
-  // Avg response time (using completion time as proxy)
   const avgResponseTimeHours = completionDays.length > 0
     ? Math.round((completionDays.reduce((a: number, b: number) => a + b, 0) / completionDays.length) * 24 * 10) / 10
     : 0
 
-  // Response time by urgency
   const responseTimeByUrgency: Record<string, number> = {}
   const urgencyGroups: Record<string, number[]> = {}
   for (const c of completed) {
     if (!c.completed_at) continue
     const urgency = c.metadata?.urgency || 'medium'
-    const days = (new Date(c.completed_at).getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60)
+    const hours = (new Date(c.completed_at).getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60)
     if (!urgencyGroups[urgency]) urgencyGroups[urgency] = []
-    urgencyGroups[urgency].push(days)
+    urgencyGroups[urgency].push(hours)
   }
   for (const [urgency, hours] of Object.entries(urgencyGroups)) {
     responseTimeByUrgency[urgency] = Math.round(
@@ -97,7 +82,6 @@ export function buildCommunicationProfile(
     ) / 10
   }
 
-  // Tone distribution
   const toneDistribution: Record<string, number> = {}
   for (const c of recent) {
     const tone = c.metadata?.tone || 'professional'
@@ -105,7 +89,6 @@ export function buildCommunicationProfile(
   }
   const dominantTone = Object.entries(toneDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || 'professional'
 
-  // Top stakeholders
   const stakeholderMap: Record<string, { interactions: number; openCommitments: number }> = {}
   for (const c of recent) {
     const stakeholders = c.metadata?.stakeholders || []
@@ -123,7 +106,6 @@ export function buildCommunicationProfile(
     .slice(0, 10)
     .map(([name, data]) => ({ name, ...data }))
 
-  // Commitment volume (weekly trend)
   const thisWeek = recent.filter(c => new Date(c.created_at).getTime() >= sevenDaysAgo)
   const prevWeek = recent.filter(c => {
     const t = new Date(c.created_at).getTime()
@@ -137,20 +119,17 @@ export function buildCommunicationProfile(
     else if (diff < -0.2) trend = 'decreasing'
   }
 
-  // Common commitment types
   const commonCommitmentTypes: Record<string, number> = {}
   for (const c of recent) {
     const type = c.metadata?.commitmentType || 'general'
     commonCommitmentTypes[type] = (commonCommitmentTypes[type] || 0) + 1
   }
 
-  // Missed email rate
   const totalEmails = recentMissed.length + recent.filter((c: any) => c.source === 'email' || c.source === 'outlook').length
   const missedEmailRate = totalEmails > 0
     ? Math.round((recentMissed.length / totalEmails) * 100)
     : 0
 
-  // Peak activity hours
   const hourCounts: Record<number, number> = {}
   for (const c of recent) {
     const hour = new Date(c.created_at).getHours()
@@ -176,6 +155,51 @@ export function buildCommunicationProfile(
   }
 }
 
+// ============================================================
+// Tool definition for structured coaching output
+// ============================================================
+
+const COACHING_INSIGHTS_TOOL: Anthropic.Messages.Tool = {
+  name: 'report_coaching_insights',
+  description: 'Report personalized coaching insights based on communication data.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      insights: {
+        type: 'array',
+        minItems: 3,
+        maxItems: 5,
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Unique kebab-case id' },
+            category: { type: 'string', enum: ['responsiveness', 'tone', 'follow_through', 'relationship', 'workload', 'communication_style'] },
+            categoryLabel: { type: 'string', description: 'Sharp label e.g. "CRITICAL PATTERN", "EBITDA RISK", "DELEGATION GAP"' },
+            priority: { type: 'string', enum: ['critical', 'high', 'medium', 'growth'] },
+            title: { type: 'string', description: 'Provocative, specific observation' },
+            description: { type: 'string', description: '2-4 sentences with specific names, numbers, situations' },
+            evidence: { type: 'string', description: 'Direct quote from their messages with attribution' },
+            evidenceAttribution: { type: 'string', description: 'Who they said it to and when' },
+            action: { type: 'string', description: 'Bold, specific recommendation implementable THIS WEEK' },
+            metric: {
+              type: 'object',
+              properties: {
+                label: { type: 'string' },
+                value: { type: 'string' },
+                trend: { type: 'string', enum: ['up', 'down', 'stable'] },
+              },
+              required: ['label', 'value'],
+            },
+            researchBasis: { type: 'string', description: 'Brief research citation' },
+          },
+          required: ['id', 'category', 'categoryLabel', 'priority', 'title', 'description', 'action'],
+        },
+      },
+    },
+    required: ['insights'],
+  },
+}
+
 export async function generateCoachingInsights(
   profile: UserCommunicationProfile,
   userProfile: { jobTitle?: string; teamSize?: string; company?: string },
@@ -186,14 +210,12 @@ export async function generateCoachingInsights(
   const overdue = recentCommitments.filter(c => c.status === 'overdue')
   const completed = recentCommitments.filter(c => c.status === 'completed')
 
-  // Build source breakdown
   const sourceBreakdown: Record<string, number> = {}
   for (const c of recentCommitments) {
     const src = c.source || 'unknown'
     sourceBreakdown[src] = (sourceBreakdown[src] || 0) + 1
   }
 
-  // Source-specific overdue rates
   const overdueBySource: Record<string, { total: number; overdue: number }> = {}
   for (const c of recentCommitments) {
     const src = c.source || 'unknown'
@@ -204,7 +226,6 @@ export async function generateCoachingInsights(
     }
   }
 
-  // Build a list of recent commitment quotes to give the AI evidence material
   const recentQuotes = recentCommitments
     .filter((c: any) => c.metadata?.originalQuote)
     .slice(0, 15)
@@ -217,105 +238,47 @@ export async function generateCoachingInsights(
       status: c.status,
     }))
 
-  const systemPrompt = `You are an expert executive communication coach — the kind of strategic advisor that PE-backed CEOs, VPs, and directors hire at $500/hour. You analyze real communication data and deliver insights that are blunt, specific, and grounded in evidence.
-
-You are NOT a generic productivity tool. Your insights should feel like they come from someone who has read every email and Slack message this week and can see the patterns the user can't.
-
-CRITICAL INSTRUCTIONS:
-1. BE BRUTALLY SPECIFIC. Reference actual names, numbers, quotes, and patterns from the data. Never say "some items" — say "3 open commitments with Sarah Chen, 2 of which have stalled for 9+ days."
-2. USE THEIR OWN WORDS. When you have original quotes from their messages, use them as evidence. Quote them directly and attribute them (e.g., '"we need to actually show them results" — to Tim + Robert, today').
-3. THINK LIKE A STRATEGIC ADVISOR. Frame insights in terms of business risk, executive leverage, and organizational impact — not just "you have overdue items." Think: revenue risk, credibility risk, delegation failure, PE confidence, team velocity.
-4. CREATE PROVOCATIVE TITLES. The title should be a sharp observation, not a category label. Good: "You're solving $50/hour problems with $5,000/hour time." Bad: "Consider delegating more."
-5. CATEGORY LABELS should be sharp and specific to the insight, not generic. Examples: "CRITICAL PATTERN", "EBITDA RISK", "DELEGATION GAP", "TRUST SIGNAL", "STRATEGIC WIN", "VELOCITY BLOCKER", "RELATIONSHIP RISK".
-6. PROVIDE EVIDENCE. For each insight, include a direct quote or specific data point from their recent communications that proves your point.
-7. ACTIONS should be specific, bold, and implementable THIS WEEK. Not "consider delegating" but "Ask Scott or Mark: 'Is this something you can own end-to-end?' for every operational thread this week."
-
-Generate exactly 3-5 insights. Each insight must be a JSON object with:
-- id: a unique kebab-case string
-- category: one of "responsiveness", "tone", "follow_through", "relationship", "workload", "communication_style"
-- categoryLabel: a sharp, specific label for this insight (e.g., "CRITICAL PATTERN", "EBITDA RISK", "DELEGATION GAP") — NOT the generic category name
-- priority: one of "critical", "high", "medium", "growth"
-- title: a provocative, specific observation (not generic advice)
-- description: 2-4 sentences that paint a clear picture of the pattern, referencing specific names, numbers, and situations. Write like a strategic advisor briefing an executive.
-- evidence: (required if quotes available) a direct quote from their recent messages that supports this insight, with attribution (e.g., '"we can't risk stalling the private hauler strategy again" — to Sharath + engineering, Mar 19')
-- evidenceAttribution: (optional) who they said it to and when (e.g., "to Scott Clark + Mark Wise, today")
-- action: a bold, specific recommendation they can implement THIS WEEK. Frame it as a system/process change, not just a one-off task.
-- metric: (optional) { "label": string, "value": string, "trend": "up" | "down" | "stable" }
-- researchBasis: (optional) a brief research citation that adds authority
-
-Priority guidelines:
-- critical: Patterns creating active business risk — revenue, credibility, PE confidence, team trust
-- high: Significant leverage opportunities — delegation, strategic time allocation, stakeholder management
-- medium: Worth addressing — tone patterns, communication habits, volume management
-- growth: Wins to celebrate and expand — good patterns to systematize
-
-Return ONLY a valid JSON array of insight objects. No markdown, no code fences, no explanation.`
-
-  const userMessage = `Analyze this professional's communication patterns and generate personalized coaching insights.
-
-USER PROFILE:
-- Role/Title: ${userProfile.jobTitle || 'Not specified'}
-- Team Size: ${userProfile.teamSize || 'Not specified'}
-- Company: ${userProfile.company || 'Not specified'}
-
-COMMUNICATION METRICS (Last 30 Days):
-- Total commitments tracked: ${recentCommitments.length}
-- Open/In-progress: ${open.length}
-- Completed: ${completed.length}
-- Overdue: ${overdue.length}
-- Completion rate: ${profile.completionRate}%
-- Avg days to complete: ${profile.avgCompletionDays}
-- Avg response time: ${profile.avgResponseTimeHours} hours
-- Response time by urgency: ${JSON.stringify(profile.responseTimeByUrgency)}
-- This week's new commitments: ${profile.commitmentVolume.weekly}
-- Weekly trend: ${profile.commitmentVolume.trend}
-
-TONE ANALYSIS:
-- Dominant tone: ${profile.dominantTone}
-- Distribution: ${JSON.stringify(profile.toneDistribution)}
-
-SOURCE BREAKDOWN:
-${Object.entries(sourceBreakdown).map(([src, count]) => `- ${src}: ${count} commitments`).join('\n')}
-
-OVERDUE RATES BY SOURCE:
-${Object.entries(overdueBySource).map(([src, data]) => `- ${src}: ${data.overdue}/${data.total} overdue (${Math.round((data.overdue / data.total) * 100)}%)`).join('\n')}
-
-TOP STAKEHOLDERS:
-${profile.topStakeholders.length > 0
-    ? profile.topStakeholders.map(s => `- ${s.name}: ${s.interactions} interactions, ${s.openCommitments} open commitments`).join('\n')
-    : '- No stakeholder data available yet'}
-
-COMMITMENT TYPES:
-${Object.entries(profile.commonCommitmentTypes).map(([type, count]) => `- ${type}: ${count}`).join('\n')}
-
-MISSED EMAILS:
-- Missed email rate: ${profile.missedEmailRate}%
-- Total missed emails (30 days): ${recentMissedEmails.length}
-${recentMissedEmails.length > 0 ? `- Recent missed senders: ${recentMissedEmails.slice(0, 5).map((m: any) => m.from_name || m.from_email || 'unknown').join(', ')}` : ''}
-
-ACTIVITY PATTERNS:
-- Peak activity hours: ${profile.peakActivityHours.length > 0 ? profile.peakActivityHours.map(h => `${h}:00`).join(', ') : 'Not enough data'}
-
-RECENT COMMITMENT QUOTES (use these as evidence — quote them directly):
-${recentQuotes.length > 0
-    ? recentQuotes.map((q: any) => `- [${q.source}] "${q.quote}" (${q.stakeholders ? 'with ' + q.stakeholders : 'no stakeholders'}, ${q.daysOld}d ago, status: ${q.status})`).join('\n')
-    : '- No quotes available yet'}
-
-Generate 3-5 personalized strategic coaching insights based on this data. Use the quotes as evidence in your insights.`
-
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
+    system: [{ type: 'text', text: `You are an expert executive communication coach ($500/hr strategic advisor). Analyze real communication data and deliver insights that are blunt, specific, and evidence-grounded.
+
+BE BRUTALLY SPECIFIC: reference actual names, numbers, quotes. Never say "some items" -- say "3 open commitments with Sarah Chen, 2 stalled 9+ days."
+USE THEIR WORDS: quote their messages directly with attribution.
+THINK STRATEGICALLY: frame as business risk, executive leverage, organizational impact -- not just "overdue items."
+PROVOCATIVE TITLES: sharp observations, not category labels. Good: "You're solving $50/hr problems with $5,000/hr time." Bad: "Consider delegating."
+CATEGORY LABELS: sharp and specific -- "CRITICAL PATTERN", "EBITDA RISK", "DELEGATION GAP", not generic.
+ACTIONS: specific, bold, implementable THIS WEEK.
+
+Priority: critical = active business risk | high = leverage opportunity | medium = habits | growth = wins to systematize.`, cache_control: { type: 'ephemeral' } }],
+    tools: [COACHING_INSIGHTS_TOOL],
+    tool_choice: { type: 'tool', name: 'report_coaching_insights' },
+    messages: [{
+      role: 'user',
+      content: `USER: ${userProfile.jobTitle || 'Not specified'} | Team: ${userProfile.teamSize || '?'} | ${userProfile.company || ''}
+
+METRICS (30d): ${recentCommitments.length} total, ${open.length} open, ${completed.length} completed, ${overdue.length} overdue, ${profile.completionRate}% rate, ${profile.avgCompletionDays}d avg
+Weekly: ${profile.commitmentVolume.weekly} new (${profile.commitmentVolume.trend}), Response: ${profile.avgResponseTimeHours}h avg
+Urgency response: ${JSON.stringify(profile.responseTimeByUrgency)}
+Tone: ${profile.dominantTone} (${JSON.stringify(profile.toneDistribution)})
+Sources: ${Object.entries(sourceBreakdown).map(([s, c]) => `${s}:${c}`).join(', ')}
+Overdue by source: ${Object.entries(overdueBySource).map(([s, d]) => `${s}:${d.overdue}/${d.total}`).join(', ')}
+Stakeholders: ${profile.topStakeholders.length > 0 ? profile.topStakeholders.map(s => `${s.name}(${s.interactions}i,${s.openCommitments}open)`).join(', ') : 'none'}
+Types: ${Object.entries(profile.commonCommitmentTypes).map(([t, c]) => `${t}:${c}`).join(', ')}
+Missed emails: ${profile.missedEmailRate}% rate, ${recentMissedEmails.length} total${recentMissedEmails.length > 0 ? ` from: ${recentMissedEmails.slice(0, 5).map((m: any) => m.from_name || m.from_email || '?').join(', ')}` : ''}
+Peak hours: ${profile.peakActivityHours.map(h => `${h}:00`).join(', ') || 'n/a'}
+
+QUOTES (use as evidence):
+${recentQuotes.length > 0 ? recentQuotes.map((q: any) => `- [${q.source}] "${q.quote}" (${q.stakeholders ? 'w/' + q.stakeholders : ''}, ${q.daysOld}d, ${q.status})`).join('\n') : '(none)'}
+
+Generate 3-5 strategic coaching insights.`,
+    }],
   })
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const jsonStr = extractJSON(content.text)
-    const parsed = JSON.parse(jsonStr)
-    const insights: CoachingInsight[] = Array.isArray(parsed) ? parsed : parsed.insights || []
-    return insights
+  const toolBlock = message.content.find((b) => b.type === 'tool_use')
+  if (toolBlock && toolBlock.type === 'tool_use') {
+    const result = toolBlock.input as { insights: CoachingInsight[] }
+    return result.insights || []
   }
 
   return []

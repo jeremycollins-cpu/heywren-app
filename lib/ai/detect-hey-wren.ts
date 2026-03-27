@@ -11,13 +11,9 @@ const client = new Anthropic({
 })
 
 export interface HeyWrenTrigger {
-  /** Character index in the transcript where the trigger was found */
   position: number
-  /** The matched trigger phrase */
   matchedPhrase: string
-  /** The context surrounding the trigger (up to ~500 chars after) */
   surroundingContext: string
-  /** Speaker name if available from transcript segments */
   speaker?: string
 }
 
@@ -29,42 +25,38 @@ export interface HeyWrenCommitment {
   priority: 'high' | 'medium' | 'low'
   confidence: number
   originalQuote: string
-  triggeredBy: string // The "Hey Wren" phrase that triggered it
+  triggeredBy: string
 }
 
 // Patterns to match "Hey Wren" and phonetic variants
-// Transcription services may render this differently
 const HEY_WREN_PATTERNS = [
   /hey\s+wren/gi,
   /hey,?\s+wren/gi,
   /hey\s+ren\b/gi,
   /hey,?\s+ren\b/gi,
-  /a\s+wren\b/gi,        // Common mishearing
-  /hay\s+wren/gi,        // Phonetic variant
-  /hey\s+ren\b/gi,
+  /a\s+wren\b/gi,
+  /hay\s+wren/gi,
   /heywren/gi,
 ]
 
 /**
  * Find all "Hey Wren" triggers in a transcript.
- * Returns the trigger locations and surrounding context.
  */
 export function findHeyWrenTriggers(
   transcriptText: string,
   segments?: Array<{ speaker?: string; text: string; start_s?: number; end_s?: number }>
 ): HeyWrenTrigger[] {
   const triggers: HeyWrenTrigger[] = []
-  const seen = new Set<number>() // Deduplicate overlapping matches
+  const seen = new Set<number>()
 
   for (const pattern of HEY_WREN_PATTERNS) {
-    // Reset regex state
     pattern.lastIndex = 0
     let match: RegExpExecArray | null
 
     while ((match = pattern.exec(transcriptText)) !== null) {
       const position = match.index
 
-      // Skip if we already found a trigger within 20 chars of this position
+      // Deduplicate overlapping matches
       let isDuplicate = false
       for (const seenPos of seen) {
         if (Math.abs(seenPos - position) < 20) {
@@ -76,15 +68,13 @@ export function findHeyWrenTriggers(
 
       seen.add(position)
 
-      // Extract context: the trigger phrase + up to 500 chars after
-      const contextStart = Math.max(0, position - 50) // A bit before for context
+      const contextStart = Math.max(0, position - 50)
       const contextEnd = Math.min(transcriptText.length, position + match[0].length + 500)
       const surroundingContext = transcriptText.slice(contextStart, contextEnd).trim()
 
-      // Try to identify the speaker from segments
+      // Identify speaker from segments
       let speaker: string | undefined
       if (segments) {
-        // Find the segment that contains this position
         let charCount = 0
         for (const seg of segments) {
           const segEnd = charCount + seg.text.length
@@ -92,27 +82,51 @@ export function findHeyWrenTriggers(
             speaker = seg.speaker
             break
           }
-          charCount = segEnd + 1 // +1 for space between segments
+          charCount = segEnd + 1
         }
       }
 
-      triggers.push({
-        position,
-        matchedPhrase: match[0],
-        surroundingContext,
-        speaker,
-      })
+      triggers.push({ position, matchedPhrase: match[0], surroundingContext, speaker })
     }
   }
 
-  // Sort by position
   return triggers.sort((a, b) => a.position - b.position)
 }
 
+// ============================================================
+// Tool definition for structured output
+// ============================================================
+
+const HEY_WREN_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
+  name: 'extract_hey_wren_commitments',
+  description: 'Extract commitments from Hey Wren trigger contexts.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of trigger number (string) to extracted commitment, or empty object if unclear',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Specific action item' },
+            description: { type: 'string', description: 'Full context' },
+            assignee: { type: 'string', description: 'Person name or null' },
+            dueDate: { type: 'string', description: 'ISO date or null' },
+            priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+            confidence: { type: 'number', description: 'Default 0.85+ for explicit triggers' },
+            originalQuote: { type: 'string', description: 'Exact words after Hey Wren, max 200 chars' },
+          },
+          required: ['title', 'description', 'priority', 'confidence', 'originalQuote'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
 /**
- * Extract commitments from "Hey Wren" triggered contexts.
- * Each trigger context is sent to the LLM for commitment extraction.
- * Uses Haiku for speed since the context is small and intent is explicit.
+ * Extract commitments from "Hey Wren" triggered contexts using tool_use.
  */
 export async function extractHeyWrenCommitments(
   triggers: HeyWrenTrigger[]
@@ -121,7 +135,6 @@ export async function extractHeyWrenCommitments(
 
   const commitments: HeyWrenCommitment[] = []
 
-  // Process all triggers in a single batch call
   const numberedContexts = triggers
     .map((t, i) => `[${i + 1}] ${t.speaker ? `(${t.speaker}): ` : ''}${t.surroundingContext}`)
     .join('\n\n')
@@ -130,55 +143,41 @@ export async function extractHeyWrenCommitments(
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 2048,
-      system: `You extract commitments, action items, and reminders from meeting transcript excerpts where someone said "Hey Wren" to explicitly flag something important.
+      system: [{ type: 'text', text: `Extract commitments from "Hey Wren" meeting transcript triggers. These are EXPLICIT -- the speaker intentionally flagged them. Default confidence 0.85+.
 
-The user said "Hey Wren" to intentionally mark a commitment, reminder, or action item. Treat these as HIGH confidence since they were explicitly flagged.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "results": {
-    "1": {"title": "specific action item", "description": "full context", "assignee": "person name or null", "dueDate": "ISO date or null", "priority": "high|medium|low", "confidence": 0.9, "originalQuote": "exact words after Hey Wren, max 200 chars"},
-    "2": {...}
-  }
-}
-
-Guidelines:
-- These are EXPLICIT triggers — the person intentionally said "Hey Wren" to mark this. Default confidence should be 0.85+.
-- Extract the commitment/reminder/action from what comes AFTER "Hey Wren".
-- If someone says "Hey Wren, remind me to send the report by Friday", title = "Send the report", dueDate = next Friday.
-- If someone says "Hey Wren, [name] committed to X", the assignee is [name].
-- If the context after "Hey Wren" is unclear or just noise, return an empty object for that number.`,
+- Extract the action from what comes AFTER "Hey Wren".
+- "Hey Wren, remind me to send the report by Friday" -> title: "Send the report", dueDate: next Friday.
+- "Hey Wren, [name] committed to X" -> assignee: [name].
+- If context after "Hey Wren" is unclear/noise, omit that number from results.`, cache_control: { type: 'ephemeral' } }],
+      tools: [HEY_WREN_EXTRACTION_TOOL],
+      tool_choice: { type: 'tool', name: 'extract_hey_wren_commitments' },
       messages: [
         {
           role: 'user',
-          content: `Extract commitments from these "Hey Wren" triggers in a meeting transcript:\n\n${numberedContexts}`,
+          content: `Extract commitments from these "Hey Wren" triggers:\n\n${numberedContexts}`,
         },
       ],
     })
 
-    const content = message.content[0]
-    if (content.type === 'text') {
-      // Extract JSON from potential code fences
-      const jsonMatch = content.text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-        const results = parsed.results || {}
+    const toolBlock = message.content.find((b) => b.type === 'tool_use')
+    if (toolBlock && toolBlock.type === 'tool_use') {
+      const parsed = toolBlock.input as { results: Record<string, any> }
+      const results = parsed.results || {}
 
-        for (let i = 0; i < triggers.length; i++) {
-          const key = String(i + 1)
-          const result = results[key]
-          if (result && result.title) {
-            commitments.push({
-              title: result.title,
-              description: result.description || '',
-              assignee: result.assignee || undefined,
-              dueDate: result.dueDate || undefined,
-              priority: result.priority || 'high',
-              confidence: result.confidence || 0.9,
-              originalQuote: result.originalQuote || triggers[i].surroundingContext.slice(0, 200),
-              triggeredBy: triggers[i].matchedPhrase,
-            })
-          }
+      for (let i = 0; i < triggers.length; i++) {
+        const key = String(i + 1)
+        const result = results[key]
+        if (result && result.title) {
+          commitments.push({
+            title: result.title,
+            description: result.description || '',
+            assignee: result.assignee || undefined,
+            dueDate: result.dueDate || undefined,
+            priority: result.priority || 'high',
+            confidence: result.confidence || 0.9,
+            originalQuote: result.originalQuote || triggers[i].surroundingContext.slice(0, 200),
+            triggeredBy: triggers[i].matchedPhrase,
+          })
         }
       }
     }
