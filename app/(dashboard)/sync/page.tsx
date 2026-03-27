@@ -54,7 +54,7 @@ export default function SyncPage() {
       // Strategy 1: Get team from profiles
       const { data: profile } = await supabase
         .from('profiles')
-        .select('current_team_id')
+        .select('current_team_id, slack_user_id')
         .eq('id', userId)
         .single()
       teamId = profile?.current_team_id || null
@@ -114,11 +114,29 @@ export default function SyncPage() {
           thisWeek: allCommitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
         })
 
-        // Fetch data counts (emails, slack messages, calendar events in HeyWren)
+        // Fetch data counts scoped to the current user
+        const userEmail = userData.user.email?.toLowerCase() || ''
+        const slackUserId = profile?.slack_user_id || ''
+
         const [emailCount, slackCount, calendarCount] = await Promise.all([
-          supabase.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
-          supabase.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
-          supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+          // Emails: user is sender or recipient
+          userEmail
+            ? supabase.from('outlook_messages').select('id', { count: 'exact', head: true })
+                .eq('team_id', teamId)
+                .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+            : supabase.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+          // Slack: messages authored by user
+          slackUserId
+            ? supabase.from('slack_messages').select('id', { count: 'exact', head: true })
+                .eq('team_id', teamId)
+                .eq('user_id', slackUserId)
+            : supabase.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
+          // Calendar: events where user is organizer or attendee
+          userEmail
+            ? supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true })
+                .eq('team_id', teamId)
+                .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
+            : supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
         ])
         setDataCounts({
           emails: emailCount.count || 0,
