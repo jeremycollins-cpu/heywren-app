@@ -113,7 +113,23 @@ export async function GET() {
     return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
   })
 
-  return NextResponse.json({ missedEmails: threadGroups })
+  // Get total email count for context (how many were evaluated) — scoped to emails where this user is a recipient
+  const adminDb = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const userEmail = user.email?.toLowerCase() || ''
+  const { count: totalEmails } = await adminDb
+    .from('outlook_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('team_id', profile.current_team_id)
+    .neq('from_email', userEmail)
+    .ilike('to_recipients', `%${userEmail}%`)
+
+  return NextResponse.json({
+    missedEmails: threadGroups,
+    totalEvaluated: totalEmails || 0,
+  })
 }
 
 export async function POST() {

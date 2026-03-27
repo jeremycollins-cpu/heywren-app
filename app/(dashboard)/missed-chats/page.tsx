@@ -66,6 +66,7 @@ const categoryLabels: Record<string, string> = {
 
 export default function MissedChatsPage() {
   const [chats, setChats] = useState<MissedChat[]>([])
+  const [totalEvaluated, setTotalEvaluated] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -84,6 +85,7 @@ export default function MissedChatsPage() {
           waiting_days: Math.max(0, Math.floor((Date.now() - new Date(c.sent_at).getTime()) / (1000 * 60 * 60 * 24))),
         }))
         setChats(enriched)
+        if (data.totalEvaluated !== undefined) setTotalEvaluated(data.totalEvaluated)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load missed chats'
@@ -219,6 +221,17 @@ export default function MissedChatsPage() {
           {scanning ? 'Scanning...' : 'Scan Now'}
         </button>
       </div>
+
+      {/* Evaluation context */}
+      {totalEvaluated > 0 && (
+        <div className="flex items-center gap-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg px-4 py-2.5">
+          <MessageSquare aria-hidden="true" className="w-4 h-4 text-purple-500 flex-shrink-0" />
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="font-semibold text-gray-900 dark:text-white">{chats.length}</span> missed of{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">{totalEvaluated.toLocaleString()}</span> Slack messages evaluated
+          </p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

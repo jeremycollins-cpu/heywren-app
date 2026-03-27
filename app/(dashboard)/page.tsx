@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useRealtime } from '@/lib/hooks/use-realtime'
@@ -51,9 +51,33 @@ export default function DashboardPage() {
     addCommitment, updateCommitment, removeCommitment, addMention,
   } = useDashboardStore()
 
+  const [evalMetrics, setEvalMetrics] = useState<{
+    emailsEvaluated: number; emailsMissed: number;
+    chatsEvaluated: number; chatsMissed: number;
+  } | null>(null)
+
   useEffect(() => {
     fetchDashboard()
   }, [fetchDashboard])
+
+  // Fetch evaluation metrics from existing APIs
+  useEffect(() => {
+    async function fetchEvalMetrics() {
+      try {
+        const [emailRes, chatRes] = await Promise.all([
+          fetch('/api/missed-emails').then(r => r.ok ? r.json() : null),
+          fetch('/api/missed-chats').then(r => r.ok ? r.json() : null),
+        ])
+        setEvalMetrics({
+          emailsEvaluated: emailRes?.totalEvaluated || 0,
+          emailsMissed: emailRes?.missedEmails?.length || 0,
+          chatsEvaluated: chatRes?.totalEvaluated || 0,
+          chatsMissed: chatRes?.missedChats?.length || 0,
+        })
+      } catch { /* ignore */ }
+    }
+    if (!loading) fetchEvalMetrics()
+  }, [loading])
 
   // Real-time: commitments
   useRealtime({
@@ -263,6 +287,53 @@ export default function DashboardPage() {
               <span className="text-red-700">{a.message}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Evaluation Coverage */}
+      {evalMetrics && (evalMetrics.emailsEvaluated > 0 || evalMetrics.chatsEvaluated > 0) && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Communication Coverage</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {evalMetrics.emailsEvaluated > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-indigo-600 dark:text-indigo-400 text-lg" aria-hidden="true">&#9993;</span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">{evalMetrics.emailsMissed}</span> missed of{' '}
+                    <span className="font-semibold">{evalMetrics.emailsEvaluated.toLocaleString()}</span> emails
+                  </p>
+                  <div className="mt-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                    <div
+                      className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, evalMetrics.emailsEvaluated > 0 ? (evalMetrics.emailsMissed / evalMetrics.emailsEvaluated) * 100 : 0)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {evalMetrics.chatsEvaluated > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-purple-600 dark:text-purple-400 text-lg" aria-hidden="true">&#128172;</span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">{evalMetrics.chatsMissed}</span> missed of{' '}
+                    <span className="font-semibold">{evalMetrics.chatsEvaluated.toLocaleString()}</span> Slack messages
+                  </p>
+                  <div className="mt-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                    <div
+                      className="bg-purple-500 h-1.5 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, evalMetrics.chatsEvaluated > 0 ? (evalMetrics.chatsMissed / evalMetrics.chatsEvaluated) * 100 : 0)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
