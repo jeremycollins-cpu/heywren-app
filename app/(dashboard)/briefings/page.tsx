@@ -275,7 +275,8 @@ export default function BriefingsPage() {
       const now = new Date().toISOString()
       const sevenDaysLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
-      const { data: events } = await supabase
+      const userEmail = userData.user.email?.toLowerCase() || ''
+      const { data: rawEvents } = await supabase
         .from('outlook_calendar_events')
         .select('id, subject, organizer_name, organizer_email, attendees, start_time, end_time, location, body_preview, is_cancelled')
         .eq('team_id', teamId)
@@ -283,6 +284,13 @@ export default function BriefingsPage() {
         .gte('start_time', now)
         .lte('start_time', sevenDaysLater)
         .order('start_time', { ascending: true })
+
+      // Filter to only events involving this user (organizer or attendee)
+      const events = (rawEvents || []).filter((evt: any) => {
+        if ((evt.organizer_email || '').toLowerCase() === userEmail) return true
+        const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
+        return attendeesStr.includes(userEmail)
+      })
 
       if (!events || events.length === 0) {
         // Check if Outlook is connected via server-side API (bypasses RLS)
@@ -302,7 +310,7 @@ export default function BriefingsPage() {
         .from('commitments')
         .select('id, title, description, status, source, created_at')
         .eq('team_id', teamId)
-        .eq('creator_id', userData.user.id)
+        .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
         .eq('status', 'open')
 
       const openCommitments: MatchedCommitment[] = (commitments || []).map((c: any) => ({
@@ -314,18 +322,23 @@ export default function BriefingsPage() {
         created_at: c.created_at,
       }))
 
-      // ── Fetch messages for health score calculation ──
+      // ── Fetch messages for health score calculation — scoped to user's emails ──
       const { data: emailData } = await supabase
         .from('outlook_messages')
-        .select('from_email, from_name, received_at')
+        .select('from_email, from_name, received_at, to_recipients')
         .eq('team_id', teamId)
         .order('received_at', { ascending: false })
         .limit(1000)
 
-      // Build contact interaction map
+      // Build contact interaction map — only count emails involving this user
       const contactMap: Record<string, { count: number; lastDate: string }> = {}
       if (emailData) {
-        emailData.forEach((msg: any) => {
+        const filteredEmails = emailData.filter((msg: any) => {
+          const from = (msg.from_email || '').toLowerCase()
+          const recipients = JSON.stringify(msg.to_recipients || '').toLowerCase()
+          return from === userEmail || recipients.includes(userEmail)
+        })
+        filteredEmails.forEach((msg: any) => {
           const email = (msg.from_email || '').toLowerCase()
           if (!email || email.includes('noreply') || email.includes('no-reply') || email.includes('notification') || email.includes('mailer-daemon')) return
           if (!contactMap[email]) {

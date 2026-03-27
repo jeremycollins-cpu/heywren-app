@@ -236,7 +236,7 @@ export default function RelationshipsPage() {
         const [emailResult, sentEmailResult, commitmentResult] = await Promise.all([
           supabase
             .from('outlook_messages')
-            .select('from_email, from_name, received_at')
+            .select('from_email, from_name, received_at, to_recipients')
             .eq('team_id', teamId)
             .neq('from_email', userEmail || '')
             .order('received_at', { ascending: false })
@@ -253,10 +253,14 @@ export default function RelationshipsPage() {
             .from('commitments')
             .select('title, status, metadata, created_at')
             .eq('team_id', teamId)
-            .eq('creator_id', userData.user.id),
+            .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`),
         ])
 
-        const emailData = emailResult.data || []
+        // Filter received emails to only those addressed to this user
+        const emailData = (emailResult.data || []).filter((msg: any) => {
+          const recipients = JSON.stringify(msg.to_recipients || '').toLowerCase()
+          return recipients.includes(userEmail)
+        })
         const sentData = sentEmailResult.data || []
         const commitmentData = commitmentResult.data || []
 

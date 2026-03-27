@@ -133,7 +133,7 @@ const COMMITMENT_SCHEMA = {
     assignee: { type: 'string' as const, description: 'Person who owns the commitment' },
     dueDate: { type: 'string' as const, description: 'ISO date if mentioned' },
     priority: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
-    confidence: { type: 'number' as const, description: '0.0-1.0' },
+    confidence: { type: 'number' as const, description: '0.0-1.0 — only return items with confidence >= 0.6' },
     urgency: { type: 'string' as const, enum: ['low', 'medium', 'high', 'critical'] },
     tone: { type: 'string' as const, enum: ['casual', 'professional', 'urgent', 'demanding'] },
     commitmentType: { type: 'string' as const, enum: ['deliverable', 'meeting', 'follow_up', 'decision', 'review', 'request'] },
@@ -199,32 +199,47 @@ Rules:
 - Description: business context, not a restatement of the title.
 - originalQuote: verbatim excerpt, not paraphrased. Max 200 chars.
 - stakeholders: everyone mentioned (committer, recipient, CC'd).
-- Only items with confidence >= 0.5.
-- Empty array if none found.`
+- Only items with confidence >= 0.6.
+- Empty array if none found.
+
+DO NOT extract any of these — they are NOT real commitments:
+- Vague "will discuss" or "will talk about" with no specific deliverable (e.g. "I'll discuss with Luke in our meeting")
+- Calendar events, meeting invites, or scheduling confirmations (e.g. "Meeting at 3pm", "I have a meeting in an hour")
+- Casual conversation fragments from shared channels that are between OTHER people
+- Status updates with no action promise (e.g. "Working on it", "Looking into it" with no specific deliverable)
+- Acknowledgments and social messages (e.g. "Sure", "Sounds good", "Will do" with no specific task)
+- Past tense statements about completed actions (e.g. "I sent the report", "I already checked")
+- Messages shorter than 30 characters that lack specificity
+
+A REAL commitment must have: (1) a specific person taking responsibility, (2) a specific deliverable or action, and (3) enough context to track whether it was completed. "I will discuss" is NOT trackable. "I will send you the report by Friday" IS trackable.`
 
 function buildSystemPrompt(userContext?: UserContext): string {
   if (!userContext) return BASE_SYSTEM_PROMPT
-  return `You are extracting commitments for ${userContext.userName}.
+  return `You are extracting commitments for ${userContext.userName}. Be VERY selective — quality over quantity.
 
 Extract TWO types of commitments — both require the "direction" field:
 
 OUTBOUND (direction: "outbound") — commitments ${userContext.userName} personally made:
-- "I will...", "I'll handle...", "Let me take care of..."
-- Tasks explicitly assigned to ${userContext.userName}
-- Action items where ${userContext.userName} is the owner
+- "I will send the report by Friday", "I'll handle the deployment"
+- Tasks explicitly assigned to ${userContext.userName} with a specific deliverable
+- Action items where ${userContext.userName} is the owner AND there is a clear, trackable action
 
-INBOUND (direction: "inbound") — promises someone ELSE made TO ${userContext.userName}:
-- Someone says "I will get back to you", "I'll report back", "I will reach out and let you know"
-- Someone promises to deliver something, follow up, or take action on ${userContext.userName}'s behalf
-- Someone commits to a deadline or next step that ${userContext.userName} is waiting on
+INBOUND (direction: "inbound") — specific promises someone ELSE made TO ${userContext.userName}:
+- "I will send you the data by EOD", "I'll get the proposal to you this week"
+- Someone commits to delivering a specific thing that ${userContext.userName} is waiting on
 - Set "promiserName" to the name of the person who made the promise
 
-DO NOT extract:
-- Commitments between OTHER people that don't involve ${userContext.userName} at all
-- General team announcements or status updates not directed at ${userContext.userName}
-- Vague statements with no clear action or promise
+STRICT EXCLUSIONS — NEVER extract these:
+- Conversations between other people that don't directly involve ${userContext.userName}
+- Someone mentioning ${userContext.userName} in passing without making/receiving a commitment
+- OTHER people's vague statements like "I'll discuss", "I'll look into it", "I have a meeting" — these are not commitments to ${userContext.userName}
+- Calendar invites, scheduling confirmations, meeting reminders
+- Status updates, acknowledgments, social messages
+- Messages from channels where ${userContext.userName} is not the speaker or direct addressee
 
-When in doubt, return an empty array. It's better to miss a commitment than to show irrelevant noise.
+IMPORTANT NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss in our meeting" or "I'll look into it", that IS a valid outbound commitment — it's their own action item. But if someone ELSE says the same thing in a shared channel, it is NOT a commitment because it doesn't involve ${userContext.userName}.
+
+When in doubt, return an empty array. Showing irrelevant noise is WORSE than missing a commitment.
 
 ${BASE_SYSTEM_PROMPT}`
 }
@@ -236,8 +251,8 @@ ${BASE_SYSTEM_PROMPT}`
 async function haiku_triage(text: string, userContext?: UserContext): Promise<boolean> {
   try {
     const systemPrompt = userContext
-      ? `You are filtering Slack messages for ${userContext.userName}. Does this message contain EITHER: (1) a commitment/action item that ${userContext.userName} personally needs to act on, OR (2) a promise someone ELSE made TO ${userContext.userName} (e.g. "I will get back to you", "I'll report back", "I will reach out")? Say YES for both types. Say NO only for commitments between other people that don't involve ${userContext.userName} at all. Use the classify_message tool.`
-      : 'Does this message contain a commitment, promise, action item, task assignment, deadline, or follow-up? Use the classify_message tool.'
+      ? `You are filtering Slack messages for ${userContext.userName}. Say YES ONLY if this message contains a commitment directly involving ${userContext.userName} — either ${userContext.userName} promising to do something specific, OR someone else promising a specific deliverable TO ${userContext.userName}. If ${userContext.userName} says "I will discuss in our meeting" that counts (it's their action). But if someone ELSE says vague things like "I'll discuss" or "I have a meeting" in a shared channel, say NO — that's not ${userContext.userName}'s commitment. Also say NO for: conversations between other people, calendar invites, status updates, acknowledgments. When in doubt, say NO. Use the classify_message tool.`
+      : 'Does this message contain a specific, trackable commitment with a clear deliverable? Say NO for vague statements like "I\'ll discuss" or "looking into it", meeting/calendar mentions, and casual conversation. Use the classify_message tool.'
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -285,6 +300,47 @@ async function sonnet_analyze(text: string, communityPatterns?: string[], userCo
     return result.commitments || []
   }
   return []
+}
+
+// ============================================================
+// Post-detection quality filter
+// Rejects low-quality commitments that the AI shouldn't have returned
+// ============================================================
+const NOISE_TITLE_PATTERNS = [
+  /^(discuss|talk about|think about|look into|check on|meet about)/i,
+  /^speaker to discuss/i,
+  /^(attend|join|have a) (meeting|call|sync|standup)/i,
+  /meeting (with|about|regarding|on|at)/i,
+  /^(calendar|schedule|scheduling)\b/i,
+]
+
+const NOISE_QUOTE_PATTERNS = [
+  /^i (have|got) a meeting/i,
+  /^(let's|we should) (discuss|talk|chat|sync)/i,
+  /^i('ll|'ll| will) (discuss|talk|chat|think|meet)\b/i,
+]
+
+function isLowQualityCommitment(c: DetectedCommitment): boolean {
+  // Reject low confidence
+  if (c.confidence < 0.6) return true
+
+  // For INBOUND commitments (other people's promises), apply strict noise filters
+  // For OUTBOUND (user's own commitments), be more lenient — the user said it themselves
+  if (c.direction !== 'outbound') {
+    // Reject vague titles about discussing/meeting from other people
+    if (NOISE_TITLE_PATTERNS.some(p => p.test(c.title))) return true
+
+    // Reject if the original quote is just a meeting/discuss reference from someone else
+    if (c.originalQuote && NOISE_QUOTE_PATTERNS.some(p => p.test(c.originalQuote!))) return true
+
+    // Reject inbound "meeting" type unless there's a specific deliverable
+    if (c.commitmentType === 'meeting') {
+      const hasDeliverable = /send|deliver|create|write|prepare|share|submit|review|fix|build|deploy|report|update|complete|finish/i.test(c.title)
+      if (!hasDeliverable) return true
+    }
+  }
+
+  return false
 }
 
 // ============================================================
@@ -345,8 +401,12 @@ export async function detectCommitments(
     } catch {
       // Non-fatal
     }
-    const commitments = await sonnet_analyze(messageText, communityPatterns, userContext)
+    const raw = await sonnet_analyze(messageText, communityPatterns, userContext)
+    const commitments = raw.filter(c => !isLowQualityCommitment(c))
 
+    if (raw.length > commitments.length) {
+      console.log(`Filtered ${raw.length - commitments.length} low-quality commitments from: "${messageText.substring(0, 60)}..."`)
+    }
     if (commitments.length > 0) {
       console.log(
         'Found ' + commitments.length + ' commitments in: "' +
@@ -410,22 +470,30 @@ export async function detectCommitmentsBatch(
       model: 'claude-sonnet-4-20250514',
       max_tokens: 8192,
       system: [{ type: 'text', text: userContext
-        ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}.
+        ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}. Be VERY selective — quality over quantity.
 
 Extract TWO types — both require the "direction" field:
 
-OUTBOUND (direction: "outbound") — commitments ${userContext.userName} personally made.
-INBOUND (direction: "inbound") — promises someone ELSE made TO ${userContext.userName} (e.g. "I will get back to you", "I'll report back"). Set "promiserName" to who made the promise.
+OUTBOUND (direction: "outbound") — SPECIFIC commitments ${userContext.userName} personally made with a clear deliverable.
+INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO ${userContext.userName} with a clear deliverable. Set "promiserName" to who made the promise.
 
-DO NOT extract commitments between other people that don't involve ${userContext.userName}. When in doubt, return an empty array for that message.
+STRICT EXCLUSIONS — return empty array for these:
+- Conversations between other people not involving ${userContext.userName}
+- OTHER people's vague "will discuss/look into/have a meeting" — not ${userContext.userName}'s commitment
+- Calendar/meeting references, scheduling, status updates, acknowledgments
+- Anything with confidence below 0.6
+
+NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss" or "I'll look into it", that IS valid (their own action). But someone else saying it in a channel is NOT.
+
+A real commitment MUST have: a specific person + a specific trackable action. "Someone else: I'll discuss with Luke" = NOT a commitment. "${userContext.userName}: I'll send the report by Friday" = IS a commitment.
 
 Rules:
 - Title: WHO + WHAT, standalone.
 - Description: business context.
 - originalQuote: verbatim excerpt.
 - stakeholders: anyone involved.
-- Only confidence >= 0.5.
-- Empty array if none.`
+- Only confidence >= 0.6.
+- Empty array if none — prefer empty over noise.`
         : `Extract commitments from batched numbered messages [1], [2], etc.
 
 Rules:
@@ -433,7 +501,7 @@ Rules:
 - Description: business context.
 - originalQuote: verbatim excerpt.
 - stakeholders: anyone involved.
-- Only confidence >= 0.5.
+- Only confidence >= 0.6.
 - Empty array if none.`, cache_control: { type: 'ephemeral' } } as any],
       tools: [BATCH_EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'extract_batch_commitments' },
@@ -451,7 +519,11 @@ Rules:
 
       triaged.forEach((msg, i) => {
         const key = String(i + 1)
-        const commitments = batchResults[key] || []
+        const raw = batchResults[key] || []
+        const commitments = raw.filter(c => !isLowQualityCommitment(c))
+        if (raw.length > commitments.length) {
+          console.log(`Batch: filtered ${raw.length - commitments.length} low-quality commitments from: "${msg.text.substring(0, 60)}..."`)
+        }
         if (commitments.length > 0) {
           results.set(msg.id, commitments)
           console.log(

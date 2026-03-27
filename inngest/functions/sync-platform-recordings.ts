@@ -88,14 +88,16 @@ async function refreshMicrosoftToken(refreshToken: string): Promise<{ access_tok
 async function getFreshToken(
   supabase: any,
   teamId: string,
-  provider: string
+  provider: string,
+  userId?: string
 ): Promise<{ accessToken: string; integration: any } | null> {
-  const { data: integration } = await supabase
+  let query = supabase
     .from('integrations')
     .select('*')
     .eq('team_id', teamId)
     .eq('provider', provider)
-    .single()
+  if (userId) query = query.eq('user_id', userId)
+  const { data: integration } = await query.limit(1).maybeSingle()
 
   if (!integration) return null
 
@@ -780,22 +782,22 @@ export const scheduledPlatformSync = inngest.createFunction(
   async ({ step }) => {
     const supabase = getAdminClient()
 
-    // Find all active platform integrations
+    // Find all active platform integrations (per-user)
     const integrations = await step.run('list-integrations', async () => {
       const { data } = await supabase
         .from('integrations')
-        .select('team_id, provider')
+        .select('team_id, user_id, provider')
         .in('provider', ['zoom', 'google_meet'])
 
-      // Also find teams with Outlook that may have Teams meetings
+      // Also find users with Outlook that may have Teams meetings
       const { data: outlookIntegrations } = await supabase
         .from('integrations')
-        .select('team_id')
+        .select('team_id, user_id')
         .eq('provider', 'outlook')
 
       const all = [...(data || [])]
       for (const oi of (outlookIntegrations || [])) {
-        all.push({ team_id: oi.team_id, provider: 'teams' })
+        all.push({ team_id: oi.team_id, user_id: oi.user_id, provider: 'teams' })
       }
 
       return all

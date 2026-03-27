@@ -148,11 +148,12 @@ export async function POST() {
     .eq('team_id', teamId)
     .maybeSingle()
 
-  // Load feedback history for auto-blocking
+  // Load feedback history for auto-blocking — scoped to this user
   const { data: feedbackRows } = await adminDb
     .from('missed_email_feedback')
     .select('from_email, from_domain, feedback')
     .eq('team_id', teamId)
+    .eq('user_id', user.id)
     .eq('feedback', 'invalid')
 
   const domainCounts: Record<string, number> = {}
@@ -178,7 +179,8 @@ export async function POST() {
   const scanWindowDays = prefsRow?.scan_window_days || 7
   const scanWindowAgo = new Date(Date.now() - scanWindowDays * 24 * 60 * 60 * 1000).toISOString()
 
-  // Fetch recent emails
+  // Fetch recent emails — scoped to emails relevant to this user
+  const userEmail = user.email?.toLowerCase() || ''
   const { data: emails, error: fetchErr } = await adminDb
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
@@ -196,9 +198,21 @@ export async function POST() {
     .from('missed_emails')
     .select('message_id')
     .eq('team_id', teamId)
+    .eq('user_id', user.id)
 
   const existingIds = new Set((existing || []).map(e => e.message_id))
-  const newEmails = emails.filter(e => !existingIds.has(e.message_id))
+
+  // Only scan emails where this user is a recipient (not sender), to avoid cross-user data leaks
+  const relevantEmails = emails.filter(e => {
+    if (!userEmail) return false
+    // Skip emails FROM the user (they don't need to reply to themselves)
+    if (e.from_email?.toLowerCase() === userEmail) return false
+    // Check if user is in to_recipients
+    const recipients = JSON.stringify(e.to_recipients || '').toLowerCase()
+    return recipients.includes(userEmail)
+  })
+
+  const newEmails = relevantEmails.filter(e => !existingIds.has(e.message_id))
 
   if (newEmails.length === 0) {
     return NextResponse.json({ success: true, scanned: 0, missed: 0 })

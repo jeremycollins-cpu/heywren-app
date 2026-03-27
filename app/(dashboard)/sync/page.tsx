@@ -101,7 +101,7 @@ export default function SyncPage() {
           .from('commitments')
           .select('status, created_at, source')
           .eq('team_id', teamId)
-          .eq('creator_id', userId)
+          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
 
         const allCommitments = commitments || []
         const weekAgo = Date.now() - 7 * 86400000

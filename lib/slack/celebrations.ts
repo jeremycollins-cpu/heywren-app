@@ -18,7 +18,8 @@ interface SlackIntegration {
 }
 
 /**
- * Fetches the Slack integration for a team. Returns null if none exists.
+ * Fetches a Slack integration for a team (any user's — bot token is shared).
+ * Returns null if none exists.
  */
 async function getSlackIntegration(teamId: string): Promise<SlackIntegration | null> {
   const supabase = getAdminClient()
@@ -27,7 +28,8 @@ async function getSlackIntegration(teamId: string): Promise<SlackIntegration | n
     .select('access_token, config')
     .eq('team_id', teamId)
     .eq('provider', 'slack')
-    .single()
+    .limit(1)
+    .maybeSingle()
 
   return data ?? null
 }

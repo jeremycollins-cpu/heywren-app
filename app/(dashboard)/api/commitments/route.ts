@@ -22,18 +22,11 @@ export async function POST(request: NextRequest) {
       userId = userData?.user?.id || null
     } catch { /* session failed */ }
 
-    // Fallback: userId from body
-    const body = await request.json()
-    if (!userId && body.userId) {
-      const admin = getAdminClient()
-      const { data: authUser } = await admin.auth.admin.getUserById(body.userId)
-      if (authUser?.user) userId = authUser.user.id
-    }
-
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body = await request.json()
     const { title, description, dueDate, urgency } = body
     if (!title?.trim()) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })

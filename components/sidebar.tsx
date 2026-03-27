@@ -91,12 +91,14 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .from('commitments')
               .select('status, created_at')
               .eq('team_id', teamId)
+              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
               .in('status', ['open', 'overdue'])
               .limit(500),
             supabase
               .from('drafts')
               .select('id')
               .eq('team_id', teamId)
+              .eq('user_id', user.user.id)
               .eq('status', 'pending'),
             supabase
               .from('missed_emails')
@@ -163,8 +165,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           const teamId = profile.current_team_id
 
           const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
-            supabase.from('commitments').select('status, created_at').eq('team_id', teamId).in('status', ['open', 'overdue']).limit(500),
-            supabase.from('drafts').select('id').eq('team_id', teamId).eq('status', 'pending'),
+            supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
+            supabase.from('drafts').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_chats').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('awaiting_replies').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { data: [] } : res),

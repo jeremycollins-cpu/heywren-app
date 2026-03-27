@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     .from('draft_queue')
     .select('commitment_id')
     .eq('team_id', teamId)
+    .eq('user_id', user.id)
 
   const existingCommitmentIds = (existingDrafts || []).map((d) => d.commitment_id)
 
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
     .from('commitments')
     .select('id, title, description, source, created_at, assignee:team_members(user_id, profiles(display_name))')
     .eq('team_id', teamId)
+    .or(`creator_id.eq.${user.id},assignee_id.eq.${user.id}`)
     .eq('status', 'open')
     .order('created_at', { ascending: false })
     .limit(50)
@@ -96,6 +98,7 @@ export async function POST(request: NextRequest) {
       for (const [commitmentId, draft] of drafts) {
         const { error: insertErr } = await admin.from('draft_queue').insert({
           team_id: teamId,
+          user_id: user.id,
           commitment_id: commitmentId,
           subject: draft.subject,
           body: draft.body,

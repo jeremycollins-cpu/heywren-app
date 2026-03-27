@@ -36,7 +36,8 @@ export const processSlackMessage = inngest.createFunction(
         .select('team_id, config, access_token')
         .eq('provider', 'slack')
         .filter('config->>slack_team_id', 'eq', slackTeamId)
-        .single()
+        .limit(1)
+        .maybeSingle()
 
       if (error || !data) {
         console.error('No HeyWren team for Slack team:', slackTeamId, error)

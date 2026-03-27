@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     .from('draft_queue')
     .select('*, commitment:commitments(id, title, description, source, status)')
     .eq('team_id', membership.team_id)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
   if (error) {

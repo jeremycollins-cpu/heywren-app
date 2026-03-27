@@ -35,9 +35,11 @@ export const dailyDigest = inngest.createFunction(
         .in('team_id', teamIds)
         .eq('provider', 'slack')
 
-      const integrationMap = new Map(
-        (integrations || []).map(i => [i.team_id, i])
-      )
+      // With per-user integrations, pick one Slack bot token per team
+      const integrationMap = new Map<string, typeof integrations extends (infer T)[] | null ? T : never>()
+      for (const i of integrations || []) {
+        if (!integrationMap.has(i.team_id)) integrationMap.set(i.team_id, i)
+      }
 
       return allTeams
         .filter(t => integrationMap.has(t.id))

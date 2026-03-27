@@ -33,11 +33,12 @@ export async function GET() {
       return NextResponse.json({ transcripts: [] })
     }
 
-    // Fetch transcripts
+    // Fetch transcripts — scoped to this user's meetings
     const { data: transcripts, error } = await supabase
       .from('meeting_transcripts')
       .select('id, title, provider, start_time, transcript_status, commitments_found, hey_wren_triggers, created_at')
       .eq('team_id', profile.current_team_id)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50)
 

@@ -22,16 +22,7 @@ export async function GET(request: NextRequest) {
     const admin = getAdminClient()
 
     if (!userId) {
-      const { searchParams } = new URL(request.url)
-      const qUserId = searchParams.get('userId')
-      if (qUserId) {
-        const { data: authUser } = await admin.auth.admin.getUserById(qUserId)
-        if (authUser?.user) userId = authUser.user.id
-      }
-    }
-
-    if (!userId) {
-      return NextResponse.json({ members: [] })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // ── Resolve the caller's org membership and role ──

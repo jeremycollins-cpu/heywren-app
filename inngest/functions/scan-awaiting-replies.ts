@@ -10,6 +10,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { WebClient } from '@slack/web-api'
 import { detectCommitmentsBatch, type UserContext } from '@/lib/ai/detect-commitments'
 
 const MAX_SENT_PER_RUN = 500
@@ -145,11 +146,12 @@ export async function scanTeamAwaitingReplies(
 ) {
   const startTime = Date.now()
 
-  // Get Outlook integration
+  // Get Outlook integration for this user
   const { data: integration } = await supabase
     .from('integrations')
     .select('id, access_token, refresh_token, config')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'outlook')
     .single()
 
@@ -360,19 +362,72 @@ export async function scanTeamAwaitingReplies(
 
   } // end if (integration) — Outlook scanning
 
+  // ── Slack Setup ──
+  // Query Slack integration once and set up name resolution helpers
+  const slackIntResult = await supabase
+    .from('integrations')
+    .select('config, access_token')
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .eq('provider', 'slack')
+    .maybeSingle()
+
+  const slackIntData = slackIntResult?.data
+  const slackToken = slackIntData?.access_token
+  const slack = slackToken ? new WebClient(slackToken) : null
+
+  // Caches for resolving Slack user IDs → display names and channel IDs → names
+  const userNameCache = new Map<string, string>()
+  const channelNameCache = new Map<string, string>()
+
+  async function resolveSlackUser(uid: string): Promise<string> {
+    if (userNameCache.has(uid)) return userNameCache.get(uid)!
+    if (!slack) return uid
+    try {
+      const result = await slack.users.info({ user: uid })
+      const u = result.user
+      const name = u?.profile?.display_name || u?.profile?.real_name || u?.real_name || u?.name || uid
+      userNameCache.set(uid, name)
+      return name
+    } catch { return uid }
+  }
+
+  async function resolveSlackChannel(chId: string): Promise<string> {
+    if (channelNameCache.has(chId)) return channelNameCache.get(chId)!
+    if (!slack) return chId
+    try {
+      const result = await slack.conversations.info({ channel: chId })
+      const ch = result.channel as { name?: string; is_im?: boolean; user?: string }
+      if (ch?.name) {
+        channelNameCache.set(chId, ch.name)
+        return ch.name
+      } else if (ch?.is_im && ch?.user) {
+        const dmName = await resolveSlackUser(ch.user)
+        channelNameCache.set(chId, dmName)
+        return dmName
+      }
+    } catch { /* skip */ }
+    return chId
+  }
+
+  async function resolveSlackMentions(text: string): Promise<string> {
+    const mentionPattern = /<@([A-Z0-9]+)>/g
+    const matches = [...text.matchAll(mentionPattern)]
+    if (matches.length === 0) return text
+    let resolved = text
+    for (const match of matches) {
+      const name = await resolveSlackUser(match[1])
+      resolved = resolved.replace(match[0], `@${name}`)
+    }
+    return resolved
+  }
+
   // ── Slack Scanning ──
   // Find messages the user sent in DMs/group DMs/channels that got no reply
   let slackAwaiting = 0
   try {
-    const slackIntegration = await supabase
-      .from('integrations')
-      .select('config')
-      .eq('team_id', teamId)
-      .eq('provider', 'slack')
-      .maybeSingle()
-
-    if (slackIntegration?.data) {
-      let slackUserId = slackIntegration.data.config?.authed_user_id || null
+    if (slackIntData) {
+      let slackUserId = slackIntData.config?.authed_user_id || null
       const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
 
       // If we don't have the authed user's Slack ID, try to find it from stored messages
@@ -484,8 +539,19 @@ export async function scanTeamAwaitingReplies(
               ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
               : null
 
-            const recipientLabel = isDM ? 'DM participant' : 'Channel member'
-            const nameLabel = isDM ? 'DM' : (msg.channel_id || 'Channel')
+            // Resolve channel/DM names to human-readable labels
+            const channelName = await resolveSlackChannel(msg.channel_id)
+            const resolvedText = await resolveSlackMentions(text)
+            let recipientLabel: string
+            let nameLabel: string
+            if (isDM) {
+              // For DMs, the channel name resolves to the other person's name
+              recipientLabel = channelName !== msg.channel_id ? channelName : 'DM participant'
+              nameLabel = recipientLabel
+            } else {
+              recipientLabel = channelName !== msg.channel_id ? `#${channelName}` : 'Channel member'
+              nameLabel = channelName !== msg.channel_id ? channelName : msg.channel_id
+            }
 
             slackToInsert.push({
               team_id: teamId,
@@ -494,10 +560,11 @@ export async function scanTeamAwaitingReplies(
               source_message_id: msg.message_ts,
               permalink,
               channel_id: msg.channel_id,
+              channel_name: channelName !== msg.channel_id ? channelName : null,
               to_recipients: recipientLabel,
               to_name: nameLabel,
               subject: null,
-              body_preview: text.slice(0, 500),
+              body_preview: resolvedText.slice(0, 500),
               sent_at: msg.created_at,
               urgency,
               category: hasQuestion ? 'question' : 'follow_up',
@@ -603,6 +670,14 @@ export async function scanTeamAwaitingReplies(
                   : null
                 const daysSince = Math.floor((Date.now() - new Date(msg.created_at).getTime()) / 86400000)
 
+                // Resolve the sender's name from their Slack user ID
+                const senderName = await resolveSlackUser(msg.user_id)
+                const promiserDisplay = commitment.promiserName || (senderName !== msg.user_id ? senderName : 'Someone')
+                const channelName = await resolveSlackChannel(msg.channel_id)
+                const resolvedQuote = await resolveSlackMentions(
+                  commitment.originalQuote || commitment.description || ''
+                )
+
                 const { error: insertErr } = await supabase
                   .from('awaiting_replies')
                   .upsert({
@@ -612,16 +687,15 @@ export async function scanTeamAwaitingReplies(
                     source_message_id: msg.message_ts,
                     permalink,
                     channel_id: msg.channel_id,
-                    to_recipients: commitment.promiserName || 'Unknown',
-                    to_name: commitment.promiserName || 'Someone',
+                    channel_name: channelName !== msg.channel_id ? channelName : null,
+                    to_recipients: promiserDisplay,
+                    to_name: promiserDisplay,
                     subject: commitment.title,
-                    body_preview: (commitment.originalQuote || commitment.description || '').slice(0, 500),
+                    body_preview: resolvedQuote.slice(0, 500),
                     sent_at: msg.created_at,
                     urgency: daysSince > 7 ? 'critical' : daysSince > 3 ? 'high' : 'medium',
                     category: 'follow_up',
-                    wait_reason: commitment.promiserName
-                      ? `${commitment.promiserName} promised: ${commitment.title}`
-                      : `Someone promised: ${commitment.title}`,
+                    wait_reason: `${promiserDisplay} promised: ${commitment.title}`,
                     days_waiting: daysSince,
                     status: 'waiting',
                   }, { onConflict: 'team_id,source_message_id' })
@@ -635,6 +709,62 @@ export async function scanTeamAwaitingReplies(
     }
   } catch (inboundErr) {
     console.error('Inbound commitment scan error:', (inboundErr as Error).message)
+  }
+
+  // ── Backfill: fix existing Slack awaiting_replies with raw IDs ──
+  try {
+    if (slack) {
+
+      // Find Slack items with raw channel IDs as to_name (e.g. "C0AGV1G5FGA" or "DM")
+      const { data: rawItems } = await supabase
+        .from('awaiting_replies')
+        .select('id, to_name, to_recipients, channel_id, body_preview, wait_reason')
+        .eq('team_id', teamId)
+        .eq('source', 'slack')
+        .in('status', ['waiting', 'snoozed'])
+        .limit(200)
+
+      if (rawItems && rawItems.length > 0) {
+        for (const item of rawItems) {
+          const updates: Record<string, string> = {}
+
+          // Fix to_name if it's a raw channel ID or generic label
+          if (item.to_name && /^[CDG][A-Z0-9]{8,}$/.test(item.to_name)) {
+            const resolved = await resolveSlackChannel(item.to_name)
+            if (resolved !== item.to_name) {
+              updates.to_name = resolved
+              const isDM = item.to_name.startsWith('D') || item.to_name.startsWith('G')
+              updates.to_recipients = isDM ? resolved : `#${resolved}`
+              updates.channel_name = resolved
+            }
+          }
+
+          // Fix to_recipients if it's a raw channel ID
+          if (item.to_recipients && /^[CDG][A-Z0-9]{8,}$/.test(item.to_recipients) && item.channel_id) {
+            const resolved = await resolveSlackChannel(item.channel_id)
+            if (resolved !== item.channel_id) {
+              updates.to_recipients = `#${resolved}`
+              if (!updates.to_name) updates.to_name = resolved
+            }
+          }
+
+          // Fix <@U...> mentions in body_preview
+          if (item.body_preview && /<@[A-Z0-9]+>/.test(item.body_preview)) {
+            const fixed = await resolveSlackMentions(item.body_preview)
+            if (fixed !== item.body_preview) updates.body_preview = fixed
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await supabase
+              .from('awaiting_replies')
+              .update(updates)
+              .eq('id', item.id)
+          }
+        }
+      }
+    }
+  } catch (backfillErr) {
+    console.error('Backfill name resolution error:', (backfillErr as Error).message)
   }
 
   return {
@@ -655,9 +785,10 @@ export const scanAwaitingReplies = inngest.createFunction(
     const results = await step.run('scan-all-teams', async () => {
       const supabase = getAdminClient()
 
+      // Get all users with Outlook integrations
       const { data: integrations } = await supabase
         .from('integrations')
-        .select('team_id')
+        .select('team_id, user_id')
         .eq('provider', 'outlook')
 
       if (!integrations || integrations.length === 0) {
@@ -667,19 +798,8 @@ export const scanAwaitingReplies = inngest.createFunction(
       const teamResults: any[] = []
 
       for (const int of integrations) {
-        // Get team owner or first admin
-        const { data: member } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', int.team_id)
-          .in('role', ['owner', 'admin'])
-          .limit(1)
-          .single()
-
-        if (!member) continue
-
         try {
-          const result = await scanTeamAwaitingReplies(supabase, int.team_id, member.user_id)
+          const result = await scanTeamAwaitingReplies(supabase, int.team_id, int.user_id)
           teamResults.push(result)
         } catch (err) {
           console.error(`Team ${int.team_id}: Scan failed:`, (err as Error).message)

@@ -53,11 +53,12 @@ export async function GET() {
       return NextResponse.json({ integrations: [], teamId: null })
     }
 
-    // Get integrations using admin client (bypasses RLS)
+    // Get integrations for THIS user (not all team integrations)
     const { data: integrations, error } = await supabaseAdmin
       .from('integrations')
       .select('id, provider, config')
       .eq('team_id', teamId)
+      .eq('user_id', userId)
 
     if (error) {
       console.error('Error fetching integrations:', error)

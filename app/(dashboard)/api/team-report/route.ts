@@ -29,14 +29,6 @@ export async function GET(request: NextRequest) {
     const format = searchParams.get('format') || 'json'
 
     if (!userId) {
-      const qUserId = searchParams.get('userId')
-      if (qUserId) {
-        const { data: authUser } = await admin.auth.admin.getUserById(qUserId)
-        if (authUser?.user) userId = authUser.user.id
-      }
-    }
-
-    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

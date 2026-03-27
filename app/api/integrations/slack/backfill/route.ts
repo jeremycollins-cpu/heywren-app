@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { WebClient } from '@slack/web-api'
 import { detectCommitmentsBatch, getDetectionStats, type UserContext } from '@/lib/ai/detect-commitments'
 import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
@@ -88,11 +89,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No team found for user' }, { status: 400 })
   }
 
-  // Get the Slack access token
+  // Get the Slack access token for this user
   const { data: integration } = await supabase
     .from('integrations')
     .select('access_token, config')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'slack')
     .single()
 
@@ -120,6 +122,11 @@ export async function POST(request: NextRequest) {
       error: 'Slack token invalid: ' + authTest.error + '. Please reconnect Slack.',
     }, { status: 401 })
   }
+
+  // Auto-populate slack_user_id for team members missing it (non-blocking)
+  autoPopulateSlackUserIds(supabase, slackToken, teamId).catch(err =>
+    console.error('Failed to auto-populate Slack user IDs during backfill:', err)
+  )
 
   // ================================================================
   // PHASE 1: Re-process previously stored but unprocessed messages
@@ -640,4 +647,58 @@ export async function POST(request: NextRequest) {
       errors: errors.length > 0 ? errors : undefined,
     },
   })
+}
+
+/**
+ * Fetch all Slack workspace members and match them to HeyWren profiles by email.
+ * Sets slack_user_id on any profile that doesn't already have one.
+ */
+async function autoPopulateSlackUserIds(
+  supabase: ReturnType<typeof getAdminClient>,
+  accessToken: string,
+  teamId: string
+) {
+  const slack = new WebClient(accessToken)
+
+  const { data: teamMembers } = await supabase
+    .from('team_members')
+    .select('user_id')
+    .eq('team_id', teamId)
+
+  if (!teamMembers || teamMembers.length === 0) return
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, email, slack_user_id')
+    .in('id', teamMembers.map(m => m.user_id))
+
+  if (!profiles) return
+
+  const unmapped = profiles.filter(p => !p.slack_user_id && p.email)
+  if (unmapped.length === 0) return
+
+  const emailToProfile = new Map(
+    unmapped.map(p => [p.email!.toLowerCase(), p.id])
+  )
+
+  let cursor: string | undefined
+  let matched = 0
+  do {
+    const result = await slack.users.list({ cursor, limit: 200 })
+    for (const member of result.members || []) {
+      if (member.deleted || member.is_bot || member.id === 'USLACKBOT') continue
+      const email = member.profile?.email?.toLowerCase()
+      if (!email) continue
+      const profileId = emailToProfile.get(email)
+      if (profileId) {
+        await supabase.from('profiles').update({ slack_user_id: member.id }).eq('id', profileId)
+        matched++
+        emailToProfile.delete(email)
+        console.log(`Auto-mapped Slack user ${member.id} (${email}) → profile ${profileId}`)
+      }
+    }
+    cursor = result.response_metadata?.next_cursor || undefined
+  } while (cursor && emailToProfile.size > 0)
+
+  if (matched > 0) console.log(`Auto-populated slack_user_id for ${matched} team members`)
 }

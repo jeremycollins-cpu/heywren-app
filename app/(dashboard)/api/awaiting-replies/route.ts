@@ -29,19 +29,8 @@ export async function GET(request: NextRequest) {
 
     const admin = getAdminClient()
 
-    // If server-side session failed, try userId from query param
     if (!userId) {
-      const { searchParams } = new URL(request.url)
-      const qUserId = searchParams.get('userId')
-      if (qUserId) {
-        // Validate the userId exists
-        const { data: authUser } = await admin.auth.admin.getUserById(qUserId)
-        if (authUser?.user) userId = authUser.user.id
-      }
-    }
-
-    if (!userId) {
-      return NextResponse.json({ items: [], count: 0 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Get user's email for matching sent items
@@ -117,17 +106,6 @@ export async function POST(request: NextRequest) {
     } catch { /* session failed */ }
 
     const admin = getAdminClient()
-
-    // Fallback: userId from body
-    if (!userId) {
-      try {
-        const body = await request.json()
-        if (body?.userId) {
-          const { data: authUser } = await admin.auth.admin.getUserById(body.userId)
-          if (authUser?.user) userId = authUser.user.id
-        }
-      } catch { /* no body */ }
-    }
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -80,6 +80,7 @@ export async function updateSession(request: NextRequest) {
         .from('integrations')
         .select('id')
         .eq('team_id', profile.current_team_id)
+        .eq('user_id', user.id)
         .limit(1)
 
       if (integrations && integrations.length > 0) {

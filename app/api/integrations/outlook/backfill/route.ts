@@ -117,11 +117,12 @@ export async function POST(request: NextRequest) {
   if (members && members.length > 0) teamId = members[0].team_id
   if (!teamId) return NextResponse.json({ error: 'No team found' }, { status: 400 })
 
-  // Get Outlook integration
+  // Get Outlook integration for this user
   const { data: integration } = await supabase
     .from('integrations')
     .select('id, access_token, refresh_token, config')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'outlook')
     .single()
 

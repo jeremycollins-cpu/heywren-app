@@ -52,11 +52,12 @@ export async function GET() {
       )
     }
 
-    // Get the Slack integration with access token
+    // Get the Slack integration for this user
     const { data: integration, error: intError } = await supabaseAdmin
       .from('integrations')
       .select('access_token')
       .eq('team_id', teamId)
+      .eq('user_id', userId)
       .eq('provider', 'slack')
       .single()
 
