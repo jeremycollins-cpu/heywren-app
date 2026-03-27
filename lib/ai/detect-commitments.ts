@@ -232,11 +232,12 @@ INBOUND (direction: "inbound") — specific promises someone ELSE made TO ${user
 STRICT EXCLUSIONS — NEVER extract these:
 - Conversations between other people that don't directly involve ${userContext.userName}
 - Someone mentioning ${userContext.userName} in passing without making/receiving a commitment
-- Vague "I'll discuss", "I'll look into it", "I'll talk to them" with no specific deliverable
-- Calendar/meeting references ("I have a meeting", "Let's discuss in our sync")
+- OTHER people's vague statements like "I'll discuss", "I'll look into it", "I have a meeting" — these are not commitments to ${userContext.userName}
+- Calendar invites, scheduling confirmations, meeting reminders
 - Status updates, acknowledgments, social messages
 - Messages from channels where ${userContext.userName} is not the speaker or direct addressee
-- Anything where the action is "discuss", "talk about", "think about" — these are NOT trackable
+
+IMPORTANT NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss in our meeting" or "I'll look into it", that IS a valid outbound commitment — it's their own action item. But if someone ELSE says the same thing in a shared channel, it is NOT a commitment because it doesn't involve ${userContext.userName}.
 
 When in doubt, return an empty array. Showing irrelevant noise is WORSE than missing a commitment.
 
@@ -250,7 +251,7 @@ ${BASE_SYSTEM_PROMPT}`
 async function haiku_triage(text: string, userContext?: UserContext): Promise<boolean> {
   try {
     const systemPrompt = userContext
-      ? `You are filtering Slack messages for ${userContext.userName}. Say YES ONLY if this message contains a SPECIFIC, TRACKABLE commitment — either made BY ${userContext.userName} or made TO ${userContext.userName} by someone else. The commitment must have a clear deliverable (not just "discuss" or "look into it"). Say NO for: vague statements, meeting/calendar mentions, conversations between other people, status updates, acknowledgments, or casual chat. When in doubt, say NO. Use the classify_message tool.`
+      ? `You are filtering Slack messages for ${userContext.userName}. Say YES ONLY if this message contains a commitment directly involving ${userContext.userName} — either ${userContext.userName} promising to do something specific, OR someone else promising a specific deliverable TO ${userContext.userName}. If ${userContext.userName} says "I will discuss in our meeting" that counts (it's their action). But if someone ELSE says vague things like "I'll discuss" or "I have a meeting" in a shared channel, say NO — that's not ${userContext.userName}'s commitment. Also say NO for: conversations between other people, calendar invites, status updates, acknowledgments. When in doubt, say NO. Use the classify_message tool.`
       : 'Does this message contain a specific, trackable commitment with a clear deliverable? Say NO for vague statements like "I\'ll discuss" or "looking into it", meeting/calendar mentions, and casual conversation. Use the classify_message tool.'
 
     const message = await client.messages.create({
@@ -323,16 +324,20 @@ function isLowQualityCommitment(c: DetectedCommitment): boolean {
   // Reject low confidence
   if (c.confidence < 0.6) return true
 
-  // Reject vague titles about discussing/meeting
-  if (NOISE_TITLE_PATTERNS.some(p => p.test(c.title))) return true
+  // For INBOUND commitments (other people's promises), apply strict noise filters
+  // For OUTBOUND (user's own commitments), be more lenient — the user said it themselves
+  if (c.direction !== 'outbound') {
+    // Reject vague titles about discussing/meeting from other people
+    if (NOISE_TITLE_PATTERNS.some(p => p.test(c.title))) return true
 
-  // Reject if the original quote is just a meeting/discuss reference
-  if (c.originalQuote && NOISE_QUOTE_PATTERNS.some(p => p.test(c.originalQuote!))) return true
+    // Reject if the original quote is just a meeting/discuss reference from someone else
+    if (c.originalQuote && NOISE_QUOTE_PATTERNS.some(p => p.test(c.originalQuote!))) return true
 
-  // Reject commitmentType "meeting" unless there's a specific deliverable in the title
-  if (c.commitmentType === 'meeting') {
-    const hasDeliverable = /send|deliver|create|write|prepare|share|submit|review|fix|build|deploy|report|update|complete|finish/i.test(c.title)
-    if (!hasDeliverable) return true
+    // Reject inbound "meeting" type unless there's a specific deliverable
+    if (c.commitmentType === 'meeting') {
+      const hasDeliverable = /send|deliver|create|write|prepare|share|submit|review|fix|build|deploy|report|update|complete|finish/i.test(c.title)
+      if (!hasDeliverable) return true
+    }
   }
 
   return false
@@ -474,12 +479,13 @@ INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO ${user
 
 STRICT EXCLUSIONS — return empty array for these:
 - Conversations between other people not involving ${userContext.userName}
-- Vague "will discuss/talk about/look into" with no specific deliverable
+- OTHER people's vague "will discuss/look into/have a meeting" — not ${userContext.userName}'s commitment
 - Calendar/meeting references, scheduling, status updates, acknowledgments
-- Any message where the "action" is just to discuss, think about, or meet
 - Anything with confidence below 0.6
 
-A real commitment MUST have: a specific person + a specific trackable action. "I'll discuss with Luke" = NOT a commitment. "I'll send the report by Friday" = IS a commitment.
+NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss" or "I'll look into it", that IS valid (their own action). But someone else saying it in a channel is NOT.
+
+A real commitment MUST have: a specific person + a specific trackable action. "Someone else: I'll discuss with Luke" = NOT a commitment. "${userContext.userName}: I'll send the report by Friday" = IS a commitment.
 
 Rules:
 - Title: WHO + WHAT, standalone.
