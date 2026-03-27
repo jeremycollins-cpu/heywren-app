@@ -2,8 +2,9 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useRealtime } from '@/lib/hooks/use-realtime'
 import { WrenFullLogo } from '@/components/logo'
 import { usePlan } from '@/lib/contexts/plan-context'
 import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/plans'
@@ -113,6 +114,58 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
     fetchUserData()
   }, [supabase])
+
+  // Re-fetch badge counts when commitments or action items change in real-time
+  const refetchBadges = useCallback(() => {
+    // Small delay to let DB settle after insert
+    const timer = setTimeout(() => {
+      const fetchUserData = async () => {
+        try {
+          const { data: user } = await supabase.auth.getUser()
+          if (!user?.user) return
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('current_team_id')
+            .eq('id', user.user.id)
+            .single()
+          if (!profile?.current_team_id) return
+          const teamId = profile.current_team_id
+
+          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
+            supabase.from('commitments').select('status, created_at').eq('team_id', teamId).in('status', ['open', 'overdue']).limit(500),
+            supabase.from('drafts').select('id').eq('team_id', teamId).eq('status', 'pending'),
+            supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
+            supabase.from('missed_chats').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
+            supabase.from('awaiting_replies').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { data: [] } : res),
+          ])
+
+          const commitments = commitResult.data || []
+          const now = Date.now()
+          setBadges({
+            overdue: commitments.filter(c => c.status === 'overdue').length,
+            urgent: commitments.filter(c => c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000).length,
+            draftQueue: draftResult.data?.length || 0,
+            missedEmails: new Set((missedResult.data || []).map((e: any) => {
+              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
+              return s || e.id
+            })).size,
+            missedChats: missedChatsResult.data?.length || 0,
+            waitingRoom: waitingResult.data?.length || 0,
+            openCommitments: commitments.filter(c => c.status === 'open').length,
+          })
+        } catch (err) {
+          console.error('Error refreshing sidebar badges:', err)
+        }
+      }
+      fetchUserData()
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [supabase])
+
+  useRealtime({ table: 'commitments', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
+  useRealtime({ table: 'drafts', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'missed_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
 
   const sections = [
     {

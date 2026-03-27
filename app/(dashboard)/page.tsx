@@ -6,6 +6,7 @@
 import { useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
+import { useRealtime } from '@/lib/hooks/use-realtime'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { AlertBanner } from '@/components/ui/alert-banner'
@@ -45,11 +46,37 @@ export default function DashboardPage() {
     commitments, mentions, integrationCount,
     loading, error,
     fetchDashboard, markDone, snooze, dismiss, clearError,
+    addCommitment, updateCommitment, removeCommitment, addMention,
   } = useDashboardStore()
 
   useEffect(() => {
     fetchDashboard()
   }, [fetchDashboard])
+
+  // Real-time: commitments
+  useRealtime({
+    table: 'commitments',
+    enabled: !loading,
+    onInsert: (payload) => {
+      addCommitment(payload.new as any)
+      toast('New commitment detected', { icon: '🐦' })
+    },
+    onUpdate: (payload) => {
+      updateCommitment(payload.new as any)
+    },
+    onDelete: (payload) => {
+      removeCommitment((payload.old as any).id)
+    },
+  })
+
+  // Real-time: slack mentions
+  useRealtime({
+    table: 'slack_messages',
+    enabled: !loading,
+    onInsert: (payload) => {
+      addMention(payload.new as any)
+    },
+  })
 
   if (loading) return <LoadingSkeleton />
 
@@ -174,7 +201,7 @@ export default function DashboardPage() {
         </div>
         <div className="text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            This page auto-refreshes. You can also check back in a few minutes.
+            Listening for new data in real-time. Results will appear automatically.
           </p>
         </div>
       </div>
@@ -198,7 +225,7 @@ export default function DashboardPage() {
         title="Here's what Wren found"
         titleSuffix={
           <span className="inline-flex items-center gap-1 text-sm font-medium text-green-600">
-            <span className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true" /> Live
+            <span className="relative w-2 h-2" aria-hidden="true"><span className="absolute inset-0 bg-green-400 rounded-full animate-ping opacity-75" /><span className="relative block w-2 h-2 bg-green-500 rounded-full" /></span> Live
           </span>
         }
         description={
