@@ -82,7 +82,7 @@ export async function generateFollowUpDraft(commitment: {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } } as any],
     tools: [SINGLE_DRAFT_TOOL],
     tool_choice: { type: 'tool', name: 'generate_draft' },
     messages: [
@@ -150,7 +150,7 @@ export async function generateFollowUpDraftsBatch(
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 2048,
-      system: [{ type: 'text', text: SYSTEM_PROMPT + '\n\nYou will receive multiple commitments numbered [1], [2], etc. Generate a draft for each.', cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: SYSTEM_PROMPT + '\n\nYou will receive multiple commitments numbered [1], [2], etc. Generate a draft for each.', cache_control: { type: 'ephemeral' } } as any],
       tools: [BATCH_DRAFT_TOOL],
       tool_choice: { type: 'tool', name: 'generate_batch_drafts' },
       messages: [

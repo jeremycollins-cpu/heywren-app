@@ -148,7 +148,7 @@ export async function extractHeyWrenCommitments(
 - Extract the action from what comes AFTER "Hey Wren".
 - "Hey Wren, remind me to send the report by Friday" -> title: "Send the report", dueDate: next Friday.
 - "Hey Wren, [name] committed to X" -> assignee: [name].
-- If context after "Hey Wren" is unclear/noise, omit that number from results.`, cache_control: { type: 'ephemeral' } }],
+- If context after "Hey Wren" is unclear/noise, omit that number from results.`, cache_control: { type: 'ephemeral' } } as any],
       tools: [HEY_WREN_EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'extract_hey_wren_commitments' },
       messages: [

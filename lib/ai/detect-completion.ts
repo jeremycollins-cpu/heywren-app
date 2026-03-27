@@ -115,7 +115,7 @@ async function haiku_match(
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
-      system: [{ type: 'text', text: `Match messages to completed commitments. Only match when there is real evidence the task was done, not just discussed. Evidence must be a direct quote from the message.`, cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: `Match messages to completed commitments. Only match when there is real evidence the task was done, not just discussed. Evidence must be a direct quote from the message.`, cache_control: { type: 'ephemeral' } } as any],
       tools: [COMPLETION_MATCH_TOOL],
       tool_choice: { type: 'tool', name: 'report_completion_matches' },
       messages: [{

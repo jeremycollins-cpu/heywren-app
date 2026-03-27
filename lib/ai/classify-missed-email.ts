@@ -287,7 +287,7 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 512,
-    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
     tools: [EMAIL_ANALYSIS_TOOL],
     tool_choice: { type: 'tool', name: 'analyze_email' },
     messages: [{ role: 'user', content: emailText }],
@@ -538,7 +538,7 @@ export async function classifyMissedEmailBatch(
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: [{ type: 'text', text: `Analyze batched emails numbered [1], [2], etc.\n\n${systemText}`, cache_control: communityBlock ? undefined : { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: `Analyze batched emails numbered [1], [2], etc.\n\n${systemText}`, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
       tools: [BATCH_EMAIL_TOOL],
       tool_choice: { type: 'tool', name: 'analyze_emails_batch' },
       messages: [

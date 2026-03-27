@@ -97,7 +97,7 @@ Pattern rules:
 - Focus on the CLASS, not the instance
 - Phrase as instruction to an AI classifier
 - Good: "Emails with 'please let me know a convenient time' are scheduling requests expecting same-day response"
-- Bad: "Flag emails from Fareed at outsourcetel.com"`, cache_control: { type: 'ephemeral' } }],
+- Bad: "Flag emails from Fareed at outsourcetel.com"`, cache_control: { type: 'ephemeral' } } as any],
     tools: [VALIDATION_TOOL],
     tool_choice: { type: 'tool', name: 'report_validation' },
     messages: [{

@@ -250,7 +250,7 @@ PROVOCATIVE TITLES: sharp observations, not category labels. Good: "You're solvi
 CATEGORY LABELS: sharp and specific -- "CRITICAL PATTERN", "EBITDA RISK", "DELEGATION GAP", not generic.
 ACTIONS: specific, bold, implementable THIS WEEK.
 
-Priority: critical = active business risk | high = leverage opportunity | medium = habits | growth = wins to systematize.`, cache_control: { type: 'ephemeral' } }],
+Priority: critical = active business risk | high = leverage opportunity | medium = habits | growth = wins to systematize.`, cache_control: { type: 'ephemeral' } } as any],
     tools: [COACHING_INSIGHTS_TOOL],
     tool_choice: { type: 'tool', name: 'report_coaching_insights' },
     messages: [{

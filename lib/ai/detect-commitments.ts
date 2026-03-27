@@ -236,7 +236,7 @@ async function sonnet_analyze(text: string, communityPatterns?: string[]): Promi
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
-    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
     tools: [COMMITMENT_EXTRACTION_TOOL],
     tool_choice: { type: 'tool', name: 'extract_commitments' },
     messages: [{ role: 'user', content: `Analyze for commitments:\n\n"${text}"` }],
@@ -369,7 +369,7 @@ Rules:
 - originalQuote: verbatim excerpt.
 - stakeholders: anyone involved.
 - Only confidence >= 0.5.
-- Empty array if none.`, cache_control: { type: 'ephemeral' } }],
+- Empty array if none.`, cache_control: { type: 'ephemeral' } } as any],
       tools: [BATCH_EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'extract_batch_commitments' },
       messages: [
