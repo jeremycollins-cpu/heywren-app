@@ -4,7 +4,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, LogOut, Settings, CreditCard, Moon, Sun } from 'lucide-react'
+import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff } from 'lucide-react'
+import { useRealtime } from '@/lib/hooks/use-realtime'
 import toast from 'react-hot-toast'
 
 interface HeaderProps {
@@ -70,6 +71,38 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }
   }
 
+  // Sync status: track last activity timestamp from realtime
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [syncActive, setSyncActive] = useState(false)
+
+  useRealtime({
+    table: 'commitments',
+    onInsert: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
+    onUpdate: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
+  })
+
+  useRealtime({
+    table: 'slack_messages',
+    onInsert: () => { setLastSyncTime(new Date()); setSyncActive(true); setTimeout(() => setSyncActive(false), 2000) },
+  })
+
+  function formatSyncTime(date: Date | null): string {
+    if (!date) return 'Listening...'
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+    if (seconds < 10) return 'Just now'
+    if (seconds < 60) return `${seconds}s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    return `${Math.floor(minutes / 60)}h ago`
+  }
+
+  // Re-render the sync time label periodically
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000)
+    return () => clearInterval(interval)
+  }, [])
+
   const initials = (user?.user_metadata?.full_name || user?.email || 'U')
     .split(' ')
     .map((n: string) => n[0])
@@ -86,6 +119,25 @@ export default function Header({ onMenuClick }: HeaderProps) {
       >
         <Menu aria-hidden="true" className="w-5 h-5 text-gray-600 dark:text-gray-400" />
       </button>
+
+      {/* Sync status indicator */}
+      <div className="hidden sm:flex items-center gap-1.5 ml-2">
+        <div className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+          syncActive
+            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+            : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+        }`}>
+          {syncActive ? (
+            <span className="relative w-2 h-2" aria-hidden="true">
+              <span className="absolute inset-0 bg-green-400 rounded-full animate-ping opacity-75" />
+              <span className="relative block w-2 h-2 bg-green-500 rounded-full" />
+            </span>
+          ) : (
+            <Wifi className="w-3 h-3" />
+          )}
+          <span>{syncActive ? 'Syncing' : `Last sync: ${formatSyncTime(lastSyncTime)}`}</span>
+        </div>
+      </div>
 
       <div className="flex-1" />
 
