@@ -252,7 +252,8 @@ export default function RelationshipsPage() {
           supabase
             .from('commitments')
             .select('title, status, metadata, created_at')
-            .eq('team_id', teamId),
+            .eq('team_id', teamId)
+            .eq('creator_id', userData.user.id),
         ])
 
         const emailData = emailResult.data || []
