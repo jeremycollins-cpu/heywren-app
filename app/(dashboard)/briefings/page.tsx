@@ -314,18 +314,24 @@ export default function BriefingsPage() {
         created_at: c.created_at,
       }))
 
-      // ── Fetch messages for health score calculation ──
+      // ── Fetch messages for health score calculation — scoped to user's emails ──
+      const userEmail = userData.user.email?.toLowerCase() || ''
       const { data: emailData } = await supabase
         .from('outlook_messages')
-        .select('from_email, from_name, received_at')
+        .select('from_email, from_name, received_at, to_recipients')
         .eq('team_id', teamId)
         .order('received_at', { ascending: false })
         .limit(1000)
 
-      // Build contact interaction map
+      // Build contact interaction map — only count emails involving this user
       const contactMap: Record<string, { count: number; lastDate: string }> = {}
       if (emailData) {
-        emailData.forEach((msg: any) => {
+        const filteredEmails = emailData.filter((msg: any) => {
+          const from = (msg.from_email || '').toLowerCase()
+          const recipients = JSON.stringify(msg.to_recipients || '').toLowerCase()
+          return from === userEmail || recipients.includes(userEmail)
+        })
+        filteredEmails.forEach((msg: any) => {
           const email = (msg.from_email || '').toLowerCase()
           if (!email || email.includes('noreply') || email.includes('no-reply') || email.includes('notification') || email.includes('mailer-daemon')) return
           if (!contactMap[email]) {

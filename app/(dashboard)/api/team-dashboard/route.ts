@@ -35,14 +35,6 @@ export async function GET(request: NextRequest) {
     const scopeParam = searchParams.get('scope')
 
     if (!userId) {
-      const qUserId = searchParams.get('userId')
-      if (qUserId) {
-        const { data: authUser } = await admin.auth.admin.getUserById(qUserId)
-        if (authUser?.user) userId = authUser.user.id
-      }
-    }
-
-    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
