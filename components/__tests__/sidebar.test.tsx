@@ -76,8 +76,16 @@ jest.mock('lucide-react', () => {
     Hourglass: createIcon('Hourglass'),
     Mic: createIcon('Mic'),
     GraduationCap: createIcon('GraduationCap'),
+    ChevronDown: createIcon('ChevronDown'),
+    ChevronRight: createIcon('ChevronRight'),
   }
 })
+
+// ─── Mock useRealtime hook ────────────────────────────────────────────────
+
+jest.mock('@/lib/hooks/use-realtime', () => ({
+  useRealtime: () => {},
+}))
 
 // ─── Mock logo component ────────────────────────────────────────────────────
 
@@ -120,30 +128,29 @@ describe('Sidebar', () => {
       expect(screen.getByTestId('wren-logo')).toBeInTheDocument()
     })
 
-    it('renders all main navigation links', () => {
+    it('renders navigation links in default-expanded sections', () => {
       render(<Sidebar open={true} onToggle={jest.fn()} />)
 
-      const expectedLinks = [
-        'Dashboard',
-        'Commitments',
-        'Weekly Review',
-        'Coach',
-        'Relationships',
-        'Briefings',
-        'Achievements',
-        'Draft Queue',
-        'Missed Emails',
-        'Missed Chats',
-        'Handoff',
-        'Playbooks',
-        'Integrations',
-        'Data Sync',
-        'Ideas',
-      ]
+      // Overview section (expanded by default)
+      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+      expect(screen.getByText('Commitments')).toBeInTheDocument()
+      expect(screen.getByText('Weekly Review')).toBeInTheDocument()
 
-      for (const label of expectedLinks) {
-        expect(screen.getByText(label)).toBeInTheDocument()
-      }
+      // Action Queue section (expanded by default)
+      expect(screen.getByText('Draft Queue')).toBeInTheDocument()
+      expect(screen.getByText('Missed Emails')).toBeInTheDocument()
+      expect(screen.getByText('Missed Chats')).toBeInTheDocument()
+      expect(screen.getByText('Handoff')).toBeInTheDocument()
+
+      // Collapsed section headers should be visible
+      expect(screen.getByText('Intelligence')).toBeInTheDocument()
+      expect(screen.getByText('Automation')).toBeInTheDocument()
+      expect(screen.getByText('Community')).toBeInTheDocument()
+
+      // Links in collapsed sections should NOT be visible
+      expect(screen.queryByText('Coach')).not.toBeInTheDocument()
+      expect(screen.queryByText('Playbooks')).not.toBeInTheDocument()
+      expect(screen.queryByText('Ideas')).not.toBeInTheDocument()
     })
 
     it('renders the Help & Tips button', () => {
@@ -154,10 +161,11 @@ describe('Sidebar', () => {
     it('links have correct href attributes', () => {
       render(<Sidebar open={true} onToggle={jest.fn()} />)
 
+      // Only check links in default-expanded sections (Overview, Action Queue)
       expect(screen.getByText('Dashboard').closest('a')).toHaveAttribute('href', '/')
       expect(screen.getByText('Commitments').closest('a')).toHaveAttribute('href', '/commitments')
-      expect(screen.getByText('Relationships').closest('a')).toHaveAttribute('href', '/relationships')
-      expect(screen.getByText('Integrations').closest('a')).toHaveAttribute('href', '/integrations')
+      expect(screen.getByText('Weekly Review').closest('a')).toHaveAttribute('href', '/weekly')
+      expect(screen.getByText('Draft Queue').closest('a')).toHaveAttribute('href', '/draft-queue')
     })
   })
 
