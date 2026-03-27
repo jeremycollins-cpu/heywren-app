@@ -297,11 +297,12 @@ export default function BriefingsPage() {
         return
       }
 
-      // ── Fetch open commitments for the team ──
+      // ── Fetch open commitments for this user ──
       const { data: commitments } = await supabase
         .from('commitments')
         .select('id, title, description, status, source, created_at')
         .eq('team_id', teamId)
+        .eq('creator_id', userData.user.id)
         .eq('status', 'open')
 
       const openCommitments: MatchedCommitment[] = (commitments || []).map((c: any) => ({

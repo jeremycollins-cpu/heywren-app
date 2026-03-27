@@ -141,6 +141,7 @@ export default function WeeklyPage() {
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
+          .eq('creator_id', userData.user.id)
           .order('created_at', { ascending: false })
 
         if (commitmentsError) throw commitmentsError
