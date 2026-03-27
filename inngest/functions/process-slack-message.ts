@@ -129,13 +129,13 @@ export const processSlackMessage = inngest.createFunction(
     const userContext = await step.run('resolve-user-context', async () => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name, slack_user_id')
+        .select('display_name, slack_user_id')
         .eq('id', creatorId)
         .single()
 
-      if (!profile?.full_name) return null
+      if (!profile?.display_name) return null
       return {
-        userName: profile.full_name,
+        userName: profile.display_name,
         slackUserId: profile.slack_user_id || null,
       } as UserContext
     })

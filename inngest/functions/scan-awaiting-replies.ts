@@ -529,12 +529,12 @@ export async function scanTeamAwaitingReplies(
     // Get user profile for AI context
     const { data: userProfile2 } = await supabase
       .from('profiles')
-      .select('full_name, slack_user_id')
+      .select('display_name, slack_user_id')
       .eq('id', userId)
       .single()
 
-    if (userProfile2?.full_name || userProfile2?.slack_user_id) {
-      const userName = userProfile2.full_name || 'the user'
+    if (userProfile2?.display_name || userProfile2?.slack_user_id) {
+      const userName = userProfile2.display_name || 'the user'
       const userContext: UserContext = {
         userName,
         slackUserId: userProfile2.slack_user_id || null,
