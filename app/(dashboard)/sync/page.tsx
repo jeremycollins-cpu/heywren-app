@@ -89,6 +89,7 @@ export default function SyncPage() {
           .from('integrations')
           .select('id, provider')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
         integrationData = (intData || []).map((i: any) => ({
           provider: i.provider, created_at: i.created_at || new Date().toISOString(),
         }))

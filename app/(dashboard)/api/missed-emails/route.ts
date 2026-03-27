@@ -181,13 +181,51 @@ export async function POST() {
 
   // Fetch recent emails — scoped to emails relevant to this user
   const userEmail = user.email?.toLowerCase() || ''
-  const { data: emails, error: fetchErr } = await adminDb
+  let { data: emails, error: fetchErr } = await adminDb
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
     .eq('team_id', teamId)
     .gte('received_at', scanWindowAgo)
     .order('received_at', { ascending: false })
     .limit(200)
+
+  // If no emails found, check if user has Outlook connected and trigger a sync
+  if ((!emails || emails.length === 0) && !fetchErr) {
+    const { data: outlookIntegration } = await adminDb
+      .from('integrations')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('user_id', user.id)
+      .eq('provider', 'outlook')
+      .limit(1)
+      .maybeSingle()
+
+    if (outlookIntegration) {
+      try {
+        // Trigger the backfill to pull emails from Outlook API
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
+        const backfillRes = await fetch(`${baseUrl}/api/integrations/outlook/backfill`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, daysBack: scanWindowDays }),
+        })
+        if (backfillRes.ok) {
+          // Re-fetch emails after backfill
+          const refetch = await adminDb
+            .from('outlook_messages')
+            .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
+            .eq('team_id', teamId)
+            .gte('received_at', scanWindowAgo)
+            .order('received_at', { ascending: false })
+            .limit(200)
+          emails = refetch.data
+          fetchErr = refetch.error
+        }
+      } catch (e) {
+        console.warn('Failed to trigger Outlook backfill:', e)
+      }
+    }
+  }
 
   if (fetchErr || !emails) {
     return NextResponse.json({ error: fetchErr?.message || 'Failed to fetch emails' }, { status: 500 })

@@ -672,7 +672,12 @@ export async function scanTeamAwaitingReplies(
 
                 // Resolve the sender's name from their Slack user ID
                 const senderName = await resolveSlackUser(msg.user_id)
-                const promiserDisplay = commitment.promiserName || (senderName !== msg.user_id ? senderName : 'Someone')
+                const rawPromiser = commitment.promiserName
+                // Treat AI placeholders like "<UNKNOWN>", "Unknown", "Someone" as empty
+                const isPlaceholder = !rawPromiser || /^(<?\s*unknown\s*>?|someone|they|them)$/i.test(rawPromiser)
+                const promiserDisplay = isPlaceholder
+                  ? (senderName !== msg.user_id ? senderName : 'Someone')
+                  : rawPromiser
                 const channelName = await resolveSlackChannel(msg.channel_id)
                 const resolvedQuote = await resolveSlackMentions(
                   commitment.originalQuote || commitment.description || ''

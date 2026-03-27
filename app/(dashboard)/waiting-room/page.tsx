@@ -121,7 +121,8 @@ export default function WaitingRoomPage() {
   }
 
   const sendNudge = (item: WaitingItem) => {
-    const recipient = item.to_name || item.to_recipients.split(',')[0].trim()
+    const rawRecipient = item.to_name || item.to_recipients.split(',')[0].trim()
+    const recipient = /^(<?\s*unknown\s*>?|someone)$/i.test(rawRecipient) ? (item.channel_name || 'there') : rawRecipient
     const subject = item.subject
       ? (item.subject.toLowerCase().startsWith('re:') ? item.subject : `Re: ${item.subject}`)
       : 'Quick follow-up'
@@ -327,7 +328,8 @@ export default function WaitingRoomPage() {
             : item.urgency
           const urg = urgencyConfig[groupUrgency] || urgencyConfig.medium
           const catLabel = categoryLabels[item.category] || 'Message sent'
-          const recipientDisplay = item.to_name || item.to_recipients.split(',')[0].trim()
+          const rawName = item.to_name || item.to_recipients.split(',')[0].trim()
+          const recipientDisplay = /^(<?\s*unknown\s*>?|someone)$/i.test(rawName) ? (item.channel_name || 'Slack conversation') : rawName
           // For groups, show the longest waiting time
           const maxWait = isGrouped ? Math.max(...group.items.map(i => i.days_waiting)) : item.days_waiting
           const daysText = maxWait === 0 ? 'Today' : maxWait === 1 ? '1 day' : `${maxWait} days`
@@ -408,7 +410,7 @@ export default function WaitingRoomPage() {
                 <div className="flex items-center gap-1.5 mb-3">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                   <span className="text-sm text-amber-700 dark:text-amber-400 font-medium">
-                    {item.wait_reason} — sent {formatDate(item.sent_at)}
+                    {item.wait_reason.replace(/<?\s*unknown\s*>?/gi, recipientDisplay)} — sent {formatDate(item.sent_at)}
                     {item.channel_name && <span className="text-gray-400 font-normal"> in #{item.channel_name}</span>}
                   </span>
                 </div>

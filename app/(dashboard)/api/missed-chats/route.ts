@@ -34,9 +34,33 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Build a Slack user ID → display name map from team profiles
+  const slackNameMap = new Map<string, string>()
+  const { data: teamProfiles } = await supabase
+    .from('profiles')
+    .select('display_name, slack_user_id')
+    .eq('current_team_id', profile.current_team_id)
+    .not('slack_user_id', 'is', null)
+
+  for (const p of teamProfiles || []) {
+    if (p.slack_user_id && p.display_name) {
+      slackNameMap.set(p.slack_user_id, p.display_name)
+    }
+  }
+
+  // Resolve <@USERID> mentions in message_text and question_summary
+  const resolveMentions = (text: string) =>
+    text.replace(/<@([A-Z0-9]+)>/g, (_, uid) => `@${slackNameMap.get(uid) || 'someone'}`)
+
+  const resolved = (missedChats || []).map((chat: any) => ({
+    ...chat,
+    message_text: chat.message_text ? resolveMentions(chat.message_text) : chat.message_text,
+    question_summary: chat.question_summary ? resolveMentions(chat.question_summary) : chat.question_summary,
+  }))
+
   // Sort with custom urgency order
   const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
-  const sorted = (missedChats || []).sort((a: { urgency: string; sent_at: string }, b: { urgency: string; sent_at: string }) => {
+  const sorted = resolved.sort((a: { urgency: string; sent_at: string }, b: { urgency: string; sent_at: string }) => {
     const urgDiff = (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4)
     if (urgDiff !== 0) return urgDiff
     return new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
@@ -210,8 +234,12 @@ export async function POST() {
   const channelNameCache = new Map<string, string>()
 
   if (slack && newMessages.length > 0) {
-    // Collect unique sender IDs and channel IDs
-    const uniqueUserIds = [...new Set(newMessages.map(m => m.user_id).filter(Boolean))]
+    // Collect unique sender IDs AND mentioned user IDs from message text
+    const mentionedIds = newMessages.flatMap(m => {
+      const matches = (m.message_text || '').matchAll(/<@([A-Z0-9]+)>/g)
+      return [...matches].map(match => match[1])
+    })
+    const uniqueUserIds = [...new Set([...newMessages.map(m => m.user_id).filter(Boolean), ...mentionedIds])]
     const uniqueChannelIds = [...new Set(newMessages.map(m => m.channel_id).filter(Boolean))]
 
     // Resolve user names in parallel (with error handling per user)
@@ -265,10 +293,13 @@ export async function POST() {
       let questionSummary: string | null = null
       const sentences = text.split(/[.!?\n]+/).filter((s: string) => s.trim().length > 5)
       const questionSentence = sentences.find((s: string) => s.includes('?'))
+      const resolveMentions = (s: string) =>
+        s.replace(/<@([A-Z0-9]+)>/g, (_, uid) => `@${userNameCache.get(uid) || 'someone'}`)
+
       if (questionSentence) {
-        questionSummary = questionSentence.trim().replace(/<@[A-Z0-9]+>/g, '@user')
+        questionSummary = resolveMentions(questionSentence.trim())
       } else if (hasQuestion) {
-        questionSummary = text.slice(0, 200).replace(/<@[A-Z0-9]+>/g, '@user').trim()
+        questionSummary = resolveMentions(text.slice(0, 200)).trim()
       }
 
       // Category
@@ -286,9 +317,12 @@ export async function POST() {
         sender_user_id: msg.user_id,
         sender_name: userNameCache.get(msg.user_id) || null,
         channel_name: channelNameCache.get(msg.channel_id) || null,
-        message_text: text,
+        message_text: resolveMentions(text),
         message_ts: msg.message_ts,
         thread_ts: msg.thread_ts || null,
+        permalink: msg.channel_id && msg.message_ts
+          ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
+          : null,
         sent_at: msg.created_at,
         urgency,
         reason: hasQuestion ? 'Contains a direct question or request' : dmChannels.has(msg.channel_id) ? 'DM awaiting your response' : 'You were mentioned but haven\'t responded',
@@ -343,6 +377,27 @@ export async function POST() {
             .update({ sender_name: name })
             .eq('id', record.id)
         }
+      }
+    }
+  }
+
+  // Backfill permalink for existing records missing it
+  {
+    const { data: missingPermalinks } = await adminDb
+      .from('missed_chats')
+      .select('id, channel_id, message_ts')
+      .eq('team_id', teamId)
+      .eq('user_id', user.id)
+      .is('permalink', null)
+      .in('status', ['pending', 'snoozed'])
+      .not('channel_id', 'is', null)
+      .not('message_ts', 'is', null)
+      .limit(200)
+
+    if (missingPermalinks && missingPermalinks.length > 0) {
+      for (const row of missingPermalinks) {
+        const link = `https://slack.com/archives/${row.channel_id}/p${row.message_ts.replace('.', '')}`
+        await adminDb.from('missed_chats').update({ permalink: link }).eq('id', row.id)
       }
     }
   }

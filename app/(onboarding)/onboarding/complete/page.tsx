@@ -47,6 +47,7 @@ export default function OnboardingCompletePage() {
             .from('integrations')
             .select('provider')
             .eq('team_id', profile.current_team_id)
+            .eq('user_id', authData.user.id)
           providers = (intData || []).map((i: any) => i.provider)
         }
       }
