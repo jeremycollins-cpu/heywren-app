@@ -6,7 +6,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw } from 'lucide-react'
+import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface WaitingItem {
@@ -24,6 +24,13 @@ interface WaitingItem {
   status: string
   permalink: string | null
   channel_name: string | null
+  conversation_id: string | null
+}
+
+interface ConversationGroup {
+  key: string
+  primary: WaitingItem
+  items: WaitingItem[]
 }
 
 function daysSince(dateStr: string): number {
@@ -138,12 +145,66 @@ export default function WaitingRoomPage() {
     }
   }
 
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const filteredItems = items.filter(item => {
     if (filter === 'critical') return item.urgency === 'critical' || item.urgency === 'high'
     if (filter === 'email') return item.source === 'outlook'
     if (filter === 'slack') return item.source === 'slack'
     return true
   })
+
+  // Group email items by conversation_id, keep Slack items ungrouped
+  const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+  const groups: ConversationGroup[] = (() => {
+    const convMap = new Map<string, WaitingItem[]>()
+    const ungrouped: WaitingItem[] = []
+
+    for (const item of filteredItems) {
+      if (item.conversation_id && item.source === 'outlook') {
+        const existing = convMap.get(item.conversation_id)
+        if (existing) existing.push(item)
+        else convMap.set(item.conversation_id, [item])
+      } else {
+        ungrouped.push(item)
+      }
+    }
+
+    const result: ConversationGroup[] = []
+
+    for (const [convId, convItems] of convMap) {
+      // Sort by urgency then recency — most urgent/recent first
+      convItems.sort((a, b) => {
+        const ud = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2)
+        if (ud !== 0) return ud
+        return b.days_waiting - a.days_waiting
+      })
+      result.push({ key: convId, primary: convItems[0], items: convItems })
+    }
+
+    for (const item of ungrouped) {
+      result.push({ key: item.id, primary: item, items: [item] })
+    }
+
+    // Sort groups by primary item urgency then days waiting
+    result.sort((a, b) => {
+      const ua = urgencyOrder[a.primary.urgency] ?? 2
+      const ub = urgencyOrder[b.primary.urgency] ?? 2
+      if (ua !== ub) return ua - ub
+      return b.primary.days_waiting - a.primary.days_waiting
+    })
+
+    return result
+  })()
 
   const criticalCount = items.filter(i => i.urgency === 'critical' || i.urgency === 'high').length
   const avgWait = items.length > 0 ? Math.round(items.reduce((s, i) => s + i.days_waiting, 0) / items.length) : 0
@@ -186,8 +247,8 @@ export default function WaitingRoomPage() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{items.length}</p>
-            <p className="text-xs text-gray-500">waiting</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{groups.length}</p>
+            <p className="text-xs text-gray-500">{groups.length !== items.length ? `threads (${items.length} msgs)` : 'waiting'}</p>
           </div>
           {criticalCount > 0 && (
             <>
@@ -238,7 +299,7 @@ export default function WaitingRoomPage() {
       </div>
 
       {/* Empty state */}
-      {filteredItems.length === 0 && (
+      {groups.length === 0 && (
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-8 text-center">
           <Hourglass className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
@@ -252,107 +313,170 @@ export default function WaitingRoomPage() {
         </div>
       )}
 
-      {/* Waiting items */}
+      {/* Waiting items — grouped by conversation */}
       <div className="space-y-3">
-        {filteredItems.map(item => {
+        {groups.map(group => {
+          const item = group.primary
+          const isGrouped = group.items.length > 1
+          const isExpanded = expandedGroups.has(group.key)
           const urg = urgencyConfig[item.urgency] || urgencyConfig.medium
           const catLabel = categoryLabels[item.category] || 'Message sent'
           const recipientDisplay = item.to_name || item.to_recipients.split(',')[0].trim()
           const daysText = item.days_waiting === 0 ? 'Today' : item.days_waiting === 1 ? '1 day' : `${item.days_waiting} days`
+          // For grouped items, show the subject from the conversation (strip Re:/Fw: prefixes for cleaner display)
+          const threadSubject = item.subject?.replace(/^(re:\s*|fw:\s*|fwd:\s*)+/i, '').trim() || null
 
           return (
-            <div key={item.id} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${urg.border} rounded-xl p-5 transition hover:shadow-md`}>
-              {/* Top row: badges + dismiss */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${urg.bg} ${urg.color}`}>
-                    {urg.label.toUpperCase()}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                    {catLabel}
-                  </span>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    item.source === 'slack' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
-                  }`}>
-                    {item.source === 'slack' ? <MessageSquare className="w-3 h-3 inline mr-0.5" /> : <Mail className="w-3 h-3 inline mr-0.5" />}
-                    {item.source === 'slack' ? 'SLACK' : 'EMAIL'}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs text-gray-400">
-                    <Clock className="w-3 h-3" />
-                    {daysText} waiting
-                  </span>
+            <div key={group.key} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${urg.border} rounded-xl transition hover:shadow-md`}>
+              <div className="p-5">
+                {/* Top row: badges + group indicator + dismiss */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${urg.bg} ${urg.color}`}>
+                      {urg.label.toUpperCase()}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                      {catLabel}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      item.source === 'slack' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400'
+                    }`}>
+                      {item.source === 'slack' ? <MessageSquare className="w-3 h-3 inline mr-0.5" /> : <Mail className="w-3 h-3 inline mr-0.5" />}
+                      {item.source === 'slack' ? 'SLACK' : 'EMAIL'}
+                    </span>
+                    {isGrouped && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                        <Layers className="w-3 h-3" />
+                        {group.items.length} messages
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <Clock className="w-3 h-3" />
+                      {daysText} waiting
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {isGrouped && (
+                      <button
+                        onClick={() => toggleGroup(group.key)}
+                        className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded"
+                        title={isExpanded ? 'Collapse thread' : 'Expand thread'}
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        for (const gi of group.items) updateStatus(gi.id, 'dismissed')
+                      }}
+                      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded"
+                      title={isGrouped ? 'Dismiss entire thread' : 'Dismiss'}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => updateStatus(item.id, 'dismissed')}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded"
-                  title="Dismiss"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              {/* Recipient + subject */}
-              <div className="mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">
-                    To: {recipientDisplay}
-                  </span>
-                  {item.to_recipients.includes(',') && (
-                    <span className="text-xs text-gray-400">+{item.to_recipients.split(',').length - 1} more</span>
+                {/* Recipient + subject */}
+                <div className="mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">
+                      To: {recipientDisplay}
+                    </span>
+                    {item.to_recipients.includes(',') && (
+                      <span className="text-xs text-gray-400">+{item.to_recipients.split(',').length - 1} more</span>
+                    )}
+                  </div>
+                  {threadSubject && (
+                    <p className="text-sm text-gray-700 dark:text-gray-300 font-medium mt-0.5">{isGrouped ? threadSubject : item.subject}</p>
                   )}
                 </div>
-                {item.subject && (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 font-medium mt-0.5">{item.subject}</p>
+
+                {/* Wait reason */}
+                <div className="flex items-center gap-1.5 mb-3">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                  <span className="text-sm text-amber-700 dark:text-amber-400 font-medium">
+                    {item.wait_reason} — sent {formatDate(item.sent_at)}
+                    {item.channel_name && <span className="text-gray-400 font-normal"> in #{item.channel_name}</span>}
+                  </span>
+                </div>
+
+                {/* Preview */}
+                {item.body_preview && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 line-clamp-2 leading-relaxed">
+                    {item.body_preview}
+                  </p>
                 )}
-              </div>
 
-              {/* Wait reason */}
-              <div className="flex items-center gap-1.5 mb-3">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                <span className="text-sm text-amber-700 dark:text-amber-400 font-medium">
-                  {item.wait_reason} — sent {formatDate(item.sent_at)}
-                  {item.channel_name && <span className="text-gray-400 font-normal"> in #{item.channel_name}</span>}
-                </span>
-              </div>
-
-              {/* Preview */}
-              {item.body_preview && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 line-clamp-2 leading-relaxed">
-                  {item.body_preview}
-                </p>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => sendNudge(item)}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition hover:opacity-90"
-                  style={{
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
-                    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)',
-                  }}
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Send a Nudge
-                </button>
-                <button
-                  onClick={() => updateStatus(item.id, 'replied')}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                >
-                  Already replied
-                </button>
-                {item.permalink && (
-                  <a
-                    href={item.permalink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition"
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => sendNudge(item)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white rounded-lg transition hover:opacity-90"
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+                      boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)',
+                    }}
                   >
-                    <ExternalLink className="w-3 h-3" />
-                    Open original
-                  </a>
-                )}
+                    <Send className="w-3.5 h-3.5" />
+                    Send a Nudge
+                  </button>
+                  <button
+                    onClick={() => {
+                      for (const gi of group.items) updateStatus(gi.id, 'replied')
+                    }}
+                    className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                  >
+                    Already replied
+                  </button>
+                  {item.permalink && (
+                    <a
+                      href={item.permalink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Open original
+                    </a>
+                  )}
+                </div>
               </div>
+
+              {/* Expanded: show other messages in this conversation thread */}
+              {isGrouped && isExpanded && (
+                <div className="border-t border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/30 rounded-b-xl">
+                  {group.items.slice(1).map(sub => {
+                    const subUrg = urgencyConfig[sub.urgency] || urgencyConfig.medium
+                    const subCat = categoryLabels[sub.category] || 'Message sent'
+                    return (
+                      <div key={sub.id} className="px-5 py-3 border-b last:border-b-0 border-gray-100 dark:border-gray-700/30">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${subUrg.bg} ${subUrg.color}`}>
+                              {subUrg.label.toUpperCase()}
+                            </span>
+                            <span className="text-[10px] text-gray-400">{subCat}</span>
+                            <span className="text-[10px] text-gray-400">sent {formatDate(sub.sent_at)}</span>
+                          </div>
+                          <button
+                            onClick={() => updateStatus(sub.id, 'dismissed')}
+                            className="p-0.5 text-gray-300 hover:text-gray-500 transition rounded"
+                            title="Dismiss this message"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {sub.body_preview && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                            {sub.body_preview}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}
