@@ -227,7 +227,7 @@ OUTBOUND (direction: "outbound") — commitments ${userContext.userName} persona
 INBOUND (direction: "inbound") — specific promises someone ELSE made TO ${userContext.userName}:
 - "I will send you the data by EOD", "I'll get the proposal to you this week"
 - Someone commits to delivering a specific thing that ${userContext.userName} is waiting on
-- Set "promiserName" to the name of the person who made the promise
+- Set "promiserName" to the actual name of the person who made the promise. If you cannot determine their name, OMIT the field entirely — never use placeholders like "Unknown", "<UNKNOWN>", or "Someone"
 
 STRICT EXCLUSIONS — NEVER extract these:
 - Conversations between other people that don't directly involve ${userContext.userName}
@@ -475,7 +475,7 @@ export async function detectCommitmentsBatch(
 Extract TWO types — both require the "direction" field:
 
 OUTBOUND (direction: "outbound") — SPECIFIC commitments ${userContext.userName} personally made with a clear deliverable.
-INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO ${userContext.userName} with a clear deliverable. Set "promiserName" to who made the promise.
+INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO ${userContext.userName} with a clear deliverable. Set "promiserName" to the actual name — if unknown, omit the field entirely (never use "Unknown" or "<UNKNOWN>").
 
 STRICT EXCLUSIONS — return empty array for these:
 - Conversations between other people not involving ${userContext.userName}
