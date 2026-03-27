@@ -176,12 +176,12 @@ export default function CommitmentsPage() {
         const name = profile?.display_name || userData.user.email?.split('@')[0] || ''
         setUserName(name)
 
-        // Fetch commitments for this user only (creator_id = current user)
+        // Fetch commitments where user is creator OR assignee
         const { data } = await supabase
           .from('commitments')
           .select('*')
           .eq('team_id', teamId)
-          .eq('creator_id', userData.user.id)
+          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .order('created_at', { ascending: false })
 
         if (data) setCommitments(data)

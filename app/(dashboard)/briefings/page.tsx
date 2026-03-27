@@ -302,7 +302,7 @@ export default function BriefingsPage() {
         .from('commitments')
         .select('id, title, description, status, source, created_at')
         .eq('team_id', teamId)
-        .eq('creator_id', userData.user.id)
+        .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
         .eq('status', 'open')
 
       const openCommitments: MatchedCommitment[] = (commitments || []).map((c: any) => ({

@@ -225,12 +225,33 @@ export const processSlackMention = inngest.createFunction(
     const stored = await step.run('store-commitments', async () => {
       if (detected.length === 0) return []
 
-      // Use the person who connected Slack as the creator
-      // (since we can't map Slack user IDs to Supabase auth.users)
-      let creatorId = connectedBy
+      // Map the Slack user who tagged @HeyWren to their HeyWren user ID
+      // This ensures commitments appear under the correct user's dashboard
+      let creatorId: string | null = null
 
+      // First: look up the Slack user_id in profiles.slack_user_id
+      if (user_id) {
+        const { data: slackProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('slack_user_id', user_id)
+          .maybeSingle()
+        if (slackProfile) {
+          creatorId = slackProfile.id
+          console.log(`Mapped Slack user ${user_id} → HeyWren user ${creatorId}`)
+        }
+      }
+
+      // Second: fall back to the person who connected Slack
       if (!creatorId) {
-        // Fallback: find the team owner
+        creatorId = connectedBy
+        if (creatorId) {
+          console.log(`Slack user ${user_id} not mapped, falling back to connectedBy: ${creatorId}`)
+        }
+      }
+
+      // Third: fall back to team owner
+      if (!creatorId) {
         const { data: team } = await supabase
           .from('teams')
           .select('owner_id')
@@ -239,7 +260,7 @@ export const processSlackMention = inngest.createFunction(
         creatorId = team?.owner_id || null
       }
 
-      // If we still don't have a creator, find any team member
+      // Last resort: any team member
       if (!creatorId) {
         const { data: member } = await supabase
           .from('team_members')

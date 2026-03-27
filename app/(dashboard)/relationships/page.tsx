@@ -253,7 +253,7 @@ export default function RelationshipsPage() {
             .from('commitments')
             .select('title, status, metadata, created_at')
             .eq('team_id', teamId)
-            .eq('creator_id', userData.user.id),
+            .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`),
         ])
 
         const emailData = emailResult.data || []

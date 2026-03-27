@@ -221,28 +221,14 @@ export default function HandoffPage() {
       // Fetch open commitments where this person is creator or assignee
       let commitments: Commitment[] = []
       if (userId) {
-        const { data: creatorCommitments } = await supabase
+        const { data: fetchedCommitments } = await supabase
           .from('commitments')
           .select('id, title, description, status, source, due_date, creator_id, assignee_id, created_at')
           .eq('team_id', teamId)
-          .eq('creator_id', userId)
+          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
           .in('status', ['pending', 'in_progress', 'overdue'])
 
-        const { data: assigneeCommitments } = await supabase
-          .from('commitments')
-          .select('id, title, description, status, source, due_date, creator_id, assignee_id, created_at')
-          .eq('team_id', teamId)
-          .eq('assignee_id', userId)
-          .in('status', ['pending', 'in_progress', 'overdue'])
-
-        // Deduplicate by id
-        const allCommitments = [...(creatorCommitments || []), ...(assigneeCommitments || [])]
-        const seen = new Set<string>()
-        commitments = allCommitments.filter((c) => {
-          if (seen.has(c.id)) return false
-          seen.add(c.id)
-          return true
-        })
+        commitments = fetchedCommitments || []
       }
 
       handoffList.push({
