@@ -114,6 +114,9 @@ export default function MissedEmailsPage() {
           }, 800)
         }
         toast.success(feedback === 'valid' ? 'Thanks! This helps improve detection.' : 'Got it — this feedback will improve the algorithm.')
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+        toast.error(err.error || 'Failed to submit feedback')
       }
     } catch {
       toast.error('Failed to submit feedback')
