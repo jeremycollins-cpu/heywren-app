@@ -174,7 +174,7 @@ export default function MissedChatsPage() {
   // Clean message text for display (remove Slack user IDs, keep readable)
   function formatMessage(text: string): string {
     return text
-      .replace(/<@[A-Z0-9]+>/g, '@user')
+      .replace(/<@[A-Z0-9]+>/g, '@someone')
       .replace(/<#[A-Z0-9]+\|([^>]+)>/g, '#$1')
       .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, '$2')
       .replace(/<(https?:\/\/[^>]+)>/g, '$1')
