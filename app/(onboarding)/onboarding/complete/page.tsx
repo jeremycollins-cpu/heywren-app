@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, ArrowRight, Search, Brain, Bell, Clock, Sparkles } from 'lucide-react'
+import { CheckCircle2, ArrowRight, Search, Brain, Bell, Clock, Sparkles, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 
 export default function OnboardingCompletePage() {
@@ -11,12 +11,58 @@ export default function OnboardingCompletePage() {
   const [integrations, setIntegrations] = useState<string[]>([])
   const [initializing, setInitializing] = useState(true)
   const [onboardingMarked, setOnboardingMarked] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
+  const [syncProgress, setSyncProgress] = useState({ slackDone: false, outlookDone: false, commitments: 0 })
+  const backfillTriggered = useRef(false)
 
   const supabase = createClient()
 
   useEffect(() => {
     loadOnboardingData()
   }, [supabase])
+
+  const triggerBackfill = async (providers: string[]) => {
+    if (backfillTriggered.current) return
+    backfillTriggered.current = true
+    if (providers.length === 0) return
+
+    setSyncStatus('syncing')
+
+    const results = await Promise.allSettled([
+      providers.includes('slack')
+        ? fetch('/api/integrations/slack/backfill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ daysBack: 30 }),
+          }).then(r => r.json())
+        : Promise.resolve(null),
+      providers.includes('outlook')
+        ? fetch('/api/integrations/outlook/backfill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ daysBack: 30 }),
+          }).then(r => r.json())
+        : Promise.resolve(null),
+    ])
+
+    let totalCommitments = 0
+    const slackResult = results[0]
+    const outlookResult = results[1]
+
+    if (slackResult.status === 'fulfilled' && slackResult.value?.summary) {
+      totalCommitments += slackResult.value.summary.commitments_detected || 0
+      setSyncProgress(prev => ({ ...prev, slackDone: true }))
+    }
+    if (outlookResult.status === 'fulfilled' && outlookResult.value?.summary) {
+      totalCommitments += outlookResult.value.summary.commitments_detected || 0
+      setSyncProgress(prev => ({ ...prev, outlookDone: true }))
+    }
+
+    setSyncProgress(prev => ({ ...prev, commitments: totalCommitments }))
+
+    const anyFailed = results.some(r => r.status === 'rejected')
+    setSyncStatus(anyFailed && totalCommitments === 0 ? 'error' : 'done')
+  }
 
   const loadOnboardingData = async () => {
     try {
@@ -74,8 +120,12 @@ export default function OnboardingCompletePage() {
           .eq('id', authData.user.id)
       }
       setOnboardingMarked(true)
-
       setInitializing(false)
+
+      // Auto-trigger backfill for connected integrations
+      if (providers.length > 0) {
+        triggerBackfill(providers)
+      }
     } catch (err) {
       console.error('Error loading onboarding data:', err)
       setInitializing(false)
@@ -98,6 +148,17 @@ export default function OnboardingCompletePage() {
     return integrations.includes('outlook') ? 'Connected' : 'Not connected'
   }
 
+  const getStepStatus = (step: 'scan' | 'detect' | 'score') => {
+    if (syncStatus === 'idle') return 'pending'
+    if (syncStatus === 'error') return 'error'
+    if (syncStatus === 'done') return 'done'
+    // syncing
+    if (step === 'scan') return syncProgress.slackDone || syncProgress.outlookDone ? 'done' : 'active'
+    if (step === 'detect') return syncProgress.commitments > 0 ? 'done' : (syncProgress.slackDone || syncProgress.outlookDone ? 'active' : 'pending')
+    if (step === 'score') return syncStatus === 'done' ? 'done' : 'pending'
+    return 'pending'
+  }
+
   return (
     <div className="space-y-8">
       {/* Celebration Icon */}
@@ -114,66 +175,95 @@ export default function OnboardingCompletePage() {
         <div className="space-y-2">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">You&apos;re all set!</h2>
           <p className="text-lg text-gray-600">
-            Wren is now working in the background to find your commitments.
+            {syncStatus === 'done'
+              ? `Wren found ${syncProgress.commitments} commitment${syncProgress.commitments !== 1 ? 's' : ''} in your messages.`
+              : syncStatus === 'syncing'
+              ? 'Wren is scanning your messages now...'
+              : 'Wren is getting ready to scan your messages.'}
           </p>
         </div>
       </div>
 
-      {/* What Wren is Doing Right Now */}
+      {/* Real Progress Steps */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-indigo-600" aria-hidden="true" />
-          <h3 className="font-semibold text-gray-900">What Wren is doing right now</h3>
+          <h3 className="font-semibold text-gray-900">
+            {syncStatus === 'done' ? 'Initial scan complete' : 'Processing your messages'}
+          </h3>
         </div>
         <div className="space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-              <Search className="w-4 h-4 text-indigo-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">Scanning your recent messages</p>
-              <p className="text-xs text-gray-500">Looking through Slack conversations and emails for commitments</p>
-            </div>
-            <div className="flex-shrink-0">
-              <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-              <Brain className="w-4 h-4 text-violet-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">Building your profile</p>
-              <p className="text-xs text-gray-500">Learning your communication patterns and commitments style</p>
-            </div>
-            <div className="flex-shrink-0">
-              <div className="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-              <Bell className="w-4 h-4 text-amber-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">Setting up smart alerts</p>
-              <p className="text-xs text-gray-500">Configuring nudges so you never miss a follow-up</p>
-            </div>
-            <div className="flex-shrink-0">
-              <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          </div>
+          {[
+            { key: 'scan' as const, icon: Search, color: 'indigo', label: 'Scanning your recent messages', desc: 'Reading through Slack conversations and emails' },
+            { key: 'detect' as const, icon: Brain, color: 'violet', label: 'Detecting commitments', desc: syncProgress.commitments > 0 ? `Found ${syncProgress.commitments} commitments so far` : 'Using AI to find commitments and follow-ups' },
+            { key: 'score' as const, icon: Bell, color: 'amber', label: 'Setting up smart alerts', desc: 'Configuring nudges so you never miss a follow-up' },
+          ].map(({ key, icon: Icon, color, label, desc }) => {
+            const status = getStepStatus(key)
+            return (
+              <div key={key} className="flex items-start gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  status === 'done' ? 'bg-green-50' : `bg-${color}-50`
+                }`}>
+                  {status === 'done'
+                    ? <CheckCircle2 className="w-4 h-4 text-green-600" aria-hidden="true" />
+                    : <Icon className={`w-4 h-4 text-${color}-600`} aria-hidden="true" />}
+                </div>
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${status === 'done' ? 'text-green-700' : 'text-gray-900'}`}>{label}</p>
+                  <p className="text-xs text-gray-500">{desc}</p>
+                </div>
+                <div className="flex-shrink-0">
+                  {status === 'active' && <div className={`w-5 h-5 border-2 border-${color}-600 border-t-transparent rounded-full animate-spin`} />}
+                  {status === 'done' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                  {status === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* Timeline */}
-      <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 rounded-xl p-5">
+      {/* Status Message */}
+      <div className={`border rounded-xl p-5 ${
+        syncStatus === 'done'
+          ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+          : syncStatus === 'error'
+          ? 'bg-gradient-to-r from-red-50 to-orange-50 border-red-200'
+          : 'bg-gradient-to-r from-indigo-50 to-violet-50 border-indigo-200'
+      }`}>
         <div className="flex items-center gap-3">
-          <Clock className="w-5 h-5 text-indigo-600 flex-shrink-0" aria-hidden="true" />
+          <Clock className={`w-5 h-5 flex-shrink-0 ${
+            syncStatus === 'done' ? 'text-green-600' : syncStatus === 'error' ? 'text-red-600' : 'text-indigo-600'
+          }`} aria-hidden="true" />
           <div>
-            <p className="font-semibold text-indigo-900">Within the next hour, Wren will surface your first commitments</p>
-            <p className="text-sm text-indigo-700 mt-1">
-              Head to your dashboard now — results will appear as Wren processes your messages. The more integrations you connect, the more complete your picture will be.
-            </p>
+            {syncStatus === 'done' ? (
+              <>
+                <p className="font-semibold text-green-900">
+                  {syncProgress.commitments > 0
+                    ? 'Your dashboard is ready!'
+                    : 'Initial scan complete — more results will appear as Wren processes additional messages.'}
+                </p>
+                <p className="text-sm text-green-700 mt-1">
+                  {syncProgress.commitments > 0
+                    ? 'Head to your dashboard to see your commitments, follow-ups, and action items.'
+                    : 'Click "Sync History" on the Data Sync page for a deeper scan, or wait for results to appear over the next hour.'}
+                </p>
+              </>
+            ) : syncStatus === 'error' ? (
+              <>
+                <p className="font-semibold text-red-900">Something went wrong during the initial scan</p>
+                <p className="text-sm text-red-700 mt-1">
+                  Don&apos;t worry — head to your dashboard and use the Data Sync page to retry.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-indigo-900">Wren is processing your messages now</p>
+                <p className="text-sm text-indigo-700 mt-1">
+                  This typically takes 2-5 minutes. You can go to your dashboard now — results will appear automatically.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>
