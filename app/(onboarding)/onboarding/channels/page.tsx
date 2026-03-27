@@ -81,6 +81,7 @@ export default function ChannelsSetupPage() {
             .from('integrations')
             .select('id, provider')
             .eq('team_id', profile.current_team_id)
+            .eq('user_id', authData.user.id)
           integrations = intData || []
         }
       }

@@ -255,6 +255,7 @@ function IntegrationsContent() {
             .from('integrations')
             .select('id, provider, config')
             .eq('team_id', teamId)
+            .eq('user_id', userData.user.id)
           setIntegrations(intData || [])
         }
       } catch (err) {

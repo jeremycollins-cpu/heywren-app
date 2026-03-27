@@ -177,6 +177,7 @@ function IntegrationsSetupContent() {
             .from('integrations')
             .select('id, provider')
             .eq('team_id', profile.current_team_id)
+            .eq('user_id', authData.user.id)
           fetched = (intData || []).map((i: any) => ({ id: i.id, provider: i.provider }))
         }
       }
