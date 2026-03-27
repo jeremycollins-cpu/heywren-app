@@ -67,7 +67,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('current_team_id')
+        .select('current_team_id, slack_user_id')
         .eq('id', userData.user.id)
         .single()
 
@@ -87,12 +87,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .order('created_at', { ascending: false })
           .limit(200),
-        supabase
-          .from('slack_messages')
-          .select('*')
-          .eq('team_id', teamId)
-          .order('created_at', { ascending: false })
-          .limit(10),
+        profile.slack_user_id
+          ? supabase
+              .from('slack_messages')
+              .select('*')
+              .eq('team_id', teamId)
+              .eq('user_id', profile.slack_user_id)
+              .order('created_at', { ascending: false })
+              .limit(10)
+          : Promise.resolve({ data: [], error: null }),
         // Use server-side API for integrations (bypasses RLS)
         fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] }),
       ])
