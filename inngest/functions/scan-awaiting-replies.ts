@@ -10,6 +10,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { detectCommitmentsBatch, type UserContext } from '@/lib/ai/detect-commitments'
 
 const MAX_SENT_PER_RUN = 500
 const TIME_BUDGET_MS = 240000 // 4 minutes
@@ -518,12 +519,126 @@ export async function scanTeamAwaitingReplies(
     console.error('Slack awaiting scan error:', (slackErr as Error).message)
   }
 
+  // ── AI-based Inbound Commitment Detection ──
+  // Scan OTHER people's Slack messages for promises made TO the user
+  // (e.g. "I will report back", "I'll reach out and let you know")
+  let inboundDetected = 0
+  try {
+    const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
+
+    // Get user profile for AI context
+    const { data: userProfile2 } = await supabase
+      .from('profiles')
+      .select('full_name, slack_user_id')
+      .eq('id', userId)
+      .single()
+
+    if (userProfile2?.full_name) {
+      const userContext: UserContext = {
+        userName: userProfile2.full_name,
+        slackUserId: userProfile2.slack_user_id || null,
+      }
+
+      const userSlackId = userProfile2.slack_user_id
+
+      // Get messages from OTHER people (not the user) that haven't been
+      // checked for inbound commitments yet
+      const { data: otherMessages } = await supabase
+        .from('slack_messages')
+        .select('id, channel_id, user_id, message_text, message_ts, created_at')
+        .eq('team_id', teamId)
+        .gte('created_at', scanWindow)
+        .neq('user_id', userSlackId || '__none__')
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      if (otherMessages && otherMessages.length > 0) {
+        // Filter to messages with commitment-like language
+        const candidates = otherMessages.filter(m => {
+          const text = (m.message_text || '').toLowerCase()
+          return text.length >= 15 && (
+            /\bi('ll|'ll| will)\b/.test(text) ||
+            /\blet me\b/.test(text) ||
+            /\bi('m going to|'m going to)\b/.test(text) ||
+            /\bget back to\b/.test(text) ||
+            /\breport back\b/.test(text) ||
+            /\bfollow[- ]?up\b/.test(text) ||
+            /\breach out\b/.test(text) ||
+            /\bwill (send|check|look|get|do|handle|take care)\b/.test(text)
+          )
+        })
+
+        if (candidates.length > 0) {
+          // Get existing awaiting_replies to avoid duplicates
+          const { data: existingAR } = await supabase
+            .from('awaiting_replies')
+            .select('source_message_id')
+            .eq('team_id', teamId)
+            .eq('source', 'slack')
+
+          const existingIds = new Set((existingAR || []).map(e => e.source_message_id))
+          const newCandidates = candidates.filter(m => !existingIds.has(m.message_ts))
+
+          if (newCandidates.length > 0) {
+            // Batch AI detection (up to 15 at a time)
+            const batch = newCandidates.slice(0, 15).map(m => ({
+              id: m.message_ts,
+              text: m.message_text,
+            }))
+
+            const batchResults = await detectCommitmentsBatch(batch, userContext)
+
+            for (const msg of newCandidates.slice(0, 15)) {
+              const commitments = batchResults.get(msg.message_ts) || []
+              const inbound = commitments.filter(c => c.direction === 'inbound')
+
+              for (const commitment of inbound) {
+                const permalink = msg.channel_id && msg.message_ts
+                  ? `https://slack.com/archives/${msg.channel_id}/p${msg.message_ts.replace('.', '')}`
+                  : null
+                const daysSince = Math.floor((Date.now() - new Date(msg.created_at).getTime()) / 86400000)
+
+                const { error: insertErr } = await supabase
+                  .from('awaiting_replies')
+                  .upsert({
+                    team_id: teamId,
+                    user_id: userId,
+                    source: 'slack',
+                    source_message_id: msg.message_ts,
+                    permalink,
+                    channel_id: msg.channel_id,
+                    to_recipients: commitment.promiserName || 'Unknown',
+                    to_name: commitment.promiserName || 'Someone',
+                    subject: commitment.title,
+                    body_preview: (commitment.originalQuote || commitment.description || '').slice(0, 500),
+                    sent_at: msg.created_at,
+                    urgency: daysSince > 7 ? 'critical' : daysSince > 3 ? 'high' : 'medium',
+                    category: 'follow_up',
+                    wait_reason: commitment.promiserName
+                      ? `${commitment.promiserName} promised: ${commitment.title}`
+                      : `Someone promised: ${commitment.title}`,
+                    days_waiting: daysSince,
+                    status: 'waiting',
+                  }, { onConflict: 'team_id,source_message_id' })
+
+                if (!insertErr) inboundDetected++
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (inboundErr) {
+    console.error('Inbound commitment scan error:', (inboundErr as Error).message)
+  }
+
   return {
     success: true,
     teamId,
     scanned: totalScanned,
-    awaiting: totalAwaiting + slackAwaiting,
+    awaiting: totalAwaiting + slackAwaiting + inboundDetected,
     slackAwaiting,
+    inboundDetected,
     duration: Date.now() - startTime,
   }
 }
