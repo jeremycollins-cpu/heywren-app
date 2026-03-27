@@ -7,6 +7,7 @@ import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 import { detectCompletions } from '@/lib/ai/detect-completion'
+import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
 
 function getAdminClient() {
   return createClient(
@@ -32,7 +33,7 @@ export const processSlackMessage = inngest.createFunction(
     const integration = await step.run('lookup-team', async () => {
       const { data, error } = await supabase
         .from('integrations')
-        .select('team_id, config')
+        .select('team_id, config, access_token')
         .eq('provider', 'slack')
         .filter('config->>slack_team_id', 'eq', slackTeamId)
         .single()
@@ -143,6 +144,60 @@ export const processSlackMessage = inngest.createFunction(
       return { success: false, error: 'No creator_id available' }
     }
 
+    // ── Score relevance to the user ──
+    // Prevents noisy commitments from large channels where the user isn't involved
+    const relevance = await step.run('score-relevance', async () => {
+      // Get the creator's Slack identity
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('slack_user_id')
+        .eq('id', creatorId)
+        .single()
+
+      const targetSlackId = profile?.slack_user_id || null
+
+      // Get channel member count from Slack API
+      let channelMemberCount: number | undefined
+      const botToken = integration.access_token
+      if (botToken) {
+        try {
+          const res = await fetch(`https://slack.com/api/conversations.info?channel=${event.data.channel_id}`, {
+            headers: { 'Authorization': `Bearer ${botToken}` },
+          })
+          const info = await res.json()
+          if (info.ok && info.channel?.num_members != null) {
+            channelMemberCount = info.channel.num_members
+          }
+        } catch {
+          // Non-fatal — score without channel size data
+        }
+      }
+
+      return scoreRelevance({
+        messageAuthorSlackId: slackUserId,
+        channelId: event.data.channel_id,
+        messageText: event.data.text,
+        targetUserSlackId: targetSlackId,
+        channelMemberCount,
+        isThread: !!event.data.thread_ts,
+      })
+    })
+
+    // Gate: skip commitment creation for low-relevance messages
+    if (relevance.score < RELEVANCE_THRESHOLD) {
+      await step.run('mark-low-relevance', async () => {
+        await supabase
+          .from('slack_messages')
+          .update({ processed: true, commitments_found: 0 })
+          .eq('id', messageData.id)
+      })
+      return {
+        success: true,
+        commitments: 0,
+        reason: `Below relevance threshold (${relevance.score.toFixed(2)}): ${relevance.reason}`,
+      }
+    }
+
     // ── Build Slack permalink for deep linking ──
     // Format: https://slack.com/archives/{channel_id}/p{ts_without_dot}
     const channelId = event.data.channel_id
@@ -161,6 +216,8 @@ export const processSlackMessage = inngest.createFunction(
           if (commitment.commitmentType) metadata.commitmentType = commitment.commitmentType
           if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
           if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
+          metadata.relevanceScore = relevance.score
+          metadata.relevanceReason = relevance.reason
 
           const { data, error } = await supabase
             .from('commitments')
