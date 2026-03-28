@@ -11,7 +11,7 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('current_team_id')
+    .select('current_team_id, email, slack_user_id')
     .eq('id', user.id)
     .single()
 
@@ -20,25 +20,34 @@ export async function GET() {
   }
 
   const teamId = profile.current_team_id
+  const userEmail = profile.email?.toLowerCase() || ''
+  const slackUserId = profile.slack_user_id
 
-  // Query the most recent activity timestamp across data sources
+  // Query the most recent activity timestamp across data sources, scoped to this user
   const [slackResult, outlookResult, commitmentsResult] = await Promise.all([
-    supabase
-      .from('slack_messages')
-      .select('created_at')
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: false })
-      .limit(1),
-    supabase
-      .from('outlook_messages')
-      .select('created_at')
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: false })
-      .limit(1),
+    slackUserId
+      ? supabase
+          .from('slack_messages')
+          .select('created_at')
+          .eq('team_id', teamId)
+          .eq('user_id', slackUserId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: null }),
+    userEmail
+      ? supabase
+          .from('outlook_messages')
+          .select('created_at')
+          .eq('team_id', teamId)
+          .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: null }),
     supabase
       .from('commitments')
       .select('updated_at')
       .eq('team_id', teamId)
+      .or(`creator_id.eq.${user.id},assignee_id.eq.${user.id}`)
       .order('updated_at', { ascending: false })
       .limit(1),
   ])

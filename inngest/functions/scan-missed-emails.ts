@@ -32,6 +32,7 @@ async function scanTeamMissedEmails(
     .from('missed_email_feedback')
     .select('from_email, from_domain, feedback')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('feedback', 'invalid')
 
   const domainCounts: Record<string, number> = {}

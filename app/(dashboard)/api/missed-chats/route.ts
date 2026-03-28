@@ -83,11 +83,12 @@ export async function GET() {
 
   let totalEvaluated = 0
   if (slackUserId) {
-    // Count DMs/group DMs (D* and G* channels) sent to the user
+    // Count DMs/group DMs (D* and G* channels) involving the user
     const { count: dmCount } = await adminDb
       .from('slack_messages')
       .select('id', { count: 'exact', head: true })
       .eq('team_id', profile.current_team_id)
+      .eq('user_id', slackUserId)
       .or('channel_id.like.D%,channel_id.like.G%')
 
     // Count channel messages where the user sent or was mentioned

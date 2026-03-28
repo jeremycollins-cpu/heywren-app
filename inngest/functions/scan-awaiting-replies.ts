@@ -366,6 +366,7 @@ export async function scanTeamAwaitingReplies(
     .from('awaiting_replies')
     .select('id, conversation_id')
     .eq('team_id', teamId)
+    .eq('user_id', tokenOwnerUserId)
     .eq('status', 'waiting')
     .not('conversation_id', 'is', null)
 
@@ -527,6 +528,7 @@ export async function scanTeamAwaitingReplies(
             .from('awaiting_replies')
             .select('source_message_id')
             .eq('team_id', teamId)
+            .eq('user_id', userId)
             .eq('source', 'slack')
 
           const existingSlackIds = new Set((existingSlack || []).map(e => e.source_message_id))

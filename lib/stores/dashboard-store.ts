@@ -28,6 +28,7 @@ interface DashboardState {
   commitments: Commitment[]
   mentions: SlackMention[]
   integrationCount: number
+  teamId: string | null
   loading: boolean
   error: string | null
 
@@ -48,6 +49,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   commitments: [],
   mentions: [],
   integrationCount: 0,
+  teamId: null,
   loading: true,
   error: null,
 
@@ -107,6 +109,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         commitments: commitResult.data || [],
         mentions: mentionResult.data || [],
         integrationCount: intStatusRes.integrations?.length || 0,
+        teamId,
         loading: false,
       })
     } catch (err) {

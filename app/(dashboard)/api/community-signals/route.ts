@@ -24,11 +24,23 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type')
   const sort = searchParams.get('sort') || 'votes'
 
+  // Get user's team for scoping
   const admin = getAdminClient()
+
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('current_team_id')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.current_team_id) {
+    return NextResponse.json({ error: 'No team found' }, { status: 400 })
+  }
 
   let query = admin
     .from('community_signals')
     .select('*')
+    .eq('team_id', profile.current_team_id)
 
   if (status) {
     query = query.eq('validation_status', status)
@@ -61,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   const votedIds = new Set((userVotes || []).map(v => v.signal_id))
 
-  const enriched = (signals || []).map(s => ({
+  const enriched = (signals || []).map(({ author_name, user_id, team_id, ...s }) => ({
     ...s,
     user_has_voted: votedIds.has(s.id),
   }))

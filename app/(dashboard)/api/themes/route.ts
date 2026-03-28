@@ -80,15 +80,17 @@ export async function GET(request: NextRequest) {
           .order('created_at', { ascending: false })
           .limit(80)
       ),
-      safeQuery(() =>
-        admin.from('outlook_messages')
-          .select('subject, from_name, from_email, to_recipients, received_at')
-          .eq('team_id', teamId)
-          .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
-          .gte('received_at', thirtyDaysAgo)
-          .order('received_at', { ascending: false })
-          .limit(100)
-      ),
+      userEmail
+        ? safeQuery(() =>
+            admin.from('outlook_messages')
+              .select('subject, from_name, from_email, to_recipients, received_at')
+              .eq('team_id', teamId)
+              .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+              .gte('received_at', thirtyDaysAgo)
+              .order('received_at', { ascending: false })
+              .limit(100)
+          )
+        : Promise.resolve([]),
       safeQuery(() =>
         admin.from('outlook_calendar_events')
           .select('subject, organizer_email, start_time, attendees')
@@ -110,8 +112,17 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
     ])
 
+    // Filter calendar events to only those involving this user
+    const userCalendarData = userEmail
+      ? calendarData.filter(evt => {
+          if ((evt.organizer_email || '').toLowerCase() === userEmail) return true
+          const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
+          return attendeesStr.includes(userEmail)
+        })
+      : []
+
     // If there's not enough data, return empty
-    if (commitmentData.length + emailData.length + calendarData.length + slackData.length < 5) {
+    if (commitmentData.length + emailData.length + userCalendarData.length + slackData.length < 5) {
       return NextResponse.json({
         themes: [],
         headline: '',
@@ -144,7 +155,7 @@ export async function GET(request: NextRequest) {
         to_recipients: e.to_recipients || '',
         received_at: e.received_at,
       })),
-      calendarEvents: calendarData.map(e => ({
+      calendarEvents: userCalendarData.map(e => ({
         subject: e.subject || '(no subject)',
         organizer_email: e.organizer_email || '',
         start_time: e.start_time,

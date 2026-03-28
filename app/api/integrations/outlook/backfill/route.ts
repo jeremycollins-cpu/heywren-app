@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 
 // Process max 300 messages per request to stay within 300s timeout
@@ -158,16 +159,20 @@ export async function POST(request: NextRequest) {
   const supabase = getAdminClient()
   const startTime = Date.now()
 
-  let userId: string
+  // Verify the caller is authenticated
+  const sessionClient = await createSessionClient()
+  const { data: sessionUser } = await sessionClient.auth.getUser()
+  if (!sessionUser?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Use the authenticated user's ID, not the one from the request body
+  let userId: string = sessionUser.user.id
   let daysBack: number = 30
 
   try {
     const body = await request.json()
-    userId = body.userId
     daysBack = body.daysBack || 30
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
-    }
   } catch (e) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
