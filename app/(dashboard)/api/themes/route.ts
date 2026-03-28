@@ -27,22 +27,42 @@ export async function GET(request: NextRequest) {
       .eq('id', userId)
       .single()
 
-    if (!profile?.current_team_id) {
+    let teamId = profile?.current_team_id
+
+    // Fallback: look up team from team_members or organization_members
+    if (!teamId) {
+      const { data: membership } = await admin
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+      teamId = membership?.team_id || null
+    }
+    if (!teamId) {
+      const { data: orgMembership } = await admin
+        .from('organization_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+      teamId = orgMembership?.team_id || null
+    }
+
+    if (!teamId) {
       return NextResponse.json({
         themes: [], headline: '', periodLabel: '',
         generatedAt: new Date().toISOString(), insufficient: true,
       })
     }
+    const userEmail = profile?.email?.toLowerCase() || ''
+    const userName = profile?.full_name || profile?.display_name || profile?.email?.split('@')[0] || 'User'
+    const slackUserId = profile?.slack_user_id
 
-    const teamId = profile.current_team_id
-    const userEmail = profile.email?.toLowerCase() || ''
-    const userName = profile.full_name || profile.display_name || profile.email?.split('@')[0] || 'User'
-    const slackUserId = profile.slack_user_id
-
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
 
     // Fetch all data sources in parallel — each wrapped so one failure doesn't kill the others
-    const safeQuery = async <T>(fn: () => Promise<{ data: T[] | null; error: any }>): Promise<T[]> => {
+    const safeQuery = async <T>(fn: () => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> => {
       try {
         const { data, error } = await fn()
         if (error) { console.warn('Themes data query error:', error.message); return [] }
@@ -56,26 +76,26 @@ export async function GET(request: NextRequest) {
           .select('title, status, source, source_ref, created_at, metadata')
           .eq('team_id', teamId)
           .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
-          .gte('created_at', sevenDaysAgo)
+          .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: false })
-          .limit(50)
+          .limit(80)
       ),
       safeQuery(() =>
         admin.from('outlook_messages')
           .select('subject, from_name, from_email, to_recipients, received_at')
           .eq('team_id', teamId)
           .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
-          .gte('received_at', sevenDaysAgo)
+          .gte('received_at', thirtyDaysAgo)
           .order('received_at', { ascending: false })
-          .limit(60)
+          .limit(100)
       ),
       safeQuery(() =>
         admin.from('outlook_calendar_events')
           .select('subject, organizer_email, start_time, attendees')
           .eq('team_id', teamId)
-          .gte('start_time', sevenDaysAgo)
+          .gte('start_time', thirtyDaysAgo)
           .order('start_time', { ascending: false })
-          .limit(40)
+          .limit(60)
       ),
       slackUserId
         ? safeQuery(() =>
@@ -83,9 +103,9 @@ export async function GET(request: NextRequest) {
               .select('channel_id, message_text, created_at')
               .eq('team_id', teamId)
               .eq('user_id', slackUserId)
-              .gte('created_at', sevenDaysAgo)
+              .gte('created_at', thirtyDaysAgo)
               .order('created_at', { ascending: false })
-              .limit(40)
+              .limit(60)
           )
         : Promise.resolve([]),
     ])

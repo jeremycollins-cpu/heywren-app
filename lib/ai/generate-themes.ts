@@ -57,7 +57,7 @@ const themesTool = {
     properties: {
       headline: {
         type: 'string' as const,
-        description: 'A punchy 5-10 word headline summarizing the week overall. Should feel like a newsletter subject line. Example: "Closing deals and building momentum across 3 accounts"',
+        description: 'A punchy 5-10 word headline summarizing the recent work activity. Should feel like a newsletter subject line. Example: "Closing deals and building momentum across 3 accounts"',
       },
       themes: {
         type: 'array' as const,
@@ -113,29 +113,29 @@ const themesTool = {
 
 export async function generateThemes(data: DataSummary): Promise<ThemesResult> {
   const now = new Date()
-  const weekAgo = new Date(now.getTime() - 7 * 86400000)
-  const periodLabel = `${weekAgo.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000)
+  const periodLabel = `${thirtyDaysAgo.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
-  // Build context from data
-  const commitmentSummary = data.commitments.slice(0, 50).map(c =>
+  // Build context from data — keep slices tight to control token cost
+  const commitmentSummary = data.commitments.slice(0, 60).map(c =>
     `- [${c.status}] ${c.title} (${c.source || 'unknown'}, ${new Date(c.created_at).toLocaleDateString()})`
   ).join('\n')
 
-  const emailSummary = data.recentEmails.slice(0, 40).map(e =>
-    `- "${e.subject}" from ${e.from_name} to ${e.to_recipients} (${new Date(e.received_at).toLocaleDateString()})`
+  const emailSummary = data.recentEmails.slice(0, 50).map(e =>
+    `- "${e.subject}" from ${e.from_name} (${new Date(e.received_at).toLocaleDateString()})`
   ).join('\n')
 
-  const calendarSummary = data.calendarEvents.slice(0, 30).map(e =>
+  const calendarSummary = data.calendarEvents.slice(0, 40).map(e =>
     `- "${e.subject}" organized by ${e.organizer_email} with ${e.attendees_count} attendees (${new Date(e.start_time).toLocaleDateString()})`
   ).join('\n')
 
-  const slackSummary = data.slackMessages.slice(0, 30).map(m =>
+  const slackSummary = data.slackMessages.slice(0, 40).map(m =>
     `- #${m.channel_name}: "${m.message_preview}" (${new Date(m.created_at).toLocaleDateString()})`
   ).join('\n')
 
-  const systemPrompt = `You are an executive briefing analyst for ${data.userName}. Your job is to analyze their work activity across email, calendar, Slack, and tracked commitments to identify the major THEMES of their week.
+  const systemPrompt = `You are an executive briefing analyst for ${data.userName}. Your job is to analyze their work activity across email, calendar, Slack, and tracked commitments over the last 30 days to identify the major THEMES of their work.
 
-Think of yourself as a chief of staff preparing a weekly executive summary. The output should:
+Think of yourself as a chief of staff preparing a rolling executive summary. The output should:
 - Make the person feel accomplished and in control
 - Be specific with names, numbers, and outcomes (never vague)
 - Group related activities into coherent narratives
@@ -145,6 +145,7 @@ Think of yourself as a chief of staff preparing a weekly executive summary. The 
 
 Rules:
 - Generate 3-5 themes maximum
+- Look across the full 30-day window to identify patterns — don't just focus on the most recent days
 - Each theme should span multiple data sources when possible
 - Use the person's actual contacts, meeting names, and project names
 - Never fabricate data — only reference what's in the provided activity

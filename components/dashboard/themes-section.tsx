@@ -190,7 +190,7 @@ export function ThemesSection() {
             <Sparkles className="w-4.5 h-4.5 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Your Week at a Glance</h2>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">Analyzing your activity...</p>
           </div>
         </div>
@@ -212,12 +212,12 @@ export function ThemesSection() {
             <Sparkles className="w-4.5 h-4.5 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Your Week at a Glance</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">AI-powered executive summary</p>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Your work patterns, decoded</p>
           </div>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Not enough activity data yet to generate themes. As your emails, meetings, and messages flow in, Wren will surface the patterns that matter most.
+          Not enough activity data yet to surface your signal. As your emails, meetings, and messages flow in, Wren will identify the patterns that matter most.
         </p>
       </section>
     )
@@ -233,7 +233,7 @@ export function ThemesSection() {
               <Sparkles className="w-4.5 h-4.5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Your Week at a Glance</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">{error ? 'Something went wrong' : 'Generating your executive summary...'}</p>
             </div>
           </div>
@@ -269,7 +269,7 @@ export function ThemesSection() {
               <Sparkles className="w-4.5 h-4.5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Your Week at a Glance</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">{data.periodLabel} &middot; {totalDataPoints} data points analyzed</p>
             </div>
           </div>
