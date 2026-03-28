@@ -49,21 +49,26 @@ function isCalendarInviteItem(subject: string | null, bodyPreview: string | null
     if (body.includes('meet.google.com/')) return true
     if (body.includes('meeting id:') && body.includes('passcode:')) return true
 
-    // Meeting-style subjects + any meeting body signal = calendar invite
-    // Catches "Product Leadership Sync", "Jeremy/Leah Weekly", "Team Standup", etc.
-    const meetingSubjectPatterns = [
+    // Strong meeting-name subjects — these are almost always meeting names, not real email subjects.
+    // "Product Leadership Sync", "Jeremy/Leah Weekly", "Team Standup", "Engineering 1:1"
+    // Filter these without requiring body signals.
+    const strongMeetingPatterns = [
       /\bsync\b/i, /\bstandup\b/i, /\bstand-up\b/i, /\b1[:\-]1\b/i, /\bone.on.one\b/i,
       /\bweekly\b/i, /\bbiweekly\b/i, /\bmonthly\b/i, /\bdaily\b/i, /\brecurring\b/i,
-      /\bcheck.in\b/i, /\bcheckin\b/i, /\breview\b/i, /\bretro\b/i, /\bretrospective\b/i,
-      /\bplanning\b/i, /\bgrooming\b/i, /\brefinement\b/i, /\bkickoff\b/i, /\bkick.off\b/i,
       /\bhuddle\b/i, /\bcatch.up\b/i, /\btouchbase\b/i, /\btouch.base\b/i,
+      /\bretro\b/i, /\bretrospective\b/i,
       /\/.*\b(sync|update|meeting|call)\b/i,  // "Name/Name Sync" pattern
     ]
-    const hasMeetingSubject = meetingSubjectPatterns.some(p => p.test(s))
-    if (hasMeetingSubject && signatureCount >= 1) return true
+    if (strongMeetingPatterns.some(p => p.test(s))) return true
 
-    // "When:" pattern combined with meeting subject is a strong signal
-    if (hasMeetingSubject && body.includes('when:')) return true
+    // Weaker meeting-style subjects — need at least one body signal to confirm
+    const weakMeetingPatterns = [
+      /\bcheck.in\b/i, /\bcheckin\b/i, /\breview\b/i,
+      /\bplanning\b/i, /\bgrooming\b/i, /\brefinement\b/i, /\bkickoff\b/i, /\bkick.off\b/i,
+    ]
+    const hasWeakMeetingSubject = weakMeetingPatterns.some(p => p.test(s))
+    if (hasWeakMeetingSubject && signatureCount >= 1) return true
+    if (hasWeakMeetingSubject && body.includes('when:')) return true
   }
 
   return false
