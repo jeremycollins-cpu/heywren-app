@@ -17,6 +17,14 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isCalendarInviteEmail(subject: string): boolean {
+  const s = subject.trim()
+  if (/^(Accepted|Declined|Tentative|Cancell?ed):/i.test(s)) return true
+  const lower = s.toLowerCase()
+  if (lower.includes('out of office') || lower.includes('automatic reply')) return true
+  return false
+}
+
 async function refreshMicrosoftToken(
   supabase: ReturnType<typeof getAdminClient>,
   integrationId: string,
@@ -166,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     for (const msg of unprocessed) {
       const preview = msg.body_preview || ''
-      if (preview.length < 20) {
+      if (preview.length < 20 || isCalendarInviteEmail(msg.subject || '')) {
         await supabase
           .from('outlook_messages')
           .update({ processed: true, commitments_found: 0 })
@@ -363,6 +371,33 @@ export async function POST(request: NextRequest) {
         .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
         .join(', ')
       const subject = email.subject || '(no subject)'
+
+      // Skip calendar invite response emails
+      if (isCalendarInviteEmail(subject)) {
+        if (existing && !existing.processed) {
+          await supabase
+            .from('outlook_messages')
+            .update({ processed: true, commitments_found: 0 })
+            .eq('id', existing.id)
+        } else if (!existing) {
+          await supabase
+            .from('outlook_messages')
+            .insert({
+              team_id: teamId,
+              message_id: email.id,
+              conversation_id: email.conversationId || null,
+              from_name: fromName,
+              from_email: fromEmail,
+              to_recipients: toList,
+              subject: subject,
+              body_preview: preview,
+              received_at: email.receivedDateTime,
+              processed: true,
+              commitments_found: 0,
+            })
+        }
+        continue
+      }
 
       const messageText = [
         'From: ' + fromName + ' <' + fromEmail + '>',
