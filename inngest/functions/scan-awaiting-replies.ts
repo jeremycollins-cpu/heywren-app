@@ -174,6 +174,11 @@ export async function scanTeamAwaitingReplies(
     .single()
   userEmail = userProfile?.email?.toLowerCase() || ''
 
+  let tokenVerified = false
+  let debugRepliedCount = -1
+  let debugInboxCount = -1
+  let debugGraphError = ''
+
   console.log(`Awaiting replies scan: userId=${userId}, teamId=${teamId}, userEmail=${userEmail}, hasIntegration=${!!integration}`)
 
   if (integration) {
@@ -184,8 +189,6 @@ export async function scanTeamAwaitingReplies(
 
   // Verify the token is valid by calling Graph /me, and resolve the mailbox email.
   // Data is always written under the calling userId (not the token owner).
-  // Per-message sender checks below prevent cross-user data leakage.
-  let tokenVerified = false
   try {
     let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
       headers: { Authorization: 'Bearer ' + msToken },
@@ -253,11 +256,13 @@ export async function scanTeamAwaitingReplies(
 
   // Build a map of conversations that have incoming replies
   const repliedConversations = new Set<string>()
+  debugInboxCount = inboxMessages?.length || 0
   for (const msg of inboxMessages || []) {
     if (msg.from_email?.toLowerCase() !== userEmail && msg.conversation_id) {
       repliedConversations.add(msg.conversation_id)
     }
   }
+  debugRepliedCount = repliedConversations.size
 
   while (nextLink && Date.now() - startTime < TIME_BUDGET_MS && totalScanned < MAX_SENT_PER_RUN) {
     const { data: pageData, token: updatedToken } = await graphFetch(
@@ -265,7 +270,10 @@ export async function scanTeamAwaitingReplies(
     )
     msToken = updatedToken
 
-    if (pageData.error) break
+    if (pageData.error) {
+      debugGraphError = JSON.stringify(pageData.error).slice(0, 200)
+      break
+    }
 
     const messages = pageData.value || []
     const toInsert: any[] = []
@@ -817,8 +825,14 @@ export async function scanTeamAwaitingReplies(
     duration: Date.now() - startTime,
     debug: {
       hasIntegration: !!integration,
+      tokenVerified,
       userEmail,
       userId,
+      outlookScanned: totalScanned,
+      outlookAwaiting: totalAwaiting,
+      repliedConversationsCount: debugRepliedCount,
+      inboxMessagesCount: debugInboxCount,
+      graphError: debugGraphError || null,
     },
   }
 }
