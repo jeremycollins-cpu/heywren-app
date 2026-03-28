@@ -75,3 +75,5 @@ export async function POST() {
     generatedAt: new Date().toISOString(),
   })
 }
+
+export const dynamic = 'force-dynamic'

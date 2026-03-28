@@ -53,3 +53,5 @@ export async function GET() {
 
   return NextResponse.json({ lastSync })
 }
+
+export const dynamic = 'force-dynamic'
