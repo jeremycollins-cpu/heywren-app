@@ -145,23 +145,33 @@ function generateTalkingPoints(
 function findMatchingCommitments(
   commitments: MatchedCommitment[],
   attendees: Attendee[],
-  subject: string
+  subject: string,
+  currentUserEmail: string
 ): MatchedCommitment[] {
-  // Build strict match criteria
-  const attendeeFullNames = attendees
+  const currentUserDomain = currentUserEmail.split('@')[1]?.split('.')[0]?.toLowerCase() || ''
+
+  // Exclude the current user from attendee matching — their name appears in
+  // nearly every commitment since they created/are assigned to most of them
+  const otherAttendees = attendees.filter(a =>
+    (a.email || '').toLowerCase() !== currentUserEmail
+  )
+
+  const attendeeFullNames = otherAttendees
     .map(a => (a.name || '').toLowerCase().trim())
     .filter(n => n.length >= 5)
 
-  // Extract external company domains (not the user's own company)
+  // Extract external company domains (not the user's own company or personal email)
+  const personalDomains = new Set(['gmail', 'yahoo', 'outlook', 'hotmail', 'live', 'icloud'])
   const externalCompanies = [...new Set(
-    attendees
+    otherAttendees
       .map(a => {
         const domain = (a.email || '').split('@')[1]?.split('.')[0]
         return domain?.toLowerCase()
       })
       .filter((d): d is string =>
         !!d && d.length >= 4 &&
-        !['gmail', 'yahoo', 'outlook', 'hotmail', 'live', 'icloud', 'routeware'].includes(d)
+        !personalDomains.has(d) &&
+        d !== currentUserDomain
       )
   )]
 
@@ -171,18 +181,23 @@ function findMatchingCommitments(
     'leadership', 'check', 'about', 'their', 'these', 'other', 'which', 'where',
     'there', 'would', 'could', 'should', 'every', 'after', 'before', 'status',
     'planning', 'alignment', 'overview', 'progress', 'session', 'standup',
-    'touchpoint', 'touchbase', 'recurring', 'follow', 'general',
+    'touchpoint', 'touchbase', 'recurring', 'follow', 'general', 'introduce',
+    'introduction', 'schedule', 'scheduling', 'upcoming', 'tomorrow', 'provide',
+    'outreach', 'customer', 'internal', 'external',
   ])
   const subjectTerms = (subject || '').toLowerCase()
     .split(/[\s:+\-–—,/()]+/)
     .filter(w => w.length >= 8 && !STOP_WORDS.has(w))
 
-  return commitments.filter(c => {
-    const titleLower = (c.title || '').toLowerCase()
-    const descLower = (c.description || '').toLowerCase()
-    const combined = titleLower + ' ' + descLower
+  // No match criteria available — nothing useful to match on
+  if (attendeeFullNames.length === 0 && externalCompanies.length === 0 && subjectTerms.length === 0) {
+    return []
+  }
 
-    // 1. Match by attendee FULL name (most reliable)
+  const matched = commitments.filter(c => {
+    const combined = ((c.title || '') + ' ' + (c.description || '')).toLowerCase()
+
+    // 1. Match by OTHER attendee's full name (most reliable)
     for (const fullName of attendeeFullNames) {
       if (combined.includes(fullName)) return true
     }
@@ -199,6 +214,9 @@ function findMatchingCommitments(
 
     return false
   })
+
+  // Cap at 5 to keep the UI clean — most relevant first (newest)
+  return matched.slice(0, 5)
 }
 
 // ── Parse attendees from JSONB ──
@@ -372,7 +390,7 @@ export default function BriefingsPage() {
         })
 
         // Find relevant commitments
-        const matched = findMatchingCommitments(openCommitments, rawAttendees, event.subject || '')
+        const matched = findMatchingCommitments(openCommitments, rawAttendees, event.subject || '', userEmail)
 
         // Generate talking points
         const talkingPoints = generateTalkingPoints(matched, enrichedAttendees, event.subject || '')
