@@ -19,7 +19,7 @@ interface TeamHealth {
 
 interface UserDetail {
   profile: {
-    id: string; email: string; full_name: string; role: string
+    id: string; email: string; full_name: string; display_name: string; role: string
     current_team_id: string; onboarding_completed: boolean
     onboarding_step: string; slack_user_id: string; created_at: string
   }
@@ -34,7 +34,7 @@ interface UserDetail {
 }
 
 interface TeamMember {
-  id: string; email: string; full_name: string; role: string
+  id: string; email: string; full_name: string; display_name: string; role: string
   onboarding_completed: boolean; slack_user_id: string; created_at: string
   teamRole: string; joinedAt: string; integrations: string[]; commitmentCount: number
 }
@@ -229,8 +229,8 @@ function AdminContent() {
                     <div className="flex items-center gap-3">
                       <Users className="w-5 h-5 text-gray-400" />
                       <div>
-                        <p className="font-medium text-gray-900">{member.full_name || member.email}</p>
-                        <p className="text-xs text-gray-500">{member.email} &middot; {member.teamRole}</p>
+                        <p className="font-medium text-gray-900">{member.full_name || member.display_name || member.email || 'Unknown user'}</p>
+                        <p className="text-xs text-gray-500">{member.email || 'No email'} &middot; {member.teamRole}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -265,7 +265,7 @@ function AdminContent() {
           <button onClick={() => { setView('team'); loadTeam(profile.current_team_id) }} className="text-gray-500 hover:text-gray-700">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <PageHeader title={profile.full_name || profile.email} description={profile.email} />
+          <PageHeader title={profile.full_name || profile.display_name || profile.email} description={profile.email} />
         </div>
 
         {loading ? (

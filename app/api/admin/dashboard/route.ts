@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
   if (view === 'user' && userId) {
     const { data: profile } = await adminDb
       .from('profiles')
-      .select('id, email, full_name, role, current_team_id, onboarding_completed, onboarding_step, slack_user_id, created_at')
+      .select('id, email, full_name, display_name, role, current_team_id, onboarding_completed, onboarding_step, slack_user_id, created_at')
       .eq('id', userId)
       .single()
 
@@ -172,26 +172,43 @@ export async function GET(request: NextRequest) {
     const userIds = Array.from(userIdSet)
 
     const userDetails = await Promise.all(userIds.map(async (userId) => {
-      const { data: profile } = await adminDb
-        .from('profiles')
-        .select('id, email, full_name, role, onboarding_completed, slack_user_id, created_at')
-        .eq('id', userId)
-        .single()
+      const [{ data: profile }, { data: integrations }, { count: commitmentCount }] = await Promise.all([
+        adminDb
+          .from('profiles')
+          .select('id, email, full_name, display_name, role, onboarding_completed, slack_user_id, created_at')
+          .eq('id', userId)
+          .single(),
+        adminDb
+          .from('integrations')
+          .select('provider')
+          .eq('team_id', teamId)
+          .eq('user_id', userId),
+        adminDb
+          .from('commitments')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', teamId)
+          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`),
+      ])
 
-      const { data: integrations } = await adminDb
-        .from('integrations')
-        .select('provider')
-        .eq('team_id', teamId)
-        .eq('user_id', userId)
-
-      const { count: commitmentCount } = await adminDb
-        .from('commitments')
-        .select('id', { count: 'exact', head: true })
-        .eq('team_id', teamId)
-        .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+      // If profile has no name, try to get it from auth user metadata
+      let resolvedName = profile?.full_name || profile?.display_name || ''
+      let resolvedEmail = profile?.email || ''
+      if (!resolvedName || !resolvedEmail) {
+        try {
+          const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
+          if (authUser?.user) {
+            if (!resolvedName) resolvedName = authUser.user.user_metadata?.full_name || authUser.user.user_metadata?.name || ''
+            if (!resolvedEmail) resolvedEmail = authUser.user.email || ''
+          }
+        } catch { /* auth lookup failed, use what we have */ }
+      }
 
       return {
         ...profile,
+        id: profile?.id || userId,
+        email: resolvedEmail,
+        full_name: resolvedName,
+        display_name: resolvedName,
         teamRole: roleMap.get(userId) || 'member',
         joinedAt: joinedMap.get(userId) || profile?.created_at,
         integrations: (integrations || []).map(i => i.provider),
