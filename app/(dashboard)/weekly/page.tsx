@@ -150,27 +150,33 @@ export default function WeeklyPage() {
         const intStatusRes = await fetch('/api/integrations/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : { integrations: [] })
         const intData = intStatusRes.integrations || []
 
-        const sevenDaysAgo = new Date()
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-        const { data: rawCalData, error: calError } = await supabase
-          .from('outlook_calendar_events')
-          .select('id, subject, start_time, end_time, organizer_name, attendees, commitments_found, processed')
-          .eq('team_id', teamId)
-          .or(`organizer_email.eq.${email},attendees::text.ilike.%${email}%`)
-          .gte('start_time', sevenDaysAgo.toISOString())
-          .eq('is_cancelled', false)
-          .order('start_time', { ascending: true })
+        // Calendar events — query can fail due to RLS or filter syntax, don't let it block the page
+        let calData: CalendarEvent[] = []
+        try {
+          const sevenDaysAgo = new Date()
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+          const { data: rawCalData, error: calError } = await supabase
+            .from('outlook_calendar_events')
+            .select('id, subject, start_time, end_time, organizer_name, attendees, commitments_found, processed')
+            .eq('team_id', teamId)
+            .gte('start_time', sevenDaysAgo.toISOString())
+            .eq('is_cancelled', false)
+            .order('start_time', { ascending: true })
 
-        if (calError) throw calError
-
-        // Filter to only events involving this user (organizer or attendee)
-        const calData = (rawCalData || []).filter((evt: any) => {
-          const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
-          return attendeesStr.includes(email.toLowerCase())
-        })
+          if (!calError && rawCalData) {
+            // Filter client-side to events involving this user (organizer or attendee)
+            calData = rawCalData.filter((evt: any) => {
+              const fullText = JSON.stringify(evt).toLowerCase()
+              return fullText.includes(email.toLowerCase())
+            })
+          }
+        } catch {
+          // Calendar data is supplementary — continue without it
+          console.warn('Failed to load calendar events for weekly review')
+        }
 
         if (data) setCommitments(data)
-        if (calData) setCalendarEvents(calData)
+        setCalendarEvents(calData)
         if (intData) setIntegrationCount(intData.length)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load weekly review'
@@ -184,7 +190,7 @@ export default function WeeklyPage() {
   }, [])
 
   if (loading) {
-    return <LoadingSkeleton variant="card" />
+    return <LoadingSkeleton variant="dashboard" />
   }
 
   const now = new Date()
