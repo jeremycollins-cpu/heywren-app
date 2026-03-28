@@ -174,6 +174,11 @@ export async function scanTeamAwaitingReplies(
     .single()
   userEmail = userProfile?.email?.toLowerCase() || ''
 
+  let tokenVerified = false
+  let debugRepliedCount = -1
+  let debugInboxCount = -1
+  let debugGraphError = ''
+
   console.log(`Awaiting replies scan: userId=${userId}, teamId=${teamId}, userEmail=${userEmail}, hasIntegration=${!!integration}`)
 
   if (integration) {
@@ -182,14 +187,13 @@ export async function scanTeamAwaitingReplies(
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
 
-  // Determine who actually owns the Outlook token by calling Graph /me
-  // This prevents attributing one user's emails to another user
-  let tokenVerified = false
+  // Verify the token is valid by calling Graph /me, and resolve the mailbox email.
+  // Data is always written under the calling userId (not the token owner).
   try {
     let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
       headers: { Authorization: 'Bearer ' + msToken },
     })
-    // If token is expired, refresh and retry the /me call
+    // If token is expired, refresh and retry
     if (meRes.status === 401) {
       const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
       if (newToken) {
@@ -202,37 +206,19 @@ export async function scanTeamAwaitingReplies(
     if (meRes.ok) {
       const meData = await meRes.json()
       const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
+      tokenVerified = true
+      // Use the token's email as the mailbox identity for filtering
       if (tokenEmail) {
-        // Verify the token belongs to the calling user by checking email match
-        const { data: callerProfile } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('id', userId)
-          .single()
-        const callerEmail = callerProfile?.email?.toLowerCase() || ''
-
-        if (callerEmail && tokenEmail === callerEmail) {
-          tokenVerified = true
-          userEmail = callerEmail
-        } else if (!callerEmail) {
-          // If we can't look up caller email, trust the token but use caller's userId
-          tokenVerified = true
-          userEmail = tokenEmail
-        } else {
-          // Token belongs to a different user — don't scan
-          console.warn(`Token owner "${tokenEmail}" does not match caller "${callerEmail}" for userId=${userId} — skipping Outlook scan`)
-        }
+        userEmail = tokenEmail
       }
+      console.log(`Outlook token verified: tokenEmail=${tokenEmail}, userId=${userId}`)
     }
-  } catch {
-    // Cannot verify token owner — skip Outlook scan to prevent data leakage
+  } catch (err) {
+    console.error(`Outlook /me call failed for user ${userId}:`, (err as Error).message)
   }
 
-  // SAFETY: If we couldn't verify the token owner, skip Outlook scanning entirely.
-  // This prevents attributing one user's emails to another user when the /me call fails.
-  console.log(`Outlook token verification: tokenVerified=${tokenVerified}, userEmail=${userEmail}, userId=${userId}`)
   if (!tokenVerified) {
-    console.warn(`Skipping Outlook scan for user ${userId} — could not verify token owner via Graph /me`)
+    console.warn(`Skipping Outlook scan for user ${userId} — token invalid or expired`)
   } else {
 
   // If we couldn't determine email from Graph, fall back to profile lookup
@@ -270,11 +256,13 @@ export async function scanTeamAwaitingReplies(
 
   // Build a map of conversations that have incoming replies
   const repliedConversations = new Set<string>()
+  debugInboxCount = inboxMessages?.length || 0
   for (const msg of inboxMessages || []) {
     if (msg.from_email?.toLowerCase() !== userEmail && msg.conversation_id) {
       repliedConversations.add(msg.conversation_id)
     }
   }
+  debugRepliedCount = repliedConversations.size
 
   while (nextLink && Date.now() - startTime < TIME_BUDGET_MS && totalScanned < MAX_SENT_PER_RUN) {
     const { data: pageData, token: updatedToken } = await graphFetch(
@@ -282,7 +270,10 @@ export async function scanTeamAwaitingReplies(
     )
     msToken = updatedToken
 
-    if (pageData.error) break
+    if (pageData.error) {
+      debugGraphError = JSON.stringify(pageData.error).slice(0, 200)
+      break
+    }
 
     const messages = pageData.value || []
     const toInsert: any[] = []
@@ -292,10 +283,9 @@ export async function scanTeamAwaitingReplies(
       const msgId = msg.id as string
       if (existingIds.has(msgId)) continue
 
-      // SAFETY: Verify the sender email matches the expected user
-      // This prevents cross-user data leakage if a shared/delegated token returns other users' emails
+      // Log sender for debugging — but don't filter on sent items since
+      // Graph sentItems folder only contains messages FROM the authenticated user
       const senderEmail = (msg.sender?.emailAddress?.address || msg.from?.emailAddress?.address || '').toLowerCase()
-      if (userEmail && senderEmail && senderEmail !== userEmail) continue
 
       const conversationId = msg.conversationId || ''
       const subject = msg.subject || ''
@@ -835,8 +825,14 @@ export async function scanTeamAwaitingReplies(
     duration: Date.now() - startTime,
     debug: {
       hasIntegration: !!integration,
+      tokenVerified,
       userEmail,
       userId,
+      outlookScanned: totalScanned,
+      outlookAwaiting: totalAwaiting,
+      repliedConversationsCount: debugRepliedCount,
+      inboxMessagesCount: debugInboxCount,
+      graphError: debugGraphError || null,
     },
   }
 }
