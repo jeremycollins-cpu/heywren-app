@@ -93,6 +93,8 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
     )
   }
 
+  const quote = useRotatingQuote()
+
   return (
     <div
       className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-6"
