@@ -146,17 +146,20 @@ export async function scanTeamAwaitingReplies(
 ) {
   const startTime = Date.now()
 
-  // Get Outlook integration — try user-specific first, then fall back to any team integration
+  // Get Outlook integration for this user (look up by user_id + provider,
+  // not team_id, to avoid mismatch if team resolution differs from when integration was created)
   let { data: integration } = await supabase
     .from('integrations')
-    .select('id, user_id, access_token, refresh_token, config')
-    .eq('team_id', teamId)
+    .select('id, user_id, team_id, access_token, refresh_token, config')
     .eq('user_id', userId)
     .eq('provider', 'outlook')
+    .limit(1)
     .single()
 
   if (!integration) {
-    console.log(`Outlook scan: no integration found for user ${userId} on team ${teamId}`)
+    console.log(`Outlook scan: no integration found for user ${userId}`)
+  } else {
+    console.log(`Outlook scan: found integration ${integration.id} (team_id=${integration.team_id}, passed teamId=${teamId})`)
   }
 
   let totalScanned = 0
@@ -417,7 +420,6 @@ export async function scanTeamAwaitingReplies(
   const slackIntResult = await supabase
     .from('integrations')
     .select('config, access_token')
-    .eq('team_id', teamId)
     .eq('user_id', userId)
     .eq('provider', 'slack')
     .maybeSingle()

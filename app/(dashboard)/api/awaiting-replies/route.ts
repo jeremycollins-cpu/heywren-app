@@ -113,28 +113,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's email and team for matching sent items
+    // Use ensureTeamForUser for consistent team resolution (same as integration setup)
+    const { ensureTeamForUser } = await import('@/lib/team/ensure-team')
+    const { teamId: resolvedTeamId } = await ensureTeamForUser(userId)
+    teamId = resolvedTeamId
+
     const { data: userProfile } = await admin
       .from('profiles')
-      .select('current_team_id, email')
+      .select('email')
       .eq('id', userId)
       .single()
-    teamId = userProfile?.current_team_id || null
     const userEmail = userProfile?.email?.toLowerCase() || ''
-
-    // Fallback team lookup (same as other APIs)
-    if (!teamId) {
-      const { data: membership } = await admin.from('team_members').select('team_id').eq('user_id', userId).limit(1).single()
-      teamId = membership?.team_id || null
-    }
-    if (!teamId) {
-      const { data: orgMembership } = await admin.from('organization_members').select('team_id').eq('user_id', userId).limit(1).single()
-      teamId = orgMembership?.team_id || null
-    }
-
-    if (!teamId) {
-      return NextResponse.json({ items: [], count: 0 })
-    }
 
     // Only show items that belong to THIS user — not other team members.
     // Filter by user_id first (items scanned from this user's Outlook token),
@@ -222,24 +211,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', userId)
-      .single()
-
-    let teamId = profile?.current_team_id
-    if (!teamId) {
-      const { data: membership } = await admin.from('team_members').select('team_id').eq('user_id', userId).limit(1).single()
-      teamId = membership?.team_id || null
-    }
-    if (!teamId) {
-      const { data: orgMembership } = await admin.from('organization_members').select('team_id').eq('user_id', userId).limit(1).single()
-      teamId = orgMembership?.team_id || null
-    }
-    if (!teamId) {
-      return NextResponse.json({ error: 'No team found' }, { status: 400 })
-    }
+    // Use ensureTeamForUser for consistent team resolution (same as integration setup)
+    const { ensureTeamForUser } = await import('@/lib/team/ensure-team')
+    const { teamId } = await ensureTeamForUser(userId)
 
     const { scanTeamAwaitingReplies } = await import('@/inngest/functions/scan-awaiting-replies')
     const result = await scanTeamAwaitingReplies(admin, teamId, userId)
