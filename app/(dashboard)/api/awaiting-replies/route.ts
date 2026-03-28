@@ -35,7 +35,10 @@ function isCalendarInviteItem(subject: string | null, bodyPreview: string | null
       'meet.google.com/',
       'you updated the meeting',
       'you have been invited to',
-      'when:',
+      'dial-in number',
+      'join on your computer',
+      'click here to join',
+      'passcode:',
     ]
     const signatureCount = meetingSignatures.filter(sig => body.includes(sig)).length
     if (signatureCount >= 2) return true
@@ -44,6 +47,23 @@ function isCalendarInviteItem(subject: string | null, bodyPreview: string | null
     if (body.includes('join zoom meeting') || body.includes('zoom.us/j/')) return true
     if (body.includes('you updated the meeting for')) return true
     if (body.includes('meet.google.com/')) return true
+    if (body.includes('meeting id:') && body.includes('passcode:')) return true
+
+    // Meeting-style subjects + any meeting body signal = calendar invite
+    // Catches "Product Leadership Sync", "Jeremy/Leah Weekly", "Team Standup", etc.
+    const meetingSubjectPatterns = [
+      /\bsync\b/i, /\bstandup\b/i, /\bstand-up\b/i, /\b1[:\-]1\b/i, /\bone.on.one\b/i,
+      /\bweekly\b/i, /\bbiweekly\b/i, /\bmonthly\b/i, /\bdaily\b/i, /\brecurring\b/i,
+      /\bcheck.in\b/i, /\bcheckin\b/i, /\breview\b/i, /\bretro\b/i, /\bretrospective\b/i,
+      /\bplanning\b/i, /\bgrooming\b/i, /\brefinement\b/i, /\bkickoff\b/i, /\bkick.off\b/i,
+      /\bhuddle\b/i, /\bcatch.up\b/i, /\btouchbase\b/i, /\btouch.base\b/i,
+      /\/.*\b(sync|update|meeting|call)\b/i,  // "Name/Name Sync" pattern
+    ]
+    const hasMeetingSubject = meetingSubjectPatterns.some(p => p.test(s))
+    if (hasMeetingSubject && signatureCount >= 1) return true
+
+    // "When:" pattern combined with meeting subject is a strong signal
+    if (hasMeetingSubject && body.includes('when:')) return true
   }
 
   return false
