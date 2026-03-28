@@ -46,7 +46,7 @@ function getAvgScore(commitments: { status: string; created_at: string; source: 
 
 export default function DashboardPage() {
   const {
-    commitments, mentions, integrationCount,
+    commitments, mentions, integrationCount, teamId,
     loading, error,
     fetchDashboard, markDone, snooze, dismiss, clearError,
     addCommitment, updateCommitment, removeCommitment, addMention,
@@ -80,10 +80,11 @@ export default function DashboardPage() {
     if (!loading) fetchEvalMetrics()
   }, [loading])
 
-  // Real-time: commitments
+  // Real-time: commitments (scoped to team)
   useRealtime({
     table: 'commitments',
-    enabled: !loading,
+    filter: teamId ? `team_id=eq.${teamId}` : undefined,
+    enabled: !loading && !!teamId,
     onInsert: (payload) => {
       addCommitment(payload.new as any)
       toast('New commitment detected', { icon: '🐦' })
@@ -96,10 +97,11 @@ export default function DashboardPage() {
     },
   })
 
-  // Real-time: slack mentions
+  // Real-time: slack mentions (scoped to team)
   useRealtime({
     table: 'slack_messages',
-    enabled: !loading,
+    filter: teamId ? `team_id=eq.${teamId}` : undefined,
+    enabled: !loading && !!teamId,
     onInsert: (payload) => {
       addMention(payload.new as any)
     },

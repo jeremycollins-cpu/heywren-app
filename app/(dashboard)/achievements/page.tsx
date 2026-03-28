@@ -117,25 +117,59 @@ export default function AchievementsPage() {
         const { data: userData } = await supabase.auth.getUser()
         if (!userData?.user) { setLoading(false); return }
 
+        let hasJobData = false
         const res = await fetch(`/api/team-dashboard?userId=${userData.user.id}`, { cache: 'no-store' })
-        if (!res.ok) {
-          setError('Failed to load achievements data')
-          setLoading(false)
-          return
+        if (res.ok) {
+          const data: DashboardData = await res.json()
+          setAchievements(data.achievements || [])
+          setMyAchievements(data.myAchievements || [])
+
+          // Find this user's scores from leaderboard
+          const myEntry = (data.leaderboard || []).find(e => e.userId === userData.user!.id)
+          if (myEntry && myEntry.totalPoints > 0) {
+            hasJobData = true
+            setTotalPoints(myEntry.totalPoints)
+            setCurrentStreak(myEntry.currentStreak)
+            setLongestStreak(myEntry.longestStreak)
+            setTotalCompleted(myEntry.totalCompleted)
+          }
         }
 
-        const data: DashboardData = await res.json()
+        // If no points from the scheduled job, compute real-time stats as fallback
+        // This handles the case where the Inngest weekly scoring job hasn't run yet
+        if (!hasJobData) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('current_team_id')
+            .eq('id', userData.user.id)
+            .single()
 
-        setAchievements(data.achievements || [])
-        setMyAchievements(data.myAchievements || [])
+          let teamId = profile?.current_team_id
+          if (!teamId) {
+            const { data: membership } = await supabase
+              .from('team_members')
+              .select('team_id')
+              .eq('user_id', userData.user.id)
+              .limit(1)
+              .single()
+            teamId = membership?.team_id || null
+          }
 
-        // Find this user's scores from leaderboard
-        const myEntry = (data.leaderboard || []).find(e => e.userId === userData.user!.id)
-        if (myEntry) {
-          setTotalPoints(myEntry.totalPoints)
-          setCurrentStreak(myEntry.currentStreak)
-          setLongestStreak(myEntry.longestStreak)
-          setTotalCompleted(myEntry.totalCompleted)
+          if (teamId) {
+            const { data: commitments } = await supabase
+              .from('commitments')
+              .select('id, status, created_at')
+              .eq('team_id', teamId)
+              .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+
+            if (commitments && commitments.length > 0) {
+              const completed = commitments.filter(c => c.status === 'completed')
+              // Simple point calculation: 10 per completion + 2 per created
+              const realtimePoints = (completed.length * 10) + (commitments.length * 2)
+              setTotalPoints(realtimePoints)
+              setTotalCompleted(completed.length)
+            }
+          }
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load achievements'

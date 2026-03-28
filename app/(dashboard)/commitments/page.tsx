@@ -410,7 +410,7 @@ export default function CommitmentsPage() {
   }
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-5">
+    <div className="p-4 sm:p-6 max-w-[1200px] mx-auto space-y-4 sm:space-y-5">
       {error && (
         <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
           <span className="text-sm font-medium">{error}</span>
@@ -420,7 +420,7 @@ export default function CommitmentsPage() {
 
       {/* Quick Add Form */}
       {showQuickAdd && (
-        <form onSubmit={handleQuickAdd} className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-4 flex items-center gap-3">
+        <form onSubmit={handleQuickAdd} className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-4 flex flex-wrap items-center gap-2 sm:gap-3">
           <input
             type="text"
             value={quickTitle}
@@ -461,41 +461,41 @@ export default function CommitmentsPage() {
       )}
 
       {/* Header with stats */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Every promise tracked from origin to resolution</p>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-0.5">Every promise tracked from origin to resolution</p>
           </div>
           <button
             onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition flex-shrink-0"
           >
             <Plus className="w-4 h-4" />
             Add Task
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{forYouCommitments.length}</p>
-            <p className="text-xs text-gray-500">for you</p>
+          <div className="text-center sm:text-right">
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{forYouCommitments.length}</p>
+            <p className="text-[10px] sm:text-xs text-gray-500">for you</p>
           </div>
-          <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
-          <div className="text-right">
-            <p className="text-2xl font-bold text-green-600">{completedCommitments.length}</p>
-            <p className="text-xs text-gray-500">completed</p>
+          <div className="w-px h-8 sm:h-10 bg-gray-200 dark:bg-gray-700" />
+          <div className="text-center sm:text-right">
+            <p className="text-xl sm:text-2xl font-bold text-green-600">{completedCommitments.length}</p>
+            <p className="text-[10px] sm:text-xs text-gray-500">completed</p>
           </div>
           {commitments.length > 0 && (
             <>
-              <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
-              <div className="text-right">
-                <p className="text-2xl font-bold text-indigo-600">
+              <div className="w-px h-8 sm:h-10 bg-gray-200 dark:bg-gray-700" />
+              <div className="text-center sm:text-right">
+                <p className="text-xl sm:text-2xl font-bold text-indigo-600">
                   {(() => {
                     const nonDismissed = commitments.filter(c => c.status !== 'dismissed').length
                     return nonDismissed > 0 ? Math.round(completedCommitments.length / nonDismissed * 100) : 0
                   })()}%
                 </p>
-                <p className="text-xs text-gray-500">follow-through</p>
+                <p className="text-[10px] sm:text-xs text-gray-500">follow-through</p>
               </div>
             </>
           )}
@@ -504,14 +504,14 @@ export default function CommitmentsPage() {
 
       {/* Search + Filter bar */}
       <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="flex-1 relative">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex-1 min-w-[180px] relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search commitments, people, quotes..."
+              placeholder="Search commitments..."
               className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-surface-dark-secondary dark:text-white"
             />
             {searchQuery && (
@@ -624,7 +624,7 @@ export default function CommitmentsPage() {
       </div>
 
       {/* Tabs */}
-      <div role="tablist" className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
+      <div role="tablist" className="flex gap-4 sm:gap-6 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
         {[
           { key: 'for_you' as const, label: 'For You', count: forYouCommitments.length },
           { key: 'all_team' as const, label: 'All Team', count: openCommitments.length },
@@ -768,15 +768,15 @@ export default function CommitmentsPage() {
             const completionEvidence = (meta as any).completionEvidence as string | undefined
 
             return (
-              <div key={c.id} className={`border rounded-xl p-5 transition-colors ${
+              <div key={c.id} className={`border rounded-xl p-4 sm:p-5 transition-colors ${
                 isLikelyComplete
                   ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-300 dark:border-emerald-700'
                   : isSelected
                   ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/10'
                   : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark'
               }`}>
-                {/* Row 1: Checkbox + title + actions */}
-                <div className="flex items-start gap-3 mb-2">
+                {/* Row 1: Checkbox + title */}
+                <div className="flex items-start gap-2 sm:gap-3 mb-2">
                   {(activeTab === 'for_you' || activeTab === 'all_team') && (
                     <input
                       type="checkbox"
@@ -785,42 +785,44 @@ export default function CommitmentsPage() {
                       className="w-4 h-4 rounded cursor-pointer mt-1 flex-shrink-0"
                     />
                   )}
-                  <Link href={`/commitments/${c.id}`} className="text-base font-bold text-gray-900 dark:text-white leading-snug flex-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{c.title}</Link>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {c.source_url && (
-                      <a
-                        href={c.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-medium transition-colors"
-                      >
-                        View in {sourceBadge.label}
-                      </a>
-                    )}
-                    {isLikelyComplete ? (
-                      <>
-                        <button
-                          onClick={() => updateStatus(c.id, 'completed')}
-                          className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors"
-                        >
-                          Confirm complete
-                        </button>
-                        <button
-                          onClick={() => updateStatus(c.id, 'open')}
-                          className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 font-medium transition-colors"
-                        >
-                          Not done
-                        </button>
-                      </>
-                    ) : c.status !== 'completed' ? (
+                  <Link href={`/commitments/${c.id}`} className="text-sm sm:text-base font-bold text-gray-900 dark:text-white leading-snug flex-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{c.title}</Link>
+                </div>
+
+                {/* Action buttons — wrap on mobile */}
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  {c.source_url && (
+                    <a
+                      href={c.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-medium transition-colors"
+                    >
+                      View in {sourceBadge.label}
+                    </a>
+                  )}
+                  {isLikelyComplete ? (
+                    <>
                       <button
                         onClick={() => updateStatus(c.id, 'completed')}
-                        className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium transition-colors"
+                        className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors"
                       >
-                        Complete
+                        Confirm complete
                       </button>
-                    ) : null}
-                  </div>
+                      <button
+                        onClick={() => updateStatus(c.id, 'open')}
+                        className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 font-medium transition-colors"
+                      >
+                        Not done
+                      </button>
+                    </>
+                  ) : c.status !== 'completed' ? (
+                    <button
+                      onClick={() => updateStatus(c.id, 'completed')}
+                      className="text-xs px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 font-medium transition-colors"
+                    >
+                      Complete
+                    </button>
+                  ) : null}
                 </div>
 
                 {/* Completion evidence for likely_complete items */}
@@ -832,11 +834,11 @@ export default function CommitmentsPage() {
                 )}
 
                 {/* Row 2: Badges */}
-                <div className="flex items-center gap-2 flex-wrap mb-2.5">
-                  <span className={`px-2 py-0.5 rounded border text-xs font-bold ${scoreColor}`}>
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-2.5">
+                  <span className={`px-2 py-0.5 rounded border text-[10px] sm:text-xs font-bold ${scoreColor}`}>
                     {score}
                   </span>
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${status.bgColor} ${status.color}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold ${status.bgColor} ${status.color}`}>
                     {status.label}
                   </span>
                   {urgency && (
@@ -855,10 +857,10 @@ export default function CommitmentsPage() {
                       {toneNote}
                     </span>
                   )}
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceBadge.color}`}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium ${sourceBadge.color}`}>
                     {sourceBadge.label}
                   </span>
-                  <span className="text-xs text-gray-400">{age}d ago</span>
+                  <span className="text-[10px] sm:text-xs text-gray-400">{age}d ago</span>
                 </div>
 
                 {/* Row 3: Description */}
@@ -876,8 +878,8 @@ export default function CommitmentsPage() {
                 )}
 
                 {/* Row 5: Stakeholders + origin */}
-                <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-between gap-2 sm:gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap min-w-0">
                     {Array.isArray(meta.stakeholders) && meta.stakeholders.filter(s => s && s.name).map((s, i) => (
                       <span
                         key={i}

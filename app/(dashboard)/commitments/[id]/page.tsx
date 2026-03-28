@@ -95,19 +95,51 @@ export default function CommitmentDetailPage() {
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
       try {
         const supabase = createClient()
+
+        // Get the authenticated user and their profile for ownership checks
+        const { data: userData, error: authError } = await supabase.auth.getUser()
+        if (authError || !userData?.user) {
+          toast.error('Not authenticated')
+          router.push('/commitments')
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('current_team_id, display_name')
+          .eq('id', userData.user.id)
+          .single()
+
+        const teamId = profile?.current_team_id
+        const userName = profile?.display_name || ''
+
         const [commitResult, nudgeResult] = await Promise.all([
           supabase.from('commitments').select('*').eq('id', id).single(),
-          supabase.from('nudges').select('*').eq('commitment_id', id).order('created_at', { ascending: false }).limit(20),
+          supabase.from('nudges').select('*').eq('commitment_id', id).eq('team_id', teamId!).order('created_at', { ascending: false }).limit(20),
         ])
         if (commitResult.error) throw commitResult.error
-        setCommitment(commitResult.data)
-        setEditTitle(commitResult.data.title)
-        setEditDescription(commitResult.data.description || '')
+
+        // Ownership check: user must be creator, assignee, or a stakeholder
+        const data = commitResult.data
+        if (data.creator_id !== userData.user.id && data.assignee_id !== userData.user.id) {
+          const stakeholders = data.metadata?.stakeholders || []
+          const isStakeholder = stakeholders.some((s: CommitmentStakeholder) => s.name?.toLowerCase().includes(userName.toLowerCase()))
+          if (!isStakeholder) {
+            setError('Commitment not found')
+            setLoading(false)
+            return
+          }
+        }
+
+        setCommitment(data)
+        setEditTitle(data.title)
+        setEditDescription(data.description || '')
         setNudges(nudgeResult.data || [])
       } catch {
         toast.error('Commitment not found')
@@ -180,6 +212,17 @@ export default function CommitmentDetailPage() {
           <div className="h-40 bg-gray-200 dark:bg-gray-700 rounded-xl" />
           <div className="h-24 bg-gray-200 dark:bg-gray-700 rounded-xl" />
         </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto text-center">
+        <p className="text-gray-500 dark:text-gray-400">{error}</p>
+        <Link href="/commitments" className="text-indigo-500 hover:text-indigo-600 text-sm mt-2 inline-block">
+          Back to commitments
+        </Link>
       </div>
     )
   }

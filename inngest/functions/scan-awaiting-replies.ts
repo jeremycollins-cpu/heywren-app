@@ -176,14 +176,26 @@ export async function scanTeamAwaitingReplies(
   // Determine who actually owns the Outlook token by calling Graph /me
   // This prevents attributing one user's emails to another user
   let tokenOwnerUserId = userId
+  let tokenVerified = false
   try {
-    const meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
+    let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
       headers: { Authorization: 'Bearer ' + msToken },
     })
+    // If token is expired, refresh and retry the /me call
+    if (meRes.status === 401) {
+      const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+      if (newToken) {
+        msToken = newToken
+        meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
+          headers: { Authorization: 'Bearer ' + msToken },
+        })
+      }
+    }
     if (meRes.ok) {
       const meData = await meRes.json()
       const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
       if (tokenEmail) {
+        tokenVerified = true
         // Look up which user in our system owns this email
         const { data: tokenOwnerProfile } = await supabase
           .from('profiles')
@@ -200,8 +212,14 @@ export async function scanTeamAwaitingReplies(
       }
     }
   } catch {
-    // Fall back to the provided userId if /me call fails
+    // Cannot verify token owner — skip Outlook scan to prevent data leakage
   }
+
+  // SAFETY: If we couldn't verify the token owner, skip Outlook scanning entirely.
+  // This prevents attributing one user's emails to another user when the /me call fails.
+  if (!tokenVerified) {
+    console.warn(`Skipping Outlook scan for user ${userId} — could not verify token owner via Graph /me`)
+  } else {
 
   // If we couldn't determine email from Graph, fall back to profile lookup
   if (!userEmail) {
@@ -259,6 +277,11 @@ export async function scanTeamAwaitingReplies(
       totalScanned++
       const msgId = msg.id as string
       if (existingIds.has(msgId)) continue
+
+      // SAFETY: Verify the sender email matches the expected user
+      // This prevents cross-user data leakage if a shared/delegated token returns other users' emails
+      const senderEmail = (msg.sender?.emailAddress?.address || msg.from?.emailAddress?.address || '').toLowerCase()
+      if (userEmail && senderEmail && senderEmail !== userEmail) continue
 
       const conversationId = msg.conversationId || ''
       const subject = msg.subject || ''
@@ -353,6 +376,7 @@ export async function scanTeamAwaitingReplies(
     .from('awaiting_replies')
     .select('id, conversation_id')
     .eq('team_id', teamId)
+    .eq('user_id', tokenOwnerUserId)
     .eq('status', 'waiting')
     .not('conversation_id', 'is', null)
 
@@ -374,6 +398,7 @@ export async function scanTeamAwaitingReplies(
     .in('status', ['dismissed', 'replied'])
     .lt('updated_at', thirtyDaysAgo)
 
+  } // end if (tokenVerified)
   } // end if (integration) — Outlook scanning
 
   // ── Slack Setup ──
@@ -513,6 +538,7 @@ export async function scanTeamAwaitingReplies(
             .from('awaiting_replies')
             .select('source_message_id')
             .eq('team_id', teamId)
+            .eq('user_id', userId)
             .eq('source', 'slack')
 
           const existingSlackIds = new Set((existingSlack || []).map(e => e.source_message_id))

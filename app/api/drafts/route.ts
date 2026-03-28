@@ -79,12 +79,16 @@ export async function PATCH(request: NextRequest) {
 
   const { data: existingDraft } = await admin
     .from('draft_queue')
-    .select('id, team_id')
+    .select('id, team_id, user_id')
     .eq('id', body.id)
     .single()
 
   if (!existingDraft || existingDraft.team_id !== membership.team_id) {
     return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+  }
+
+  if (existingDraft.user_id !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   // Build update object

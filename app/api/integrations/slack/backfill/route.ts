@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { WebClient } from '@slack/web-api'
 import { detectCommitmentsBatch, getDetectionStats, type UserContext } from '@/lib/ai/detect-commitments'
 import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
@@ -57,19 +58,22 @@ export async function POST(request: NextRequest) {
   const supabase = getAdminClient()
   const startTime = Date.now()
 
-  let userId: string
+  // Verify the caller is authenticated
+  const sessionClient = await createSessionClient()
+  const { data: sessionUser } = await sessionClient.auth.getUser()
+  if (!sessionUser?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Use the authenticated user's ID, not the one from the request body
+  let userId: string = sessionUser.user.id
   let daysBack: number = 30
   let channelId: string | null = null
 
   try {
     const body = await request.json()
-    userId = body.userId
     daysBack = body.daysBack || 30
     channelId = body.channelId || null
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
-    }
   } catch (e) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
