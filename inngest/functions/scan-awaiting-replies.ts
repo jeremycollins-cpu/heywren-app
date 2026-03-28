@@ -146,14 +146,21 @@ export async function scanTeamAwaitingReplies(
 ) {
   const startTime = Date.now()
 
-  // Get Outlook integration for this user
-  const { data: integration } = await supabase
+  // Get Outlook integration for this user (look up by user_id + provider,
+  // not team_id, to avoid mismatch if team resolution differs from when integration was created)
+  let { data: integration } = await supabase
     .from('integrations')
-    .select('id, access_token, refresh_token, config')
-    .eq('team_id', teamId)
+    .select('id, user_id, team_id, access_token, refresh_token, config')
     .eq('user_id', userId)
     .eq('provider', 'outlook')
+    .limit(1)
     .single()
+
+  if (!integration) {
+    console.log(`Outlook scan: no integration found for user ${userId}`)
+  } else {
+    console.log(`Outlook scan: found integration ${integration.id} (team_id=${integration.team_id}, passed teamId=${teamId})`)
+  }
 
   let totalScanned = 0
   let totalAwaiting = 0
@@ -167,6 +174,8 @@ export async function scanTeamAwaitingReplies(
     .single()
   userEmail = userProfile?.email?.toLowerCase() || ''
 
+  console.log(`Awaiting replies scan: userId=${userId}, teamId=${teamId}, userEmail=${userEmail}, hasIntegration=${!!integration}`)
+
   if (integration) {
   // ── Outlook Scanning ──
   let msToken = integration.access_token
@@ -175,7 +184,6 @@ export async function scanTeamAwaitingReplies(
 
   // Determine who actually owns the Outlook token by calling Graph /me
   // This prevents attributing one user's emails to another user
-  let tokenOwnerUserId = userId
   let tokenVerified = false
   try {
     let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
@@ -195,19 +203,24 @@ export async function scanTeamAwaitingReplies(
       const meData = await meRes.json()
       const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
       if (tokenEmail) {
-        tokenVerified = true
-        // Look up which user in our system owns this email
-        const { data: tokenOwnerProfile } = await supabase
+        // Verify the token belongs to the calling user by checking email match
+        const { data: callerProfile } = await supabase
           .from('profiles')
-          .select('id, email')
-          .eq('email', tokenEmail)
+          .select('email')
+          .eq('id', userId)
           .single()
+        const callerEmail = callerProfile?.email?.toLowerCase() || ''
 
-        if (tokenOwnerProfile) {
-          tokenOwnerUserId = tokenOwnerProfile.id
-          userEmail = tokenOwnerProfile.email?.toLowerCase() || tokenEmail
-        } else {
+        if (callerEmail && tokenEmail === callerEmail) {
+          tokenVerified = true
+          userEmail = callerEmail
+        } else if (!callerEmail) {
+          // If we can't look up caller email, trust the token but use caller's userId
+          tokenVerified = true
           userEmail = tokenEmail
+        } else {
+          // Token belongs to a different user — don't scan
+          console.warn(`Token owner "${tokenEmail}" does not match caller "${callerEmail}" for userId=${userId} — skipping Outlook scan`)
         }
       }
     }
@@ -217,6 +230,7 @@ export async function scanTeamAwaitingReplies(
 
   // SAFETY: If we couldn't verify the token owner, skip Outlook scanning entirely.
   // This prevents attributing one user's emails to another user when the /me call fails.
+  console.log(`Outlook token verification: tokenVerified=${tokenVerified}, userEmail=${userEmail}, userId=${userId}`)
   if (!tokenVerified) {
     console.warn(`Skipping Outlook scan for user ${userId} — could not verify token owner via Graph /me`)
   } else {
@@ -226,7 +240,7 @@ export async function scanTeamAwaitingReplies(
     const { data: profile } = await supabase
       .from('profiles')
       .select('email')
-      .eq('id', tokenOwnerUserId)
+      .eq('id', userId)
       .single()
     userEmail = profile?.email?.toLowerCase() || ''
   }
@@ -336,7 +350,7 @@ export async function scanTeamAwaitingReplies(
 
       toInsert.push({
         team_id: teamId,
-        user_id: tokenOwnerUserId,
+        user_id: userId,
         source: 'outlook',
         source_message_id: msgId,
         conversation_id: conversationId,
@@ -376,7 +390,7 @@ export async function scanTeamAwaitingReplies(
     .from('awaiting_replies')
     .select('id, conversation_id')
     .eq('team_id', teamId)
-    .eq('user_id', tokenOwnerUserId)
+    .eq('user_id', userId)
     .eq('status', 'waiting')
     .not('conversation_id', 'is', null)
 
@@ -406,7 +420,6 @@ export async function scanTeamAwaitingReplies(
   const slackIntResult = await supabase
     .from('integrations')
     .select('config, access_token')
-    .eq('team_id', teamId)
     .eq('user_id', userId)
     .eq('provider', 'slack')
     .maybeSingle()
