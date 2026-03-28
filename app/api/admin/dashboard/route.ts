@@ -81,22 +81,54 @@ export async function GET(request: NextRequest) {
       .eq('id', userId)
       .single()
 
-    if (!profile) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    // If no profile row, try to build a minimal one from auth + membership tables
+    let resolvedProfile = profile
+    if (!resolvedProfile) {
+      let authEmail = ''
+      let authName = ''
+      try {
+        const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
+        if (authUser?.user) {
+          authEmail = authUser.user.email || ''
+          authName = authUser.user.user_metadata?.full_name || authUser.user.user_metadata?.name || ''
+        }
+      } catch { /* auth lookup failed */ }
 
-    const teamId = profile.current_team_id
-    const userEmail = profile.email?.toLowerCase() || ''
+      if (!authEmail) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      }
+
+      resolvedProfile = {
+        id: userId, email: authEmail, full_name: authName, display_name: authName,
+        role: 'user', current_team_id: null, onboarding_completed: false,
+        onboarding_step: 'unknown', slack_user_id: null, created_at: new Date().toISOString(),
+      }
+    }
+
+    // Resolve team ID with fallbacks (same as themes API)
+    let userTeamId = resolvedProfile.current_team_id
+    if (!userTeamId) {
+      const { data: membership } = await adminDb.from('team_members').select('team_id').eq('user_id', userId).limit(1).single()
+      userTeamId = membership?.team_id || null
+    }
+    if (!userTeamId) {
+      const { data: orgMembership } = await adminDb.from('organization_members').select('team_id').eq('user_id', userId).limit(1).single()
+      userTeamId = orgMembership?.team_id || null
+    }
+
+    const userEmail = resolvedProfile.email?.toLowerCase() || ''
 
     const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies, recentCommitments, recentWaiting, recentEmails] = await Promise.all([
-      adminDb.from('integrations').select('id, provider, created_at').eq('team_id', teamId).eq('user_id', userId),
-      adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', teamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`),
-      teamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', teamId) : Promise.resolve({ data: [], count: 0 }),
-      teamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', teamId) : Promise.resolve({ data: [], count: 0 }),
-      teamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId) : Promise.resolve({ count: 0 }),
-      teamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('integrations').select('id, provider, created_at').eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
+      userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
       // Recent activity for support debugging
-      adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', teamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10),
-      teamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', teamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
-      teamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', teamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
     ])
 
     const emailData = outlookMsgs.data || []
@@ -104,7 +136,7 @@ export async function GET(request: NextRequest) {
     const commitmentData = commitments.data || []
 
     return NextResponse.json({
-      profile,
+      profile: resolvedProfile,
       integrations: integrations.data || [],
       diagnostics: {
         commitments: {
