@@ -216,7 +216,7 @@ export async function scanTeamAwaitingReplies(
   // Fetch sent items from last 30 days
   const scanWindow = new Date(Date.now() - 30 * 86400000).toISOString()
   const filter = encodeURIComponent(`sentDateTime ge ${scanWindow} and isDraft eq false`)
-  const selectFields = 'id,subject,bodyPreview,toRecipients,sentDateTime,conversationId,webLink'
+  const selectFields = 'id,subject,bodyPreview,toRecipients,sentDateTime,conversationId,webLink,meetingMessageType'
 
   let nextLink: string | null =
     `https://graph.microsoft.com/v1.0/me/mailFolders/sentItems/messages?$filter=${filter}&$select=${selectFields}&$orderby=sentDateTime desc&$top=50`
@@ -272,6 +272,9 @@ export async function scanTeamAwaitingReplies(
       // Skip very short messages (likely auto-replies or forwards)
       if (bodyPreview.length < 20) continue
 
+      // Skip meeting/calendar messages — Graph API flags these with meetingMessageType
+      if (msg.meetingMessageType && msg.meetingMessageType !== 'none') continue
+
       // Skip calendar-related and automated subjects
       const subjectLower = subject.toLowerCase()
       if (subjectLower.startsWith('accepted:') || subjectLower.startsWith('declined:') ||
@@ -281,11 +284,13 @@ export async function scanTeamAwaitingReplies(
         continue
       }
 
-      // Skip calendar/meeting invite emails (body contains meeting join links)
+      // Skip calendar/meeting invite emails (body contains meeting join links or agenda patterns)
       const bodyLower = bodyPreview.toLowerCase()
       if (bodyLower.includes('join the meeting now') || bodyLower.includes('microsoft teams meeting') ||
           bodyLower.includes('join zoom meeting') || bodyLower.includes('zoom.us/j/') ||
-          bodyLower.includes('you updated the meeting for') || bodyLower.includes('meet.google.com/')) {
+          bodyLower.includes('you updated the meeting for') || bodyLower.includes('meet.google.com/') ||
+          bodyLower.includes('meeting id:') || bodyLower.includes('dial-in number') ||
+          bodyLower.includes('join on your computer') || bodyLower.includes('click here to join')) {
         continue
       }
 
