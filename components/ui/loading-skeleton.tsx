@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { WrenIcon } from '@/components/logo'
 
 const loadingQuotes = [
   { text: "Scanning your conversations for hidden commitments...", subtext: "The best leaders never let a promise slip." },
@@ -70,25 +71,60 @@ function NudgeCardSkeleton() {
   )
 }
 
+function LoadingHero({ compact = false }: { compact?: boolean }) {
+  const quote = useRotatingQuote()
+
+  return (
+    <div className={`flex flex-col items-center justify-center ${compact ? 'py-6 sm:py-8' : 'py-10 sm:py-16'} space-y-4`}>
+      <div className="relative">
+        <div className={`${compact ? 'w-12 h-12 rounded-xl' : 'w-16 h-16 rounded-2xl'} flex items-center justify-center`} style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
+          <WrenIcon size={compact ? 28 : 40} className="[&_*]:!stroke-white [&_circle[r='2']]:!fill-white" />
+        </div>
+        <div className={`absolute -inset-2 ${compact ? 'rounded-xl' : 'rounded-2xl'} animate-ping opacity-20`} style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }} />
+      </div>
+      <div className="text-center space-y-2 max-w-md mx-auto px-4">
+        <p className={`${compact ? 'text-sm sm:text-base' : 'text-base sm:text-lg'} font-semibold text-gray-900 dark:text-white transition-all duration-500`}>
+          {quote.text}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 transition-all duration-500">
+          {quote.subtext}
+        </p>
+      </div>
+      {/* Progress dots */}
+      <div className="flex items-center gap-1.5">
+        <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+    </div>
+  )
+}
+
 export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps) {
+  // All hooks must be called before any early returns
   const quote = useRotatingQuote()
 
   if (variant === 'card') {
-    return <StatCardSkeleton />
+    return (
+      <div className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4" role="status" aria-busy="true" aria-label="Loading content">
+        <LoadingHero compact />
+        <div className="space-y-3 opacity-40">
+          <StatCardSkeleton />
+          <StatCardSkeleton />
+        </div>
+      </div>
+    )
   }
 
   if (variant === 'list') {
     return (
-      <div className="space-y-4" role="status" aria-busy="true" aria-label="Loading content">
-        <div className="flex items-center gap-3 py-4 justify-center">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
-            <span className="text-sm text-white font-bold">W</span>
-          </div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Loading your data...</p>
+      <div className="px-4 sm:px-6 py-6 max-w-[1200px] mx-auto space-y-4" role="status" aria-busy="true" aria-label="Loading content">
+        <LoadingHero compact />
+        <div className="space-y-3 opacity-40">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <NudgeCardSkeleton key={i} />
+          ))}
         </div>
-        {Array.from({ length: 4 }).map((_, i) => (
-          <NudgeCardSkeleton key={i} />
-        ))}
       </div>
     )
   }
@@ -101,28 +137,7 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
       aria-label="Loading dashboard"
     >
       {/* Branded loading hero */}
-      <div className="flex flex-col items-center justify-center py-10 sm:py-16 space-y-5">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}>
-            <span className="text-2xl text-white font-bold">W</span>
-          </div>
-          <div className="absolute -inset-2 rounded-2xl animate-ping opacity-20" style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }} />
-        </div>
-        <div className="text-center space-y-2 max-w-md mx-auto px-4">
-          <p className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white transition-all duration-500">
-            {quote.text}
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 transition-all duration-500">
-            {quote.subtext}
-          </p>
-        </div>
-        {/* Progress dots */}
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-      </div>
+      <LoadingHero />
 
       {/* Subtle skeleton below the quote */}
       <div className="space-y-3 opacity-40">
