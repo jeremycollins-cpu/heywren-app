@@ -90,8 +90,7 @@ export default function WaitingRoomPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
-      const d = data.debug || {}
-      toast.success(`Scanned ${data.scanned || 0} sent — ${data.awaiting || 0} awaiting | integration:${d.hasIntegration} token:${d.tokenVerified} replied:${d.repliedConversationsCount} inbox:${d.inboxMessagesCount} graphErr:${d.graphError || 'none'}`)
+      toast.success(`Scanned ${data.scanned || 0} sent messages — found ${data.awaiting || 0} awaiting reply`)
       await fetchItems()
     } catch (err: any) {
       toast.error(err.message || 'Scan failed')
