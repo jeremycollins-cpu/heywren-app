@@ -71,6 +71,8 @@ function NudgeCardSkeleton() {
 }
 
 export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps) {
+  const quote = useRotatingQuote()
+
   if (variant === 'card') {
     return <StatCardSkeleton />
   }
@@ -90,8 +92,6 @@ export function LoadingSkeleton({ variant = 'dashboard' }: LoadingSkeletonProps)
       </div>
     )
   }
-
-  const quote = useRotatingQuote()
 
   return (
     <div
