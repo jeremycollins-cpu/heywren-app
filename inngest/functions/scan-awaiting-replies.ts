@@ -833,6 +833,11 @@ export async function scanTeamAwaitingReplies(
     slackAwaiting,
     inboundDetected,
     duration: Date.now() - startTime,
+    debug: {
+      hasIntegration: !!integration,
+      userEmail,
+      userId,
+    },
   }
 }
 
