@@ -157,12 +157,46 @@ function ThemeCard({ theme, index }: { theme: WorkTheme; index: number }) {
   )
 }
 
+const CACHE_KEY = 'heywren_signal_cache'
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+function getCachedThemes(): ThemesData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as ThemesData
+    if (!cached.generatedAt) return null
+    const age = Date.now() - new Date(cached.generatedAt).getTime()
+    if (age > CACHE_TTL) return null
+    if (cached.insufficient || !cached.themes?.length) return null
+    return cached
+  } catch { return null }
+}
+
+function setCachedThemes(data: ThemesData) {
+  try {
+    if (data.themes?.length && !data.insufficient) {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+    }
+  } catch { /* storage full or unavailable */ }
+}
+
 export function ThemesSection() {
   const [data, setData] = useState<ThemesData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchThemes = useCallback(async () => {
+  const fetchThemes = useCallback(async (force = false) => {
+    // Check cache first (unless force refresh)
+    if (!force) {
+      const cached = getCachedThemes()
+      if (cached) {
+        setData(cached)
+        setLoading(false)
+        return
+      }
+    }
+
     setLoading(true)
     setError(null)
     try {
@@ -170,6 +204,7 @@ export function ThemesSection() {
       if (!res.ok) throw new Error('Failed to generate themes')
       const result = await res.json()
       setData(result)
+      setCachedThemes(result)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -238,7 +273,7 @@ export function ThemesSection() {
             </div>
           </div>
           <button
-            onClick={fetchThemes}
+            onClick={() => fetchThemes(true)}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition disabled:opacity-50"
           >
@@ -270,11 +305,11 @@ export function ThemesSection() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{data.periodLabel} &middot; {totalDataPoints} data points analyzed</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{data.periodLabel} &middot; {totalDataPoints} data points &middot; {data.generatedAt ? `Updated ${new Date(data.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}</p>
             </div>
           </div>
           <button
-            onClick={fetchThemes}
+            onClick={() => fetchThemes(true)}
             disabled={loading}
             className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
           >
