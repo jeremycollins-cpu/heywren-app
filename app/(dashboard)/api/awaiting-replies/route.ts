@@ -228,7 +228,15 @@ export async function POST(request: NextRequest) {
       .eq('id', userId)
       .single()
 
-    const teamId = profile?.current_team_id
+    let teamId = profile?.current_team_id
+    if (!teamId) {
+      const { data: membership } = await admin.from('team_members').select('team_id').eq('user_id', userId).limit(1).single()
+      teamId = membership?.team_id || null
+    }
+    if (!teamId) {
+      const { data: orgMembership } = await admin.from('organization_members').select('team_id').eq('user_id', userId).limit(1).single()
+      teamId = orgMembership?.team_id || null
+    }
     if (!teamId) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }

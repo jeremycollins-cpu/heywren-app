@@ -175,7 +175,6 @@ export async function scanTeamAwaitingReplies(
 
   // Determine who actually owns the Outlook token by calling Graph /me
   // This prevents attributing one user's emails to another user
-  let tokenOwnerUserId = userId
   let tokenVerified = false
   try {
     let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
@@ -195,19 +194,24 @@ export async function scanTeamAwaitingReplies(
       const meData = await meRes.json()
       const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
       if (tokenEmail) {
-        tokenVerified = true
-        // Look up which user in our system owns this email
-        const { data: tokenOwnerProfile } = await supabase
+        // Verify the token belongs to the calling user by checking email match
+        const { data: callerProfile } = await supabase
           .from('profiles')
-          .select('id, email')
-          .eq('email', tokenEmail)
+          .select('email')
+          .eq('id', userId)
           .single()
+        const callerEmail = callerProfile?.email?.toLowerCase() || ''
 
-        if (tokenOwnerProfile) {
-          tokenOwnerUserId = tokenOwnerProfile.id
-          userEmail = tokenOwnerProfile.email?.toLowerCase() || tokenEmail
-        } else {
+        if (callerEmail && tokenEmail === callerEmail) {
+          tokenVerified = true
+          userEmail = callerEmail
+        } else if (!callerEmail) {
+          // If we can't look up caller email, trust the token but use caller's userId
+          tokenVerified = true
           userEmail = tokenEmail
+        } else {
+          // Token belongs to a different user — don't scan
+          console.warn(`Token owner ${tokenEmail} does not match caller ${callerEmail} — skipping Outlook scan`)
         }
       }
     }
@@ -226,7 +230,7 @@ export async function scanTeamAwaitingReplies(
     const { data: profile } = await supabase
       .from('profiles')
       .select('email')
-      .eq('id', tokenOwnerUserId)
+      .eq('id', userId)
       .single()
     userEmail = profile?.email?.toLowerCase() || ''
   }
@@ -336,7 +340,7 @@ export async function scanTeamAwaitingReplies(
 
       toInsert.push({
         team_id: teamId,
-        user_id: tokenOwnerUserId,
+        user_id: userId,
         source: 'outlook',
         source_message_id: msgId,
         conversation_id: conversationId,
@@ -376,7 +380,7 @@ export async function scanTeamAwaitingReplies(
     .from('awaiting_replies')
     .select('id, conversation_id')
     .eq('team_id', teamId)
-    .eq('user_id', tokenOwnerUserId)
+    .eq('user_id', userId)
     .eq('status', 'waiting')
     .not('conversation_id', 'is', null)
 
