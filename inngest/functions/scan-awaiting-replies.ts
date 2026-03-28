@@ -146,14 +146,18 @@ export async function scanTeamAwaitingReplies(
 ) {
   const startTime = Date.now()
 
-  // Get Outlook integration for this user
-  const { data: integration } = await supabase
+  // Get Outlook integration — try user-specific first, then fall back to any team integration
+  let { data: integration } = await supabase
     .from('integrations')
-    .select('id, access_token, refresh_token, config')
+    .select('id, user_id, access_token, refresh_token, config')
     .eq('team_id', teamId)
     .eq('user_id', userId)
     .eq('provider', 'outlook')
     .single()
+
+  if (!integration) {
+    console.log(`Outlook scan: no integration found for user ${userId} on team ${teamId}`)
+  }
 
   let totalScanned = 0
   let totalAwaiting = 0
@@ -166,6 +170,8 @@ export async function scanTeamAwaitingReplies(
     .eq('id', userId)
     .single()
   userEmail = userProfile?.email?.toLowerCase() || ''
+
+  console.log(`Awaiting replies scan: userId=${userId}, teamId=${teamId}, userEmail=${userEmail}, hasIntegration=${!!integration}`)
 
   if (integration) {
   // ── Outlook Scanning ──
@@ -211,7 +217,7 @@ export async function scanTeamAwaitingReplies(
           userEmail = tokenEmail
         } else {
           // Token belongs to a different user — don't scan
-          console.warn(`Token owner ${tokenEmail} does not match caller ${callerEmail} — skipping Outlook scan`)
+          console.warn(`Token owner "${tokenEmail}" does not match caller "${callerEmail}" for userId=${userId} — skipping Outlook scan`)
         }
       }
     }
@@ -221,6 +227,7 @@ export async function scanTeamAwaitingReplies(
 
   // SAFETY: If we couldn't verify the token owner, skip Outlook scanning entirely.
   // This prevents attributing one user's emails to another user when the /me call fails.
+  console.log(`Outlook token verification: tokenVerified=${tokenVerified}, userEmail=${userEmail}, userId=${userId}`)
   if (!tokenVerified) {
     console.warn(`Skipping Outlook scan for user ${userId} — could not verify token owner via Graph /me`)
   } else {
