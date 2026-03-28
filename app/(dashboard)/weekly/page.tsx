@@ -156,6 +156,7 @@ export default function WeeklyPage() {
           .from('outlook_calendar_events')
           .select('id, subject, start_time, end_time, organizer_name, attendees, commitments_found, processed')
           .eq('team_id', teamId)
+          .or(`organizer_email.eq.${email},attendees::text.ilike.%${email}%`)
           .gte('start_time', sevenDaysAgo.toISOString())
           .eq('is_cancelled', false)
           .order('start_time', { ascending: true })

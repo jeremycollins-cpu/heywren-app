@@ -15,6 +15,40 @@ function getAdminClient() {
   )
 }
 
+// Detect calendar invite / meeting emails that shouldn't be in the waiting room
+function isCalendarInviteItem(subject: string | null, bodyPreview: string | null): boolean {
+  const s = (subject || '').trim()
+  // Response emails
+  if (/^(Accepted|Declined|Tentative|Cancell?ed):/i.test(s)) return true
+  const lower = s.toLowerCase()
+  if (lower.includes('out of office') || lower.includes('automatic reply')) return true
+
+  // Check body for meeting invite signatures (Teams, Zoom, Google Meet, etc.)
+  if (bodyPreview) {
+    const body = bodyPreview.toLowerCase()
+    const meetingSignatures = [
+      'join the meeting now',
+      'meeting id:',
+      'microsoft teams meeting',
+      'join zoom meeting',
+      'zoom.us/j/',
+      'meet.google.com/',
+      'you updated the meeting',
+      'you have been invited to',
+      'when:',
+    ]
+    const signatureCount = meetingSignatures.filter(sig => body.includes(sig)).length
+    if (signatureCount >= 2) return true
+    // Strong single signals
+    if (body.includes('join the meeting now') || body.includes('microsoft teams meeting')) return true
+    if (body.includes('join zoom meeting') || body.includes('zoom.us/j/')) return true
+    if (body.includes('you updated the meeting for')) return true
+    if (body.includes('meet.google.com/')) return true
+  }
+
+  return false
+}
+
 export async function GET(request: NextRequest) {
   try {
     let userId: string | null = null
@@ -71,9 +105,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Filter out calendar invite items at read time (catches items created before the filter was added)
+    const calendarInviteIds: string[] = []
+    const filtered = (items || []).filter(item => {
+      if (isCalendarInviteItem(item.subject, item.body_preview)) {
+        calendarInviteIds.push(item.id)
+        return false
+      }
+      return true
+    })
+
+    // Auto-dismiss calendar invites in the background so they don't come back
+    if (calendarInviteIds.length > 0) {
+      admin
+        .from('awaiting_replies')
+        .update({ status: 'dismissed' })
+        .in('id', calendarInviteIds)
+        .then(() => {
+          console.log(`Auto-dismissed ${calendarInviteIds.length} calendar invite items from waiting room`)
+        })
+    }
+
     // Update days_waiting on the fly
     const now = Date.now()
-    const enriched = (items || []).map(item => ({
+    const enriched = filtered.map(item => ({
       ...item,
       days_waiting: Math.floor((now - new Date(item.sent_at).getTime()) / 86400000),
     }))

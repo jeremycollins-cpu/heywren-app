@@ -15,6 +15,7 @@ import UpgradeGate from '@/components/upgrade-gate'
 interface Attendee {
   name: string
   email: string
+  response?: string
 }
 
 interface AttendeeWithHealth extends Attendee {
@@ -209,6 +210,7 @@ function parseAttendees(raw: any): Attendee[] {
     .map((a: any) => ({
       name: a.name || a.emailAddress?.name || a.email?.split('@')[0] || 'Unknown',
       email: (a.email || a.emailAddress?.address || '').toLowerCase(),
+      response: a.response || a.status?.response || 'none',
     }))
     .filter((a: Attendee) => a.email)
 }
@@ -327,6 +329,7 @@ export default function BriefingsPage() {
         .from('outlook_messages')
         .select('from_email, from_name, received_at, to_recipients')
         .eq('team_id', teamId)
+        .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
         .order('received_at', { ascending: false })
         .limit(1000)
 
@@ -547,7 +550,13 @@ export default function BriefingsPage() {
                                 {initials}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{attendee.name}</div>
+                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+                                  {attendee.name}
+                                  {attendee.response === 'accepted' && <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Accepted" />}
+                                  {attendee.response === 'tentative' && <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-100 text-amber-600 text-[9px] font-bold flex-shrink-0" title="Tentative">?</span>}
+                                  {attendee.response === 'declined' && <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-100 text-red-500 text-[9px] font-bold flex-shrink-0" title="Declined">&times;</span>}
+                                  {(!attendee.response || attendee.response === 'none') && <span className="inline-block w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0" title="No response" />}
+                                </div>
                                 <div className="text-xs text-gray-400 truncate">{attendee.email}</div>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">

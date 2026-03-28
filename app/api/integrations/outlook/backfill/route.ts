@@ -17,6 +17,39 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isCalendarInviteEmail(subject: string, bodyPreview?: string): boolean {
+  const s = subject.trim()
+  // Response emails
+  if (/^(Accepted|Declined|Tentative|Cancell?ed):/i.test(s)) return true
+  const lower = s.toLowerCase()
+  if (lower.includes('out of office') || lower.includes('automatic reply')) return true
+
+  // Check body for meeting invite signatures (Teams, Zoom, Google Meet, etc.)
+  if (bodyPreview) {
+    const body = bodyPreview.toLowerCase()
+    const meetingSignatures = [
+      'join the meeting now',
+      'meeting id:',
+      'microsoft teams meeting',
+      'join zoom meeting',
+      'zoom.us/j/',
+      'meet.google.com/',
+      'you updated the meeting',
+      'you have been invited to',
+      'when:',  // combined with other signals
+    ]
+    const signatureCount = meetingSignatures.filter(sig => body.includes(sig)).length
+    // If 2+ meeting signatures found, it's a calendar-generated email
+    if (signatureCount >= 2) return true
+    // Strong single signals
+    if (body.includes('join the meeting now') || body.includes('microsoft teams meeting')) return true
+    if (body.includes('join zoom meeting') || body.includes('zoom.us/j/')) return true
+    if (body.includes('you updated the meeting for')) return true
+  }
+
+  return false
+}
+
 async function refreshMicrosoftToken(
   supabase: ReturnType<typeof getAdminClient>,
   integrationId: string,
@@ -166,7 +199,7 @@ export async function POST(request: NextRequest) {
 
     for (const msg of unprocessed) {
       const preview = msg.body_preview || ''
-      if (preview.length < 20) {
+      if (preview.length < 20 || isCalendarInviteEmail(msg.subject || '', preview)) {
         await supabase
           .from('outlook_messages')
           .update({ processed: true, commitments_found: 0 })
@@ -363,6 +396,33 @@ export async function POST(request: NextRequest) {
         .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
         .join(', ')
       const subject = email.subject || '(no subject)'
+
+      // Skip calendar invite response emails (reuse `preview` from line 381)
+      if (isCalendarInviteEmail(subject, preview)) {
+        if (existing && !existing.processed) {
+          await supabase
+            .from('outlook_messages')
+            .update({ processed: true, commitments_found: 0 })
+            .eq('id', existing.id)
+        } else if (!existing) {
+          await supabase
+            .from('outlook_messages')
+            .insert({
+              team_id: teamId,
+              message_id: email.id,
+              conversation_id: email.conversationId || null,
+              from_name: fromName,
+              from_email: fromEmail,
+              to_recipients: toList,
+              subject: subject,
+              body_preview: preview,
+              received_at: email.receivedDateTime,
+              processed: true,
+              commitments_found: 0,
+            })
+        }
+        continue
+      }
 
       const messageText = [
         'From: ' + fromName + ' <' + fromEmail + '>',

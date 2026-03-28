@@ -12,7 +12,7 @@ import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
-  ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen,
+  ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -253,6 +253,10 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     { href: '/settings', label: 'Settings', icon: Settings },
   ]
 
+  const superAdminLinks = [
+    { href: '/admin', label: 'Support Dashboard', icon: Shield },
+  ]
+
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
     return pathname.startsWith(href)
@@ -269,6 +273,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   }
 
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+  const isSuperAdmin = userRole === 'super_admin'
 
   const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
 
@@ -491,6 +496,41 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                     </li>
                   )
                 })}
+                </ul>
+              </div>
+            )}
+
+            {isSuperAdmin && (
+              <div className={`${collapsed ? '' : 'pt-3 mt-3 border-t border-gray-200 dark:border-border-dark'}`}>
+                {!collapsed && (
+                  <p className="px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                    Super Admin
+                  </p>
+                )}
+                <ul role="list" className="space-y-0.5">
+                  {superAdminLinks.map(({ href, label, icon: Icon }) => {
+                    const active = isActive(href)
+                    return (
+                      <li key={href}>
+                        <Link
+                          href={href}
+                          onClick={() => open && onToggle()}
+                          aria-current={active ? 'page' : undefined}
+                          title={collapsed ? label : undefined}
+                          className={`group flex items-center ${collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5 sm:py-2'} rounded-lg text-sm sm:text-[13px] font-medium transition-all duration-200 ${
+                            active
+                              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          <Icon aria-hidden="true" className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ${
+                            active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                          }`} />
+                          {!collapsed && <span className="truncate">{label}</span>}
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}

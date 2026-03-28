@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useRealtime } from '@/lib/hooks/use-realtime'
@@ -103,6 +103,33 @@ export default function DashboardPage() {
       addMention(payload.new as any)
     },
   })
+
+  // Auto-trigger backfill if dashboard is stuck in scanning state
+  const autoSyncTriggered = useRef(false)
+  const [autoSyncing, setAutoSyncing] = useState(false)
+
+  useEffect(() => {
+    if (!loading && commitments.length === 0 && integrationCount > 0 && !autoSyncTriggered.current) {
+      autoSyncTriggered.current = true
+      setAutoSyncing(true)
+
+      Promise.allSettled([
+        fetch('/api/integrations/slack/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daysBack: 30 }),
+        }),
+        fetch('/api/integrations/outlook/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daysBack: 30 }),
+        }),
+      ]).then(() => {
+        setAutoSyncing(false)
+        fetchDashboard()
+      })
+    }
+  }, [loading, commitments.length, integrationCount, fetchDashboard])
 
   if (loading) return <LoadingSkeleton />
 
@@ -208,7 +235,9 @@ export default function DashboardPage() {
           </div>
           <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Analyzing your conversations</h3>
           <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6">
-            Wren is reading through your recent Slack messages and emails to find commitments, questions, and follow-ups. Your first results typically appear within minutes.
+            {autoSyncing
+              ? 'Wren is actively scanning your Slack messages and emails right now. This typically takes 2-5 minutes.'
+              : 'Wren is reading through your recent Slack messages and emails to find commitments, questions, and follow-ups. Your first results typically appear within minutes.'}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto text-left">
             <div className="bg-white/80 dark:bg-white/10 rounded-lg p-3">
@@ -227,7 +256,7 @@ export default function DashboardPage() {
         </div>
         <div className="text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Listening for new data in real-time. Results will appear automatically.
+            {autoSyncing ? 'Processing your messages now — this page will update automatically when done.' : 'Listening for new data in real-time. Results will appear automatically.'}
           </p>
         </div>
       </div>

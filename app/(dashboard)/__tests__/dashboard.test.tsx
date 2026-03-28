@@ -89,6 +89,12 @@ jest.mock('@/components/dashboard/todays-focus', () => ({
   TodaysFocus: () => <div data-testid="todays-focus">TodaysFocus</div>,
 }))
 
+// ─── Mock global fetch for auto-backfill calls ────────────────────────────
+
+global.fetch = jest.fn(() =>
+  Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response)
+)
+
 // ─── Import after mocks ────────────────────────────────────────────────────
 
 import DashboardPage from '../page'

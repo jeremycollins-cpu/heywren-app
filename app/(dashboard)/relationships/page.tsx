@@ -239,6 +239,7 @@ export default function RelationshipsPage() {
             .select('from_email, from_name, received_at, to_recipients')
             .eq('team_id', teamId)
             .neq('from_email', userEmail || '')
+            .ilike('to_recipients', `%${userEmail}%`)
             .order('received_at', { ascending: false })
             .limit(1000),
           // Also get messages the user SENT (from_email = userEmail) to track "to them" direction
