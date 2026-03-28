@@ -104,6 +104,33 @@ export default function DashboardPage() {
     },
   })
 
+  // Auto-trigger backfill if dashboard is stuck in scanning state
+  const autoSyncTriggered = useRef(false)
+  const [autoSyncing, setAutoSyncing] = useState(false)
+
+  useEffect(() => {
+    if (!loading && commitments.length === 0 && integrationCount > 0 && !autoSyncTriggered.current) {
+      autoSyncTriggered.current = true
+      setAutoSyncing(true)
+
+      Promise.allSettled([
+        fetch('/api/integrations/slack/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daysBack: 30 }),
+        }),
+        fetch('/api/integrations/outlook/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ daysBack: 30 }),
+        }),
+      ]).then(() => {
+        setAutoSyncing(false)
+        fetchDashboard()
+      })
+    }
+  }, [loading, commitments.length, integrationCount, fetchDashboard])
+
   if (loading) return <LoadingSkeleton />
 
   const openCommitments = commitments.filter(c => c.status === 'open')
@@ -197,33 +224,6 @@ export default function DashboardPage() {
       </div>
     )
   }
-
-  // Auto-trigger backfill if dashboard is stuck in scanning state
-  const autoSyncTriggered = useRef(false)
-  const [autoSyncing, setAutoSyncing] = useState(false)
-
-  useEffect(() => {
-    if (!loading && commitments.length === 0 && integrationCount > 0 && !autoSyncTriggered.current) {
-      autoSyncTriggered.current = true
-      setAutoSyncing(true)
-
-      Promise.allSettled([
-        fetch('/api/integrations/slack/backfill', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ daysBack: 30 }),
-        }),
-        fetch('/api/integrations/outlook/backfill', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ daysBack: 30 }),
-        }),
-      ]).then(() => {
-        setAutoSyncing(false)
-        fetchDashboard()
-      })
-    }
-  }, [loading, commitments.length, integrationCount, fetchDashboard])
 
   if (commitments.length === 0 && integrationCount > 0) {
     return (

@@ -155,7 +155,7 @@ export default function OnboardingCompletePage() {
     // syncing
     if (step === 'scan') return syncProgress.slackDone || syncProgress.outlookDone ? 'done' : 'active'
     if (step === 'detect') return syncProgress.commitments > 0 ? 'done' : (syncProgress.slackDone || syncProgress.outlookDone ? 'active' : 'pending')
-    if (step === 'score') return syncStatus === 'done' ? 'done' : 'pending'
+    if (step === 'score') return 'pending'
     return 'pending'
   }
 

@@ -80,6 +80,7 @@ jest.mock('lucide-react', () => {
     ChevronRight: createIcon('ChevronRight'),
     PanelLeftClose: createIcon('PanelLeftClose'),
     PanelLeftOpen: createIcon('PanelLeftOpen'),
+    Shield: createIcon('Shield'),
   }
 })
 
