@@ -31,6 +31,11 @@ interface UserDetail {
     calendarEvents: number
     waitingRoomItems: number
   }
+  recentActivity?: {
+    commitments: { title: string; status: string; source: string; created_at: string }[]
+    waitingRoom: { subject: string; status: string; urgency: string; sent_at: string; days_waiting: number }[]
+    emails: { subject: string; from_name: string; received_at: string; processed: boolean }[]
+  }
 }
 
 interface TeamMember {
@@ -93,12 +98,16 @@ function AdminContent() {
 
   const loadUser = async (userId: string) => {
     setLoading(true)
+    setSelectedUser(null)
     setView('user')
     try {
       const res = await fetch(`/api/admin/dashboard?view=user&userId=${userId}`)
       if (res.ok) {
         const data = await res.json()
         setSelectedUser(data)
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+        toast.error(err.error || `Failed to load user (${res.status})`)
       }
     } catch { toast.error('Failed to load user') }
     setLoading(false)
@@ -253,7 +262,34 @@ function AdminContent() {
   }
 
   // User detail view
-  if (view === 'user' && selectedUser) {
+  if (view === 'user') {
+    if (loading || !selectedUser) {
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setView('team'); if (selectedTeam) loadTeam(selectedTeam) }} className="text-gray-500 hover:text-gray-700">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <PageHeader title="User Details" description="Loading user diagnostics..." />
+          </div>
+          {loading ? (
+            <div className="text-center py-12 text-gray-500">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
+              <p>Loading user data...</p>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <AlertTriangle className="w-6 h-6 mx-auto mb-2 text-amber-500" />
+              <p>Failed to load user data.</p>
+              <button onClick={() => { setView('team'); if (selectedTeam) loadTeam(selectedTeam) }} className="mt-3 text-indigo-600 text-sm font-medium hover:underline">
+                Go back to team
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    }
+
     const { profile, integrations, diagnostics } = selectedUser
     const d = diagnostics
     const processedRate = d.emails.total > 0 ? Math.round(d.emails.processed / d.emails.total * 100) : 0
@@ -268,9 +304,7 @@ function AdminContent() {
           <PageHeader title={profile.full_name || profile.display_name || profile.email} description={profile.email} />
         </div>
 
-        {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading...</div>
-        ) : (
+        {(
           <>
             {/* User Status */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -394,6 +428,84 @@ function AdminContent() {
                 </div>
               )}
             </div>
+
+            {/* Recent Activity — What the user sees */}
+            {selectedUser.recentActivity && (
+              <div className="space-y-4">
+                {/* Recent Commitments */}
+                {selectedUser.recentActivity.commitments.length > 0 && (
+                  <div className="bg-white dark:bg-surface-dark-secondary border rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-indigo-500" />
+                      Recent Commitments
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedUser.recentActivity.commitments.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.status === 'completed' ? 'bg-green-500' : c.status === 'open' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{c.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {c.source && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{c.source}</span>}
+                            <span className="text-xs text-gray-400">{new Date(c.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Waiting Room Items */}
+                {selectedUser.recentActivity.waitingRoom.length > 0 && (
+                  <div className="bg-white dark:bg-surface-dark-secondary border rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-500" />
+                      Waiting Room ({d.waitingRoomItems} active)
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedUser.recentActivity.waitingRoom.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              item.urgency === 'critical' ? 'bg-red-100 text-red-700' :
+                              item.urgency === 'high' ? 'bg-amber-100 text-amber-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{item.urgency}</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{item.subject || '(no subject)'}</span>
+                          </div>
+                          <span className="text-xs text-gray-400 flex-shrink-0">{item.days_waiting}d waiting</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Emails */}
+                {selectedUser.recentActivity.emails.length > 0 && (
+                  <div className="bg-white dark:bg-surface-dark-secondary border rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-blue-500" />
+                      Recent Emails
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedUser.recentActivity.emails.map((email, i) => (
+                        <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${email.processed ? 'bg-green-500' : 'bg-amber-500'}`} />
+                            <div className="min-w-0">
+                              <span className="text-sm text-gray-700 dark:text-gray-300 truncate block">{email.subject || '(no subject)'}</span>
+                              <span className="text-xs text-gray-400">{email.from_name || 'Unknown'}</span>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-400 flex-shrink-0">{new Date(email.received_at).toLocaleDateString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Quick Actions */}
             <div className="bg-white border rounded-lg p-4">

@@ -86,13 +86,17 @@ export async function GET(request: NextRequest) {
     const teamId = profile.current_team_id
     const userEmail = profile.email?.toLowerCase() || ''
 
-    const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies] = await Promise.all([
+    const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies, recentCommitments, recentWaiting, recentEmails] = await Promise.all([
       adminDb.from('integrations').select('id, provider, created_at').eq('team_id', teamId).eq('user_id', userId),
       adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', teamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`),
       teamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', teamId) : Promise.resolve({ data: [], count: 0 }),
       teamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', teamId) : Promise.resolve({ data: [], count: 0 }),
       teamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId) : Promise.resolve({ count: 0 }),
-      teamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),
+      teamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
+      // Recent activity for support debugging
+      adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', teamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10),
+      teamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', teamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      teamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', teamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
     ])
 
     const emailData = outlookMsgs.data || []
@@ -125,6 +129,11 @@ export async function GET(request: NextRequest) {
         },
         calendarEvents: calEvents.count || 0,
         waitingRoomItems: awaitingReplies.count || 0,
+      },
+      recentActivity: {
+        commitments: recentCommitments.data || [],
+        waitingRoom: recentWaiting.data || [],
+        emails: recentEmails.data || [],
       },
     })
   }
