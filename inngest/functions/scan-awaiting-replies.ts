@@ -178,9 +178,19 @@ export async function scanTeamAwaitingReplies(
   let tokenOwnerUserId = userId
   let tokenVerified = false
   try {
-    const meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
+    let meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
       headers: { Authorization: 'Bearer ' + msToken },
     })
+    // If token is expired, refresh and retry the /me call
+    if (meRes.status === 401) {
+      const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+      if (newToken) {
+        msToken = newToken
+        meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', {
+          headers: { Authorization: 'Bearer ' + msToken },
+        })
+      }
+    }
     if (meRes.ok) {
       const meData = await meRes.json()
       const tokenEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase()
