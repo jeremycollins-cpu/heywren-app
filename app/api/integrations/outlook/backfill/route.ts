@@ -397,8 +397,7 @@ export async function POST(request: NextRequest) {
         .join(', ')
       const subject = email.subject || '(no subject)'
 
-      // Skip calendar invite response emails
-      const preview = email.bodyPreview || ''
+      // Skip calendar invite response emails (reuse `preview` from line 381)
       if (isCalendarInviteEmail(subject, preview)) {
         if (existing && !existing.processed) {
           await supabase
