@@ -75,3 +75,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: err.message || 'Failed to create' }, { status: 500 })
   }
 }
+
+export const dynamic = 'force-dynamic'

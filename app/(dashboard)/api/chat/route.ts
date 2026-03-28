@@ -279,3 +279,5 @@ function buildContextBlock(data: {
 
   return lines.join('\n')
 }
+
+export const dynamic = 'force-dynamic'

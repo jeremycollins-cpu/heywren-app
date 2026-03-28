@@ -14,6 +14,15 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
+  // Prevent browsers and CDNs from caching dynamic pages
+  // This ensures users always see the latest deployed version
+  const pathname = request.nextUrl.pathname
+  const isStaticAsset = pathname.startsWith('/_next/') || pathname.startsWith('/favicon') || pathname.includes('.')
+  if (!isStaticAsset) {
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    response.headers.set('Pragma', 'no-cache')
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key',
@@ -30,8 +39,6 @@ export async function updateSession(request: NextRequest) {
       },
     }
   )
-
-  const pathname = request.nextUrl.pathname
 
   // Skip checks for public/API/static paths
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
