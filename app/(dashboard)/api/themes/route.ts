@@ -28,7 +28,10 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (!profile?.current_team_id) {
-      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+      return NextResponse.json({
+        themes: [], headline: '', periodLabel: '',
+        generatedAt: new Date().toISOString(), insufficient: true,
+      })
     }
 
     const teamId = profile.current_team_id
