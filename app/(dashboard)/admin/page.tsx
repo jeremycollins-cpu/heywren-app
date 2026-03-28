@@ -400,6 +400,14 @@ function AdminContent() {
               <h3 className="font-semibold text-gray-900 mb-3">Quick Actions</h3>
               <div className="flex flex-wrap gap-2">
                 <button
+                  onClick={() => runAction('trigger_backfill', { userId: profile.id })}
+                  disabled={actionLoading === 'trigger_backfill'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  {actionLoading === 'trigger_backfill' ? 'Triggering...' : 'Trigger Reprocessing'}
+                </button>
+                <button
                   onClick={() => runAction('reset_processed', { teamId: profile.current_team_id })}
                   disabled={actionLoading === 'reset_processed'}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
@@ -412,7 +420,7 @@ function AdminContent() {
                   disabled={actionLoading === 'fix_onboarding'}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
                 >
-                  <Zap className="w-3.5 h-3.5" />
+                  <Clock className="w-3.5 h-3.5" />
                   {actionLoading === 'fix_onboarding' ? 'Fixing...' : 'Mark Onboarding Complete'}
                 </button>
                 <button

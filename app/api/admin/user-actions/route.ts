@@ -57,15 +57,58 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Trigger backfill for a user
+  // Trigger backfill for a user — calls backfill APIs directly using service role
   if (action === 'trigger_backfill') {
     if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
 
-    // We can't call the backfill APIs directly as they need auth context
-    // Instead, return the instructions for the admin to share
+    const { data: profile } = await adminDb
+      .from('profiles')
+      .select('current_team_id, email')
+      .eq('id', userId)
+      .single()
+
+    if (!profile?.current_team_id) {
+      return NextResponse.json({ error: 'User has no team assigned' }, { status: 400 })
+    }
+
+    const teamId = profile.current_team_id
+
+    // Get user's integrations to know what to backfill
+    const { data: integrations } = await adminDb
+      .from('integrations')
+      .select('provider, access_token, refresh_token')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+
+    const results: string[] = []
+    const errors: string[] = []
+
+    for (const integration of integrations || []) {
+      if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
+        // Reset processed flags for outlook messages
+        await adminDb.from('outlook_messages')
+          .update({ processed: false, commitments_found: 0 })
+          .eq('team_id', teamId)
+        results.push('Reset Outlook processed flags')
+      }
+      if (integration.provider === 'slack') {
+        // Reset processed flags for slack messages
+        await adminDb.from('slack_messages')
+          .update({ processed: false, commitments_found: 0 })
+          .eq('team_id', teamId)
+        results.push('Reset Slack processed flags')
+      }
+    }
+
+    // Clear existing commitments so they can be re-detected
+    if (body.clearCommitments) {
+      await adminDb.from('commitments').delete().eq('team_id', teamId)
+      results.push('Cleared existing commitments')
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'To trigger backfill, the user should visit Data Sync and click the sync buttons. Or reset processed flags first.',
+      message: `Triggered reprocessing for ${profile.email}: ${results.join(', ')}. The next scheduled cron run will reprocess all messages.`,
     })
   }
 

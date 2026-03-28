@@ -43,17 +43,25 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
 
     const teamHealth = await Promise.all((teams || []).map(async (team) => {
-      const [members, integrations, commitments, outlookMsgs, slackMsgs] = await Promise.all([
-        adminDb.from('team_members').select('user_id', { count: 'exact', head: true }).eq('team_id', team.id),
+      const [teamMembers, orgMembers, profileMembers, integrations, commitments, outlookMsgs, slackMsgs] = await Promise.all([
+        adminDb.from('team_members').select('user_id').eq('team_id', team.id),
+        adminDb.from('organization_members').select('user_id').eq('team_id', team.id),
+        adminDb.from('profiles').select('id').eq('current_team_id', team.id),
         adminDb.from('integrations').select('id, provider, user_id', { count: 'exact' }).eq('team_id', team.id),
         adminDb.from('commitments').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
         adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
         adminDb.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
       ])
 
+      // Deduplicate member count across all sources
+      const memberIds = new Set<string>()
+      for (const m of teamMembers.data || []) memberIds.add(m.user_id)
+      for (const m of orgMembers.data || []) memberIds.add(m.user_id)
+      for (const p of profileMembers.data || []) memberIds.add(p.id)
+
       return {
         ...team,
-        memberCount: members.count || 0,
+        memberCount: memberIds.size,
         integrationCount: integrations.count || 0,
         integrations: integrations.data || [],
         commitmentCount: commitments.count || 0,
@@ -122,35 +130,70 @@ export async function GET(request: NextRequest) {
   }
 
   // Team detail: all users in a team with their status
+  // Check ALL membership sources: team_members, organization_members, and profiles.current_team_id
   if (view === 'team' && teamId) {
-    const { data: members } = await adminDb
+    const userIdSet = new Set<string>()
+    const roleMap = new Map<string, string>()
+    const joinedMap = new Map<string, string>()
+
+    // Source 1: team_members (legacy)
+    const { data: teamMembers } = await adminDb
       .from('team_members')
       .select('user_id, role, created_at')
       .eq('team_id', teamId)
+    for (const m of teamMembers || []) {
+      userIdSet.add(m.user_id)
+      roleMap.set(m.user_id, m.role)
+      joinedMap.set(m.user_id, m.created_at)
+    }
 
-    const userDetails = await Promise.all((members || []).map(async (member) => {
+    // Source 2: organization_members
+    const { data: orgMembers } = await adminDb
+      .from('organization_members')
+      .select('user_id, role, created_at')
+      .eq('team_id', teamId)
+    for (const m of orgMembers || []) {
+      userIdSet.add(m.user_id)
+      if (!roleMap.has(m.user_id)) roleMap.set(m.user_id, m.role)
+      if (!joinedMap.has(m.user_id)) joinedMap.set(m.user_id, m.created_at)
+    }
+
+    // Source 3: profiles with current_team_id
+    const { data: profileMembers } = await adminDb
+      .from('profiles')
+      .select('id, created_at')
+      .eq('current_team_id', teamId)
+    for (const p of profileMembers || []) {
+      userIdSet.add(p.id)
+      if (!roleMap.has(p.id)) roleMap.set(p.id, 'member')
+      if (!joinedMap.has(p.id)) joinedMap.set(p.id, p.created_at)
+    }
+
+    const userIds = Array.from(userIdSet)
+
+    const userDetails = await Promise.all(userIds.map(async (userId) => {
       const { data: profile } = await adminDb
         .from('profiles')
         .select('id, email, full_name, role, onboarding_completed, slack_user_id, created_at')
-        .eq('id', member.user_id)
+        .eq('id', userId)
         .single()
 
       const { data: integrations } = await adminDb
         .from('integrations')
         .select('provider')
         .eq('team_id', teamId)
-        .eq('user_id', member.user_id)
+        .eq('user_id', userId)
 
       const { count: commitmentCount } = await adminDb
         .from('commitments')
         .select('id', { count: 'exact', head: true })
         .eq('team_id', teamId)
-        .or(`creator_id.eq.${member.user_id},assignee_id.eq.${member.user_id}`)
+        .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
 
       return {
         ...profile,
-        teamRole: member.role,
-        joinedAt: member.created_at,
+        teamRole: roleMap.get(userId) || 'member',
+        joinedAt: joinedMap.get(userId) || profile?.created_at,
         integrations: (integrations || []).map(i => i.provider),
         commitmentCount: commitmentCount || 0,
       }
