@@ -38,55 +38,54 @@ export async function GET(request: NextRequest) {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
 
-    // Fetch all data sources in parallel
-    const [commitments, emails, calendar, slack] = await Promise.all([
-      // Commitments for this user
-      admin
-        .from('commitments')
-        .select('title, status, source, source_ref, created_at, metadata')
-        .eq('team_id', teamId)
-        .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
-        .gte('created_at', sevenDaysAgo)
-        .order('created_at', { ascending: false })
-        .limit(50),
+    // Fetch all data sources in parallel — each wrapped so one failure doesn't kill the others
+    const safeQuery = async <T>(fn: () => Promise<{ data: T[] | null; error: any }>): Promise<T[]> => {
+      try {
+        const { data, error } = await fn()
+        if (error) { console.warn('Themes data query error:', error.message); return [] }
+        return data || []
+      } catch (e) { console.warn('Themes data query exception:', e); return [] }
+    }
 
-      // Emails sent/received by this user
-      admin
-        .from('outlook_messages')
-        .select('subject, from_name, from_email, to_recipients, received_at')
-        .eq('team_id', teamId)
-        .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
-        .gte('received_at', sevenDaysAgo)
-        .order('received_at', { ascending: false })
-        .limit(60),
-
-      // Calendar events
-      admin
-        .from('outlook_calendar_events')
-        .select('subject, organizer_email, start_time, attendees')
-        .eq('team_id', teamId)
-        .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
-        .gte('start_time', sevenDaysAgo)
-        .order('start_time', { ascending: false })
-        .limit(40),
-
-      // Slack messages
+    const [commitmentData, emailData, calendarData, slackData] = await Promise.all([
+      safeQuery(() =>
+        admin.from('commitments')
+          .select('title, status, source, source_ref, created_at, metadata')
+          .eq('team_id', teamId)
+          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+          .gte('created_at', sevenDaysAgo)
+          .order('created_at', { ascending: false })
+          .limit(50)
+      ),
+      safeQuery(() =>
+        admin.from('outlook_messages')
+          .select('subject, from_name, from_email, to_recipients, received_at')
+          .eq('team_id', teamId)
+          .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+          .gte('received_at', sevenDaysAgo)
+          .order('received_at', { ascending: false })
+          .limit(60)
+      ),
+      safeQuery(() =>
+        admin.from('outlook_calendar_events')
+          .select('subject, organizer_email, start_time, attendees')
+          .eq('team_id', teamId)
+          .gte('start_time', sevenDaysAgo)
+          .order('start_time', { ascending: false })
+          .limit(40)
+      ),
       slackUserId
-        ? admin
-            .from('slack_messages')
-            .select('channel_id, message_text, created_at')
-            .eq('team_id', teamId)
-            .eq('user_id', slackUserId)
-            .gte('created_at', sevenDaysAgo)
-            .order('created_at', { ascending: false })
-            .limit(40)
-        : Promise.resolve({ data: [] }),
+        ? safeQuery(() =>
+            admin.from('slack_messages')
+              .select('channel_id, message_text, created_at')
+              .eq('team_id', teamId)
+              .eq('user_id', slackUserId)
+              .gte('created_at', sevenDaysAgo)
+              .order('created_at', { ascending: false })
+              .limit(40)
+          )
+        : Promise.resolve([]),
     ])
-
-    const commitmentData = commitments.data || []
-    const emailData = emails.data || []
-    const calendarData = calendar.data || []
-    const slackData = slack.data || []
 
     // If there's not enough data, return empty
     if (commitmentData.length + emailData.length + calendarData.length + slackData.length < 5) {
@@ -95,6 +94,14 @@ export async function GET(request: NextRequest) {
         headline: '',
         periodLabel: '',
         generatedAt: new Date().toISOString(),
+        insufficient: true,
+      })
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('Themes: ANTHROPIC_API_KEY not configured')
+      return NextResponse.json({
+        themes: [], headline: '', periodLabel: '', generatedAt: new Date().toISOString(),
         insufficient: true,
       })
     }
@@ -129,8 +136,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(themes)
   } catch (err: any) {
-    console.error('Themes generation error:', err)
-    return NextResponse.json({ error: err.message || 'Failed to generate themes' }, { status: 500 })
+    console.error('Themes generation error:', err?.message || err)
+    // Return insufficient instead of 500 so the UI shows a helpful message rather than "Something went wrong"
+    return NextResponse.json({
+      themes: [], headline: '', periodLabel: '',
+      generatedAt: new Date().toISOString(),
+      insufficient: true,
+    })
   }
 }
 
