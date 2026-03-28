@@ -17,11 +17,36 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function isCalendarInviteEmail(subject: string): boolean {
+function isCalendarInviteEmail(subject: string, bodyPreview?: string): boolean {
   const s = subject.trim()
+  // Response emails
   if (/^(Accepted|Declined|Tentative|Cancell?ed):/i.test(s)) return true
   const lower = s.toLowerCase()
   if (lower.includes('out of office') || lower.includes('automatic reply')) return true
+
+  // Check body for meeting invite signatures (Teams, Zoom, Google Meet, etc.)
+  if (bodyPreview) {
+    const body = bodyPreview.toLowerCase()
+    const meetingSignatures = [
+      'join the meeting now',
+      'meeting id:',
+      'microsoft teams meeting',
+      'join zoom meeting',
+      'zoom.us/j/',
+      'meet.google.com/',
+      'you updated the meeting',
+      'you have been invited to',
+      'when:',  // combined with other signals
+    ]
+    const signatureCount = meetingSignatures.filter(sig => body.includes(sig)).length
+    // If 2+ meeting signatures found, it's a calendar-generated email
+    if (signatureCount >= 2) return true
+    // Strong single signals
+    if (body.includes('join the meeting now') || body.includes('microsoft teams meeting')) return true
+    if (body.includes('join zoom meeting') || body.includes('zoom.us/j/')) return true
+    if (body.includes('you updated the meeting for')) return true
+  }
+
   return false
 }
 
@@ -174,7 +199,7 @@ export async function POST(request: NextRequest) {
 
     for (const msg of unprocessed) {
       const preview = msg.body_preview || ''
-      if (preview.length < 20 || isCalendarInviteEmail(msg.subject || '')) {
+      if (preview.length < 20 || isCalendarInviteEmail(msg.subject || '', preview)) {
         await supabase
           .from('outlook_messages')
           .update({ processed: true, commitments_found: 0 })
@@ -373,7 +398,8 @@ export async function POST(request: NextRequest) {
       const subject = email.subject || '(no subject)'
 
       // Skip calendar invite response emails
-      if (isCalendarInviteEmail(subject)) {
+      const preview = email.bodyPreview || ''
+      if (isCalendarInviteEmail(subject, preview)) {
         if (existing && !existing.processed) {
           await supabase
             .from('outlook_messages')

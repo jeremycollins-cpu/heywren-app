@@ -276,7 +276,16 @@ export async function scanTeamAwaitingReplies(
       const subjectLower = subject.toLowerCase()
       if (subjectLower.startsWith('accepted:') || subjectLower.startsWith('declined:') ||
           subjectLower.startsWith('tentative:') || subjectLower.startsWith('canceled:') ||
+          subjectLower.startsWith('cancelled:') ||
           subjectLower.includes('out of office') || subjectLower.includes('automatic reply')) {
+        continue
+      }
+
+      // Skip calendar/meeting invite emails (body contains meeting join links)
+      const bodyLower = bodyPreview.toLowerCase()
+      if (bodyLower.includes('join the meeting now') || bodyLower.includes('microsoft teams meeting') ||
+          bodyLower.includes('join zoom meeting') || bodyLower.includes('zoom.us/j/') ||
+          bodyLower.includes('you updated the meeting for') || bodyLower.includes('meet.google.com/')) {
         continue
       }
 
