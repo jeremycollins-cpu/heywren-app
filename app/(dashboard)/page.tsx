@@ -19,6 +19,7 @@ import { SectionErrorBoundary } from '@/components/ui/error-boundary'
 import { MentionsSection } from '@/components/dashboard/mentions-section'
 import { NudgeCard } from '@/components/dashboard/nudge-card'
 import { TodaysFocus } from '@/components/dashboard/todays-focus'
+import { ThemesSection } from '@/components/dashboard/themes-section'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -291,6 +292,10 @@ export default function DashboardPage() {
       />
 
       <HeroStats commitments={commitments} />
+
+      <SectionErrorBoundary fallbackTitle="Themes failed to load">
+        <ThemesSection />
+      </SectionErrorBoundary>
 
       <TodaysFocus
         commitments={commitments}
