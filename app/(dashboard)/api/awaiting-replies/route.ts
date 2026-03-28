@@ -15,7 +15,7 @@ function getAdminClient() {
   )
 }
 
-// Detect calendar invite / meeting emails that shouldn't be in the waiting room
+// Detect calendar invites, meeting emails, and scheduling noise that shouldn't be in the waiting room
 function isCalendarInviteItem(subject: string | null, bodyPreview: string | null): boolean {
   const s = (subject || '').trim()
   // Response emails
@@ -23,9 +23,16 @@ function isCalendarInviteItem(subject: string | null, bodyPreview: string | null
   const lower = s.toLowerCase()
   if (lower.includes('out of office') || lower.includes('automatic reply')) return true
 
+  // Name/Name pattern — "Jeremy/Leah (...)" — almost always a recurring meeting
+  if (/^\w+\s*\/\s*\w+/i.test(s)) return true
+
+  // "FW:" + onsite/meeting-logistics subjects
+  if (/^(FW|Fwd):/i.test(s) && /\b(onsite|on-site|offsite|off-site)\b/i.test(s)) return true
+
   // Check body for meeting invite signatures (Teams, Zoom, Google Meet, etc.)
-  if (bodyPreview) {
-    const body = bodyPreview.toLowerCase()
+  const body = (bodyPreview || '').toLowerCase()
+
+  if (body) {
     const meetingSignatures = [
       'join the meeting now',
       'meeting id:',
@@ -49,17 +56,31 @@ function isCalendarInviteItem(subject: string | null, bodyPreview: string | null
     if (body.includes('meet.google.com/')) return true
     if (body.includes('meeting id:') && body.includes('passcode:')) return true
 
-    // Strong meeting-name subjects — these are almost always meeting names, not real email subjects.
-    // "Product Leadership Sync", "Jeremy/Leah Weekly", "Team Standup", "Engineering 1:1"
-    // Filter these without requiring body signals.
+    // Meeting scheduling language in body — these are scheduling logistics, not actionable follow-ups
+    const schedulingPatterns = [
+      /any chance .{0,30}(works|free|available)/i,
+      /\b(works for you|work for you)\b/i,
+      /i'?ll send (a |the )?calendar/i,
+      /let'?s (do|meet|schedule|connect)/i,
+      /was just scheduled/i,
+      /weekly agenda/i,
+    ]
+    const hasSchedulingBody = schedulingPatterns.some(p => p.test(body))
+
+    // Strong meeting-name subjects — filter without body signals.
+    // "Product Leadership Sync", "Team Standup", "Engineering 1:1"
     const strongMeetingPatterns = [
       /\bsync\b/i, /\bstandup\b/i, /\bstand-up\b/i, /\b1[:\-]1\b/i, /\bone.on.one\b/i,
       /\bweekly\b/i, /\bbiweekly\b/i, /\bmonthly\b/i, /\bdaily\b/i, /\brecurring\b/i,
       /\bhuddle\b/i, /\bcatch.up\b/i, /\btouchbase\b/i, /\btouch.base\b/i,
       /\bretro\b/i, /\bretrospective\b/i,
-      /\/.*\b(sync|update|meeting|call)\b/i,  // "Name/Name Sync" pattern
+      /\bsales updates?\b/i, /\bstatus updates?\b/i, /\bproject updates?\b/i,
+      /\bonsite\b/i, /\bon-site\b/i, /\boffsite\b/i, /\boff-site\b/i,
     ]
     if (strongMeetingPatterns.some(p => p.test(s))) return true
+
+    // Scheduling body alone is enough to filter
+    if (hasSchedulingBody) return true
 
     // Weaker meeting-style subjects — need at least one body signal to confirm
     const weakMeetingPatterns = [

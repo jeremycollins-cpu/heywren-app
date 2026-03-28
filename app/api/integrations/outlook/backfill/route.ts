@@ -19,36 +19,43 @@ function sleep(ms: number) {
 
 function isCalendarInviteEmail(subject: string, bodyPreview?: string): boolean {
   const s = subject.trim()
-  // Response emails
   if (/^(Accepted|Declined|Tentative|Cancell?ed):/i.test(s)) return true
   const lower = s.toLowerCase()
   if (lower.includes('out of office') || lower.includes('automatic reply')) return true
 
-  // Check body for meeting invite signatures (Teams, Zoom, Google Meet, etc.)
-  if (bodyPreview) {
-    const body = bodyPreview.toLowerCase()
+  // Name/Name pattern — "Jeremy/Leah (...)" — almost always a recurring meeting
+  if (/^\w+\s*\/\s*\w+/i.test(s)) return true
+
+  // FW: + onsite/meeting-logistics subjects
+  if (/^(FW|Fwd):/i.test(s) && /\b(onsite|on-site|offsite|off-site)\b/i.test(s)) return true
+
+  const body = (bodyPreview || '').toLowerCase()
+
+  if (body) {
     const meetingSignatures = [
-      'join the meeting now',
-      'meeting id:',
-      'microsoft teams meeting',
-      'join zoom meeting',
-      'zoom.us/j/',
-      'meet.google.com/',
-      'you updated the meeting',
-      'you have been invited to',
-      'dial-in number',
-      'join on your computer',
-      'click here to join',
-      'passcode:',
+      'join the meeting now', 'meeting id:', 'microsoft teams meeting',
+      'join zoom meeting', 'zoom.us/j/', 'meet.google.com/',
+      'you updated the meeting', 'you have been invited to',
+      'dial-in number', 'join on your computer', 'click here to join', 'passcode:',
     ]
     const signatureCount = meetingSignatures.filter(sig => body.includes(sig)).length
     if (signatureCount >= 2) return true
-    // Strong single signals
     if (body.includes('join the meeting now') || body.includes('microsoft teams meeting')) return true
     if (body.includes('join zoom meeting') || body.includes('zoom.us/j/')) return true
     if (body.includes('you updated the meeting for')) return true
     if (body.includes('meet.google.com/')) return true
     if (body.includes('meeting id:') && body.includes('passcode:')) return true
+
+    // Meeting scheduling language
+    const schedulingPatterns = [
+      /any chance .{0,30}(works|free|available)/i,
+      /\b(works for you|work for you)\b/i,
+      /i'?ll send (a |the )?calendar/i,
+      /let'?s (do|meet|schedule|connect)/i,
+      /was just scheduled/i,
+      /weekly agenda/i,
+    ]
+    if (schedulingPatterns.some(p => p.test(body))) return true
 
     // Strong meeting-name subjects — filter without body signals
     const strongMeetingPatterns = [
@@ -56,7 +63,8 @@ function isCalendarInviteEmail(subject: string, bodyPreview?: string): boolean {
       /\bweekly\b/i, /\bbiweekly\b/i, /\bmonthly\b/i, /\bdaily\b/i, /\brecurring\b/i,
       /\bhuddle\b/i, /\bcatch.up\b/i, /\btouchbase\b/i, /\btouch.base\b/i,
       /\bretro\b/i, /\bretrospective\b/i,
-      /\/.*\b(sync|update|meeting|call)\b/i,
+      /\bsales updates?\b/i, /\bstatus updates?\b/i, /\bproject updates?\b/i,
+      /\bonsite\b/i, /\bon-site\b/i, /\boffsite\b/i, /\boff-site\b/i,
     ]
     if (strongMeetingPatterns.some(p => p.test(s))) return true
 
