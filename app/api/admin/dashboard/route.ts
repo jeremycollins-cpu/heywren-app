@@ -251,8 +251,11 @@ export async function GET(request: NextRequest) {
       const daysSinceSync = lastUpdated ? Math.floor((now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24)) : null
       const config = int.config || {}
       const tokenExpiresAt = config.token_expires_at ? new Date(config.token_expires_at) : null
-      const tokenExpired = tokenExpiresAt ? tokenExpiresAt < now : false
-      const tokenExpiresSoon = tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
+      const hasRefresh = !!int.refresh_token
+      // Only flag expired tokens if they've been expired 24h+ (auto-refresh should handle short-lived access tokens)
+      const tokenExpired = tokenExpiresAt ? (now.getTime() - tokenExpiresAt.getTime()) > 24 * 60 * 60 * 1000 : false
+      // Flag as warning only if no refresh token and access token expires within 24h
+      const tokenExpiresSoon = !hasRefresh && tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
       return {
         provider: int.provider,
         daysSinceSync,
@@ -394,8 +397,9 @@ export async function GET(request: NextRequest) {
       },
       integrationHealth,
       dataMigration: {
-        emails: { withUserId: emailsWithUserId.count || 0, withoutUserId: emailsWithoutUserId.count || 0 },
-        calendar: { withUserId: calWithUserId.count || 0, withoutUserId: calWithoutUserId.count || 0 },
+        emails: { total: emailsWithUserId.count || 0, unowned: emailsWithoutUserId.count || 0 },
+        calendar: { total: calWithUserId.count || 0, unowned: calWithoutUserId.count || 0 },
+        slack: { total: slackData.length, processed: slackData.filter(s => s.processed).length },
       },
       activityLog: {
         lastSignIn,
