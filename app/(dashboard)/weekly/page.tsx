@@ -103,6 +103,8 @@ function isThisWeek(dateStr: string): boolean {
 export default function WeeklyPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [emails, setEmails] = useState<Array<{ id: string; subject: string | null; received_at: string }>>([])
+  const [slackMessages, setSlackMessages] = useState<Array<{ id: string; message_text: string | null; created_at: string }>>([])
   const [integrationCount, setIntegrationCount] = useState(0)
   const [userDomain, setUserDomain] = useState('')
   const [loading, setLoading] = useState(true)
@@ -175,8 +177,45 @@ export default function WeeklyPage() {
           console.warn('Failed to load calendar events for weekly review')
         }
 
+        // Fetch this week's emails for time allocation
+        let emailData: Array<{ id: string; subject: string | null; received_at: string }> = []
+        try {
+          const sevenDaysAgo = new Date()
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+          const { data: rawEmails } = await supabase
+            .from('outlook_messages')
+            .select('id, subject, received_at')
+            .eq('team_id', teamId)
+            .eq('user_id', userData.user.id)
+            .gte('received_at', sevenDaysAgo.toISOString())
+            .order('received_at', { ascending: false })
+            .limit(500)
+          if (rawEmails) emailData = rawEmails
+        } catch {
+          console.warn('Failed to load emails for weekly review')
+        }
+
+        // Fetch this week's Slack messages for time allocation
+        let slackData: Array<{ id: string; message_text: string | null; created_at: string }> = []
+        try {
+          const sevenDaysAgo = new Date()
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+          const { data: rawSlack } = await supabase
+            .from('slack_messages')
+            .select('id, message_text, created_at')
+            .eq('team_id', teamId)
+            .gte('created_at', sevenDaysAgo.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(500)
+          if (rawSlack) slackData = rawSlack
+        } catch {
+          console.warn('Failed to load Slack messages for weekly review')
+        }
+
         if (data) setCommitments(data)
         setCalendarEvents(calData)
+        setEmails(emailData)
+        setSlackMessages(slackData)
         if (intData) setIntegrationCount(intData.length)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load weekly review'
@@ -388,36 +427,49 @@ export default function WeeklyPage() {
       })()}
 
       {/* Time Allocation Analysis */}
-      {calendarEvents.length > 0 && (() => {
-        // Count total email/message activity this week
-        const thisWeekCommitments = commitments.filter(c => isThisWeek(c.created_at))
-        const messageCount = thisWeekCommitments.length
+      {(calendarEvents.length > 0 || emails.length > 0 || slackMessages.length > 0) && (() => {
+        const emailCount = emails.length
+        const chatCount = slackMessages.length
         const meetingCount = calendarEvents.length
 
         // Categorize calendar events into time buckets
         const categoryHours: Record<string, number> = {}
-        let totalMeetingHours = 0
 
         calendarEvents.forEach(event => {
           const hours = getMeetingDurationHours(event)
-          totalMeetingHours += hours
           const cat = categorizeEvent(event)
           categoryHours[cat] = (categoryHours[cat] || 0) + hours
         })
 
-        // Also categorize commitments (as proxy for message/email time)
-        thisWeekCommitments.forEach(c => {
-          const title = (c.title || '').toLowerCase()
+        // Categorize emails (~3 min each estimated)
+        emails.forEach(email => {
+          const subject = (email.subject || '').toLowerCase()
           let matched = false
           for (const cat of TIME_CATEGORIES) {
-            if (cat.keywords.some(kw => title.includes(kw))) {
-              categoryHours[cat.key] = (categoryHours[cat.key] || 0) + 0.25 // estimate 15min per commitment
+            if (cat.keywords.some(kw => subject.includes(kw))) {
+              categoryHours[cat.key] = (categoryHours[cat.key] || 0) + 0.05 // ~3 min
               matched = true
               break
             }
           }
           if (!matched) {
-            categoryHours['other'] = (categoryHours['other'] || 0) + 0.25
+            categoryHours['other'] = (categoryHours['other'] || 0) + 0.05
+          }
+        })
+
+        // Categorize Slack messages (~1 min each estimated)
+        slackMessages.forEach(msg => {
+          const text = (msg.message_text || '').toLowerCase()
+          let matched = false
+          for (const cat of TIME_CATEGORIES) {
+            if (cat.keywords.some(kw => text.includes(kw))) {
+              categoryHours[cat.key] = (categoryHours[cat.key] || 0) + 0.017 // ~1 min
+              matched = true
+              break
+            }
+          }
+          if (!matched) {
+            categoryHours['other'] = (categoryHours['other'] || 0) + 0.017
           }
         })
 
@@ -427,7 +479,7 @@ export default function WeeklyPage() {
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Time Allocation Analysis</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
-              Based on your {messageCount} commitments + {meetingCount} meetings this week, here&apos;s where your time went vs. target:
+              Based on {emailCount} emails, {chatCount} chats, and {meetingCount} meetings this week — here&apos;s where your time went vs. target:
             </p>
 
             <div className="space-y-5">
