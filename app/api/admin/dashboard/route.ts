@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
       // Team-level integrations (for admin visibility when user's integrations are empty)
       teamIntegrations,
     ] = await Promise.all([
-      adminDb.from('integrations').select('id, provider, created_at').eq('user_id', userId),
+      adminDb.from('integrations').select('id, provider, updated_at').eq('user_id', userId),
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
       // Outlook messages scoped to user (by user_id or email match)
       userTeamId && userEmail
@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
         ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`).order('received_at', { ascending: false }).limit(10)
         : userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).eq('user_id', userId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Integration health: full details including tokens and config
-      adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, created_at, updated_at').eq('user_id', userId),
+      adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, updated_at').eq('user_id', userId),
       // Data migration progress: per-user counts
       // Emails tagged with this user's user_id
       userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
       // Organization domains
       adminDb.from('organization_members').select('organization_id').eq('user_id', userId).limit(1).single(),
       // Team-level integrations (admin visibility fallback)
-      userTeamId ? adminDb.from('integrations').select('id, provider, user_id, access_token, refresh_token, config, created_at, updated_at').eq('team_id', userTeamId) : Promise.resolve({ data: [] }),
+      userTeamId ? adminDb.from('integrations').select('id, provider, user_id, access_token, refresh_token, config, updated_at').eq('team_id', userTeamId) : Promise.resolve({ data: [] }),
     ])
 
     const emailData = outlookMsgs.data || []
@@ -194,14 +194,14 @@ export async function GET(request: NextRequest) {
       const hasToken = !!int.access_token
       const hasRefresh = !!int.refresh_token
       const config = int.config || {}
-      const lastSync = int.updated_at || int.created_at
+      const lastSync = int.updated_at
       return {
         id: int.id,
         provider: int.provider,
         hasToken,
         hasRefreshToken: hasRefresh,
         tokenPreview: hasToken ? `...${int.access_token.slice(-8)}` : 'none',
-        connectedAt: int.created_at,
+        connectedAt: int.updated_at,
         lastUpdated: lastSync,
         ownedByUser: int.user_id === userId,
         config: {
@@ -240,7 +240,7 @@ export async function GET(request: NextRequest) {
     const userOwnedIntegrations = integrations.data || []
     const resolvedIntegrations = userOwnedIntegrations.length > 0
       ? userOwnedIntegrations
-      : (allTeamIntegrations || []).map((i: any) => ({ id: i.id, provider: i.provider, created_at: i.created_at }))
+      : (allTeamIntegrations || []).map((i: any) => ({ id: i.id, provider: i.provider, updated_at: i.updated_at }))
 
     return NextResponse.json({
       profile: resolvedProfile,
