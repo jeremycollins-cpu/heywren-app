@@ -6,7 +6,8 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   Shield, Building2, Users, Search, ChevronRight, AlertTriangle,
   CheckCircle2, XCircle, Mail, MessageSquare, Calendar, ArrowLeft,
-  RotateCcw, Zap, UserX, RefreshCw, Clock,
+  RotateCcw, Zap, UserX, RefreshCw, Clock, Key, Link2, Trash2,
+  Globe, Database, Activity, Eye, Send, Plus, X, Copy,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -15,6 +16,12 @@ interface TeamHealth {
   memberCount: number; integrationCount: number; commitmentCount: number
   emailCount: number; slackMessageCount: number
   integrations: { provider: string; user_id: string }[]
+}
+
+interface IntegrationHealth {
+  id: string; provider: string; hasToken: boolean; hasRefreshToken: boolean
+  tokenPreview: string; connectedAt: string; lastUpdated: string
+  config: { slackTeamName: string | null; slackTeamId: string | null; botId: string | null; connectedBy: string | null }
 }
 
 interface UserDetail {
@@ -30,6 +37,21 @@ interface UserDetail {
     slackMessages: { total: number; processed: number; unprocessed: number }
     calendarEvents: number
     waitingRoomItems: number
+  }
+  integrationHealth?: IntegrationHealth[]
+  dataMigration?: {
+    emails: { withUserId: number; withoutUserId: number }
+    calendar: { withUserId: number; withoutUserId: number }
+  }
+  activityLog?: {
+    lastSignIn: string | null
+    accountCreated: string
+    onboardingCompleted: boolean
+    onboardingStep: string
+  }
+  organization?: {
+    id: string | null
+    domains: string[]
   }
   recentActivity?: {
     commitments: { title: string; status: string; source: string; created_at: string }[]
@@ -65,6 +87,10 @@ function AdminContent() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [magicLink, setMagicLink] = useState<string | null>(null)
+  const [editDomains, setEditDomains] = useState<string[]>([])
+  const [newDomain, setNewDomain] = useState('')
+  const [showDomainEditor, setShowDomainEditor] = useState(false)
 
   useEffect(() => { loadOverview() }, [])
 
@@ -113,8 +139,9 @@ function AdminContent() {
     setLoading(false)
   }
 
-  const runAction = async (action: string, params: Record<string, string>) => {
+  const runAction = async (action: string, params: Record<string, any>) => {
     setActionLoading(action)
+    setMagicLink(null)
     try {
       const res = await fetch('/api/admin/user-actions', {
         method: 'POST',
@@ -124,6 +151,7 @@ function AdminContent() {
       const data = await res.json()
       if (data.success) {
         toast.success(data.message)
+        if (data.link) setMagicLink(data.link)
         // Refresh current view
         if (selectedUser) loadUser(selectedUser.profile.id)
       } else {
@@ -306,8 +334,8 @@ function AdminContent() {
 
         {(
           <>
-            {/* User Status */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* User Status + Activity Log */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="bg-white border rounded-lg p-3">
                 <p className="text-xs text-gray-500">Role</p>
                 <p className="font-semibold">{profile.role}</p>
@@ -319,32 +347,138 @@ function AdminContent() {
                 </p>
               </div>
               <div className="bg-white border rounded-lg p-3">
+                <p className="text-xs text-gray-500">Last Sign In</p>
+                <p className="font-semibold text-sm">{selectedUser.activityLog?.lastSignIn ? new Date(selectedUser.activityLog.lastSignIn).toLocaleString() : 'Never'}</p>
+              </div>
+              <div className="bg-white border rounded-lg p-3">
                 <p className="text-xs text-gray-500">Slack User ID</p>
                 <p className="font-semibold text-sm truncate">{profile.slack_user_id || 'Not set'}</p>
               </div>
               <div className="bg-white border rounded-lg p-3">
-                <p className="text-xs text-gray-500">Joined</p>
+                <p className="text-xs text-gray-500">Account Created</p>
                 <p className="font-semibold text-sm">{new Date(profile.created_at).toLocaleDateString()}</p>
               </div>
             </div>
 
-            {/* Integrations */}
+            {/* Integration Health */}
             <div className="bg-white border rounded-lg p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Integrations</h3>
-              {integrations.length === 0 ? (
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-indigo-500" />
+                Integration Health
+              </h3>
+              {(!selectedUser.integrationHealth || selectedUser.integrationHealth.length === 0) ? (
                 <p className="text-sm text-red-600 flex items-center gap-1"><XCircle className="w-4 h-4" /> No integrations connected</p>
               ) : (
-                <div className="flex gap-3">
-                  {integrations.map(i => (
-                    <div key={i.id} className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      <span className="capitalize font-medium">{i.provider}</span>
-                      <span className="text-xs text-gray-500">{new Date(i.created_at).toLocaleDateString()}</span>
+                <div className="space-y-3">
+                  {selectedUser.integrationHealth.map(int => (
+                    <div key={int.id} className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="capitalize font-semibold">{int.provider}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${int.hasToken ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {int.hasToken ? 'Token Active' : 'No Token'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${int.hasRefreshToken ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {int.hasRefreshToken ? 'Refresh OK' : 'No Refresh'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => runAction('refresh_token', { userId: profile.id, provider: int.provider })}
+                          disabled={actionLoading === 'refresh_token'}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 disabled:opacity-50"
+                        >
+                          <Key className="w-3 h-3" />
+                          {actionLoading === 'refresh_token' ? 'Refreshing...' : 'Refresh Token'}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-500">
+                        <div>Token: <span className="font-mono text-gray-700">{int.tokenPreview}</span></div>
+                        <div>Connected: {new Date(int.connectedAt).toLocaleDateString()}</div>
+                        <div>Last Updated: {new Date(int.lastUpdated).toLocaleString()}</div>
+                        {int.config.slackTeamName && <div>Workspace: {int.config.slackTeamName}</div>}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Data Migration Progress */}
+            {selectedUser.dataMigration && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-violet-500" />
+                  Data Migration (user_id)
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Emails</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId > 0 ? Math.round(selectedUser.dataMigration.emails.withUserId / (selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId) * 100) : 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.emails.withUserId}/{selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Calendar</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId > 0 ? Math.round(selectedUser.dataMigration.calendar.withUserId / (selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId) * 100) : 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.calendar.withUserId}/{selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId}</span>
+                    </div>
+                  </div>
+                </div>
+                {(selectedUser.dataMigration.emails.withoutUserId > 0 || selectedUser.dataMigration.calendar.withoutUserId > 0) && (
+                  <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Legacy rows without user_id — run Full Re-Sync or Clear &amp; Re-Sync to fix
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Company Domains */}
+            {selectedUser.organization && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-500" />
+                  Company Domains
+                  {!showDomainEditor && (
+                    <button onClick={() => { setEditDomains(selectedUser.organization?.domains || []); setShowDomainEditor(true) }} className="ml-auto text-xs text-indigo-600 hover:underline">Edit</button>
+                  )}
+                </h3>
+                {showDomainEditor ? (
+                  <div className="space-y-2">
+                    {editDomains.map((domain, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="flex-1 text-sm px-3 py-1.5 bg-gray-50 rounded border">{domain}</span>
+                        <button onClick={() => setEditDomains(editDomains.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <input type="text" value={newDomain} onChange={e => setNewDomain(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newDomain.trim()) { setEditDomains([...editDomains, newDomain.trim().toLowerCase()]); setNewDomain('') } }} placeholder="acme.com" className="flex-1 px-3 py-1.5 text-sm border rounded" />
+                      <button onClick={() => { if (newDomain.trim()) { setEditDomains([...editDomains, newDomain.trim().toLowerCase()]); setNewDomain('') } }} className="px-2 py-1.5 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"><Plus className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => { runAction('update_domains', { organizationId: selectedUser.organization?.id, domains: editDomains }); setShowDomainEditor(false) }} disabled={actionLoading === 'update_domains'} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">Save</button>
+                      <button onClick={() => setShowDomainEditor(false)} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  selectedUser.organization.domains.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedUser.organization.domains.map(d => (
+                        <span key={d} className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-sm">{d}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No domains configured</p>
+                  )
+                )}
+              </div>
+            )}
 
             {/* Data Pipeline Health */}
             <div className="bg-white border rounded-lg p-4">
@@ -510,15 +644,10 @@ function AdminContent() {
             {/* Quick Actions */}
             <div className="bg-white border rounded-lg p-4">
               <h3 className="font-semibold text-gray-900 mb-3">Quick Actions</h3>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => runAction('trigger_backfill', { userId: profile.id })}
-                  disabled={actionLoading === 'trigger_backfill'}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  {actionLoading === 'trigger_backfill' ? 'Triggering...' : 'Trigger Reprocessing'}
-                </button>
+
+              {/* Sync & Data */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Sync &amp; Data</p>
+              <div className="flex flex-wrap gap-2 mb-4">
                 <button
                   onClick={() => runAction('full_resync', { userId: profile.id })}
                   disabled={actionLoading === 'full_resync'}
@@ -528,12 +657,53 @@ function AdminContent() {
                   {actionLoading === 'full_resync' ? 'Syncing...' : 'Full Re-Sync'}
                 </button>
                 <button
+                  onClick={() => {
+                    if (confirm(`This will DELETE all of ${profile.email}'s Outlook data and re-fetch from scratch. Continue?`)) {
+                      runAction('clear_resync', { userId: profile.id })
+                    }
+                  }}
+                  disabled={actionLoading === 'clear_resync'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {actionLoading === 'clear_resync' ? 'Clearing...' : 'Clear & Re-Sync'}
+                </button>
+                <button
+                  onClick={() => runAction('trigger_backfill', { userId: profile.id })}
+                  disabled={actionLoading === 'trigger_backfill'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  {actionLoading === 'trigger_backfill' ? 'Triggering...' : 'Trigger Reprocessing'}
+                </button>
+                <button
                   onClick={() => runAction('reset_processed', { teamId: profile.current_team_id })}
                   disabled={actionLoading === 'reset_processed'}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   {actionLoading === 'reset_processed' ? 'Resetting...' : 'Reset Processed Flags'}
+                </button>
+              </div>
+
+              {/* Account & Access */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Account &amp; Access</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button
+                  onClick={() => runAction('generate_magic_link', { userId: profile.id })}
+                  disabled={actionLoading === 'generate_magic_link'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 disabled:opacity-50"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  {actionLoading === 'generate_magic_link' ? 'Generating...' : 'Login as User'}
+                </button>
+                <button
+                  onClick={() => runAction('send_password_reset', { userId: profile.id })}
+                  disabled={actionLoading === 'send_password_reset'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {actionLoading === 'send_password_reset' ? 'Sending...' : 'Send Password Reset'}
                 </button>
                 <button
                   onClick={() => runAction('fix_onboarding', { userId: profile.id })}
@@ -543,6 +713,25 @@ function AdminContent() {
                   <Clock className="w-3.5 h-3.5" />
                   {actionLoading === 'fix_onboarding' ? 'Fixing...' : 'Mark Onboarding Complete'}
                 </button>
+              </div>
+
+              {/* Magic Link Result */}
+              {magicLink && (
+                <div className="mb-4 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                  <p className="text-xs text-violet-700 font-medium mb-1">Magic Login Link (opens as this user):</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs bg-white px-2 py-1 rounded border flex-1 overflow-x-auto">{magicLink}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(magicLink); toast.success('Copied!') }} className="px-2 py-1 bg-violet-100 rounded hover:bg-violet-200">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <a href={magicLink} target="_blank" rel="noopener noreferrer" className="px-2 py-1 bg-violet-600 text-white rounded text-xs hover:bg-violet-700">Open</a>
+                  </div>
+                </div>
+              )}
+
+              {/* Danger Zone */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Danger Zone</p>
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     if (confirm(`Are you sure you want to delete ${profile.email}? This cannot be undone.`)) {

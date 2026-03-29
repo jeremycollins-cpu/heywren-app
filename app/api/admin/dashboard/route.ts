@@ -118,7 +118,10 @@ export async function GET(request: NextRequest) {
 
     const userEmail = resolvedProfile.email?.toLowerCase() || ''
 
-    const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies, recentCommitments, recentWaiting, recentEmails] = await Promise.all([
+    const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies, recentCommitments, recentWaiting, recentEmails,
+      // New: integration health, data migration, activity log, org domains
+      integrationsFull, emailsWithUserId, emailsWithoutUserId, calWithUserId, calWithoutUserId, orgData,
+    ] = await Promise.all([
       userTeamId ? adminDb.from('integrations').select('id, provider, created_at').eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
@@ -129,11 +132,66 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      // Integration health: full details including tokens and config
+      userTeamId ? adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, created_at, updated_at').eq('user_id', userId) : Promise.resolve({ data: [] }),
+      // Data migration progress: emails with user_id
+      userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).not('user_id', 'is', null) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).not('user_id', 'is', null) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null) : Promise.resolve({ count: 0 }),
+      // Organization domains
+      adminDb.from('organization_members').select('organization_id').eq('user_id', userId).limit(1).single(),
     ])
 
     const emailData = outlookMsgs.data || []
     const slackData = slackMsgs.data || []
     const commitmentData = commitments.data || []
+
+    // Build integration health details
+    const integrationHealth = (integrationsFull.data || []).map((int: any) => {
+      const hasToken = !!int.access_token
+      const hasRefresh = !!int.refresh_token
+      const config = int.config || {}
+      const lastSync = int.updated_at || int.created_at
+      return {
+        id: int.id,
+        provider: int.provider,
+        hasToken,
+        hasRefreshToken: hasRefresh,
+        tokenPreview: hasToken ? `...${int.access_token.slice(-8)}` : 'none',
+        connectedAt: int.created_at,
+        lastUpdated: lastSync,
+        config: {
+          slackTeamName: config.slack_team_name || null,
+          slackTeamId: config.slack_team_id || null,
+          botId: config.bot_id || null,
+          connectedBy: config.connected_by || null,
+        },
+      }
+    })
+
+    // Get auth user for last sign-in
+    let lastSignIn: string | null = null
+    try {
+      const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
+      lastSignIn = authUser?.user?.last_sign_in_at || null
+    } catch { /* ignore */ }
+
+    // Get org domains
+    let orgDomains: string[] = []
+    let orgId: string | null = null
+    if (orgData.data?.organization_id) {
+      orgId = orgData.data.organization_id
+      const { data: org } = await adminDb.from('organizations').select('domain, allowed_domains').eq('id', orgId).single()
+      if (org) {
+        if (org.domain) orgDomains.push(org.domain)
+        if (Array.isArray(org.allowed_domains)) {
+          for (const d of org.allowed_domains) {
+            if (typeof d === 'string' && d && !orgDomains.includes(d)) orgDomains.push(d)
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       profile: resolvedProfile,
@@ -161,6 +219,21 @@ export async function GET(request: NextRequest) {
         },
         calendarEvents: calEvents.count || 0,
         waitingRoomItems: awaitingReplies.count || 0,
+      },
+      integrationHealth,
+      dataMigration: {
+        emails: { withUserId: emailsWithUserId.count || 0, withoutUserId: emailsWithoutUserId.count || 0 },
+        calendar: { withUserId: calWithUserId.count || 0, withoutUserId: calWithoutUserId.count || 0 },
+      },
+      activityLog: {
+        lastSignIn,
+        accountCreated: resolvedProfile.created_at,
+        onboardingCompleted: resolvedProfile.onboarding_completed,
+        onboardingStep: resolvedProfile.onboarding_step,
+      },
+      organization: {
+        id: orgId,
+        domains: orgDomains,
       },
       recentActivity: {
         commitments: recentCommitments.data || [],
