@@ -117,30 +117,52 @@ export async function GET(request: NextRequest) {
     }
 
     const userEmail = resolvedProfile.email?.toLowerCase() || ''
+    const slackUserId = resolvedProfile.slack_user_id || null
 
     const [integrations, commitments, outlookMsgs, slackMsgs, calEvents, awaitingReplies, recentCommitments, recentWaiting, recentEmails,
       // New: integration health, data migration, activity log, org domains
       integrationsFull, emailsWithUserId, emailsWithoutUserId, calWithUserId, calWithoutUserId, orgData,
+      // Team-level integrations (for admin visibility when user's integrations are empty)
+      teamIntegrations,
     ] = await Promise.all([
       adminDb.from('integrations').select('id, provider, created_at').eq('user_id', userId),
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
-      userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
-      userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
-      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId) : Promise.resolve({ count: 0 }),
+      // Outlook messages scoped to user (by user_id or email match)
+      userTeamId && userEmail
+        ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+        : userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
+      // Slack messages scoped to user (by slack_user_id stored on the message)
+      userTeamId && slackUserId
+        ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', slackUserId)
+        : userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).or(`user_id.eq.${userId}${userEmail ? `,organizer_email.eq.${userEmail}` : ''}`) : Promise.resolve({ count: 0 }),
       userTeamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
       // Recent activity for support debugging
       userTeamId ? adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
-      userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      // Recent emails scoped to user (by user_id or email match)
+      userTeamId && userEmail
+        ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`).order('received_at', { ascending: false }).limit(10)
+        : userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).eq('user_id', userId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Integration health: full details including tokens and config
       adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, created_at, updated_at').eq('user_id', userId),
-      // Data migration progress: emails with user_id
-      userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).not('user_id', 'is', null) : Promise.resolve({ count: 0 }),
-      userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null) : Promise.resolve({ count: 0 }),
-      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).not('user_id', 'is', null) : Promise.resolve({ count: 0 }),
-      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null) : Promise.resolve({ count: 0 }),
+      // Data migration progress: per-user counts
+      // Emails tagged with this user's user_id
+      userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),
+      // Emails likely belonging to this user but not yet tagged
+      userTeamId && userEmail
+        ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null).or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+        : Promise.resolve({ count: 0 }),
+      // Calendar events tagged with this user's user_id
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),
+      // Calendar events likely belonging to this user but not yet tagged
+      userTeamId && userEmail
+        ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null).eq('organizer_email', userEmail)
+        : Promise.resolve({ count: 0 }),
       // Organization domains
       adminDb.from('organization_members').select('organization_id').eq('user_id', userId).limit(1).single(),
+      // Team-level integrations (admin visibility fallback)
+      userTeamId ? adminDb.from('integrations').select('id, provider, user_id, access_token, refresh_token, config, created_at, updated_at').eq('team_id', userTeamId) : Promise.resolve({ data: [] }),
     ])
 
     const emailData = outlookMsgs.data || []
@@ -148,7 +170,12 @@ export async function GET(request: NextRequest) {
     const commitmentData = commitments.data || []
 
     // Build integration health details
-    const integrationHealth = (integrationsFull.data || []).map((int: any) => {
+    // Use user's own integrations, but fall back to team integrations for admin visibility
+    // (handles cases where migration backfill assigned integrations to the wrong user)
+    const userIntegrations = integrationsFull.data || []
+    const allTeamIntegrations = teamIntegrations.data || []
+    const healthSource = userIntegrations.length > 0 ? userIntegrations : allTeamIntegrations
+    const integrationHealth = healthSource.map((int: any) => {
       const hasToken = !!int.access_token
       const hasRefresh = !!int.refresh_token
       const config = int.config || {}
@@ -161,6 +188,7 @@ export async function GET(request: NextRequest) {
         tokenPreview: hasToken ? `...${int.access_token.slice(-8)}` : 'none',
         connectedAt: int.created_at,
         lastUpdated: lastSync,
+        ownedByUser: int.user_id === userId,
         config: {
           slackTeamName: config.slack_team_name || null,
           slackTeamId: config.slack_team_id || null,
@@ -193,9 +221,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Use user's integrations, fall back to team integrations for admin visibility
+    const userOwnedIntegrations = integrations.data || []
+    const resolvedIntegrations = userOwnedIntegrations.length > 0
+      ? userOwnedIntegrations
+      : (allTeamIntegrations || []).map((i: any) => ({ id: i.id, provider: i.provider, created_at: i.created_at }))
+
     return NextResponse.json({
       profile: resolvedProfile,
-      integrations: integrations.data || [],
+      integrations: resolvedIntegrations,
       diagnostics: {
         commitments: {
           total: commitmentData.length,
