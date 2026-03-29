@@ -372,6 +372,7 @@ export default function RelationshipsPage() {
         })
 
         // Build contact map from received emails (from them)
+        // Only include contacts from the user's own domain (coworkers)
         const contactMap: Record<string, { name: string; email: string; countFromThem: number; countToThem: number; countThisWeek: number; lastDate: string; tones: string[] }> = {}
 
         emailData.forEach((msg: any) => {
@@ -380,6 +381,9 @@ export default function RelationshipsPage() {
 
           const senderName = msg.from_name || email.split('@')[0]
           if (!isRealPerson(email, senderName)) return
+          // Only include people from the same email domain (coworkers)
+          const senderDomain = email.includes('@') ? email.split('@')[1] : ''
+          if (userDomain && senderDomain && senderDomain !== userDomain) return
 
           const receivedAt = msg.received_at || new Date().toISOString()
 
@@ -460,6 +464,9 @@ export default function RelationshipsPage() {
             const attName = att.name || att.emailAddress?.name || attEmail.split('@')[0]
             if (!attEmail || attEmail === userEmail) continue
             if (!isRealPerson(attEmail, attName)) continue
+            // Only include coworkers (same domain)
+            const attDomain = attEmail.includes('@') ? attEmail.split('@')[1] : ''
+            if (userDomain && attDomain && attDomain !== userDomain) continue
 
             if (!contactMap[attEmail]) {
               contactMap[attEmail] = { name: attName, email: attEmail, countFromThem: 0, countToThem: 0, countThisWeek: 0, lastDate: meetingDate, tones: [] }
