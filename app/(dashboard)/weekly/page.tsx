@@ -1,6 +1,5 @@
 // app/(dashboard)/weekly/page.tsx
 // Weekly Review v5 — ALL REAL DATA, zero mock/placeholder content
-// Changes from v4: Removed fake Meeting ROI section (needs real calendar integration)
 // Shows: real weekly stats, source breakdown, recent activity timeline
 
 'use client'
@@ -280,73 +279,6 @@ export default function WeeklyPage() {
             {sub && <div className={`text-xs mt-1 ${subColor}`}>{sub}</div>}
           </div>
         ))}
-      </div>
-
-      {/* Meeting ROI */}
-      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Meeting ROI</h2>
-          {calendarEvents.length > 0 && (
-            <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded text-xs font-medium">
-              {calendarEvents.length} meeting{calendarEvents.length !== 1 ? 's' : ''} this week
-            </span>
-          )}
-        </div>
-        {calendarEvents.length === 0 ? (
-          <>
-            <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
-              Connect your calendar to see which meetings generate the most action items and follow-through.
-            </p>
-            <Link
-              href="/integrations"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 rounded-lg text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
-            >
-              <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Connect Calendar
-            </Link>
-          </>
-        ) : (
-          <div className="space-y-3">
-            {calendarEvents.map(event => {
-              const calendarCommitments = commitments.filter(
-                c => c.source === 'calendar' && new Date(c.created_at) >= new Date(event.start_time) && new Date(c.created_at) <= new Date(new Date(event.end_time).getTime() + 24 * 60 * 60 * 1000)
-              )
-              const score = event.commitments_found > 0 ? event.commitments_found : calendarCommitments.length
-              return (
-                <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {event.subject || 'Untitled Meeting'}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {new Date(event.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      {' at '}
-                      {new Date(event.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                      {event.organizer_name && (
-                        <span className="ml-2 text-gray-400">by {event.organizer_name}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 ml-4">
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${score > 0 ? 'text-indigo-600' : 'text-gray-300'}`}>
-                        {score}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {score === 1 ? 'commitment' : 'commitments'}
-                      </div>
-                    </div>
-                    <div className={`w-2 h-8 rounded-full ${
-                      score >= 3 ? 'bg-green-400' : score >= 1 ? 'bg-indigo-400' : 'bg-gray-200'
-                    }`} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
       </div>
 
       {/* Calendar Heatmap */}
