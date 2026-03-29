@@ -175,9 +175,6 @@ export async function scanTeamAwaitingReplies(
   userEmail = userProfile?.email?.toLowerCase() || ''
 
   let tokenVerified = false
-  let debugRepliedCount = -1
-  let debugInboxCount = -1
-  let debugGraphError = ''
 
   console.log(`Awaiting replies scan: userId=${userId}, teamId=${teamId}, userEmail=${userEmail}, hasIntegration=${!!integration}`)
 
@@ -256,13 +253,11 @@ export async function scanTeamAwaitingReplies(
 
   // Build a map of conversations that have incoming replies
   const repliedConversations = new Set<string>()
-  debugInboxCount = inboxMessages?.length || 0
   for (const msg of inboxMessages || []) {
     if (msg.from_email?.toLowerCase() !== userEmail && msg.conversation_id) {
       repliedConversations.add(msg.conversation_id)
     }
   }
-  debugRepliedCount = repliedConversations.size
 
   while (nextLink && Date.now() - startTime < TIME_BUDGET_MS && totalScanned < MAX_SENT_PER_RUN) {
     const { data: pageData, token: updatedToken } = await graphFetch(
@@ -271,7 +266,7 @@ export async function scanTeamAwaitingReplies(
     msToken = updatedToken
 
     if (pageData.error) {
-      debugGraphError = JSON.stringify(pageData.error).slice(0, 200)
+      console.error('Graph API pagination error:', JSON.stringify(pageData.error).slice(0, 200))
       break
     }
 
@@ -823,17 +818,6 @@ export async function scanTeamAwaitingReplies(
     slackAwaiting,
     inboundDetected,
     duration: Date.now() - startTime,
-    debug: {
-      hasIntegration: !!integration,
-      tokenVerified,
-      userEmail,
-      userId,
-      outlookScanned: totalScanned,
-      outlookAwaiting: totalAwaiting,
-      repliedConversationsCount: debugRepliedCount,
-      inboxMessagesCount: debugInboxCount,
-      graphError: debugGraphError || null,
-    },
   }
 }
 

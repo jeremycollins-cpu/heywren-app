@@ -116,12 +116,24 @@ export default function CommitmentDetailPage() {
           .eq('id', userData.user.id)
           .single()
 
-        const teamId = profile?.current_team_id
+        let teamId = profile?.current_team_id
         const userName = profile?.display_name || ''
+
+        // Fallback team lookup if current_team_id is null
+        if (!teamId) {
+          const { data: membership } = await supabase.from('team_members').select('team_id').eq('user_id', userData.user.id).limit(1).single()
+          teamId = membership?.team_id || null
+        }
+        if (!teamId) {
+          const { data: orgMembership } = await supabase.from('organization_members').select('team_id').eq('user_id', userData.user.id).limit(1).single()
+          teamId = orgMembership?.team_id || null
+        }
 
         const [commitResult, nudgeResult] = await Promise.all([
           supabase.from('commitments').select('*').eq('id', id).single(),
-          supabase.from('nudges').select('*').eq('commitment_id', id).eq('team_id', teamId!).order('created_at', { ascending: false }).limit(20),
+          teamId
+            ? supabase.from('nudges').select('*').eq('commitment_id', id).eq('team_id', teamId).order('created_at', { ascending: false }).limit(20)
+            : Promise.resolve({ data: [], error: null }),
         ])
         if (commitResult.error) throw commitResult.error
 
