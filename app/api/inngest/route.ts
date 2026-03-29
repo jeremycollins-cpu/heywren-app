@@ -9,6 +9,7 @@ import { processSlackMessage } from '@/inngest/functions/process-slack-message'
 import { dailyDigest } from '@/inngest/functions/daily-digest'
 import { sendNudges } from '@/inngest/functions/send-nudges'
 import { syncOutlook, adminFullResync } from '@/inngest/functions/sync-outlook'
+import { drainOutlookBacklog } from '@/inngest/functions/drain-outlook-backlog'
 import { generateDrafts } from '@/inngest/functions/generate-drafts'
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
@@ -43,5 +44,6 @@ export const { GET, POST, PUT } = serve({
     calculateWeeklyScoresJob,    // Monday 6 AM UTC — weekly scores, streaks, achievements, leaderboards
     managerWeeklyDigest,         // Monday 8 AM UTC — BI digest DM to managers via Slack
     adminFullResync,             // On-demand — admin triggers 90-day full resync for a user
+    drainOutlookBacklog,         // Hourly + on-demand — processes all unprocessed email backlog
   ],
 })

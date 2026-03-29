@@ -490,6 +490,7 @@ export const syncOutlook = inngest.createFunction(
     console.log(`Outlook daily sync: ${integrations.length} user integration(s) to sync`)
 
     const results = []
+    let hasBacklog = false
 
     for (const integration of integrations) {
       const syncUserId = integration.user_id
@@ -498,10 +499,25 @@ export const syncOutlook = inngest.createFunction(
         const result = await syncTeamOutlook(supabase, integration.team_id, syncUserId, integration)
         results.push(result)
         console.log(`User ${syncUserId} (team ${integration.team_id}) sync complete:`, result)
+
+        // Check if there are still unprocessed messages after this run
+        const { count } = await supabase
+          .from('outlook_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', integration.team_id)
+          .or(`user_id.eq.${syncUserId},user_id.is.null`)
+          .eq('processed', false)
+        if (count && count > 0) hasBacklog = true
       } catch (err) {
         console.error(`User ${syncUserId} (team ${integration.team_id}) sync failed:`, (err as Error).message)
         results.push({ success: false, teamId: integration.team_id, userId: syncUserId, error: (err as Error).message })
       }
+    }
+
+    // If any user still has unprocessed messages, trigger the backlog drain
+    if (hasBacklog) {
+      console.log('Outlook sync: backlog detected, triggering drain job')
+      await inngest.send({ name: 'outlook/drain-backlog', data: {} })
     }
 
     return { success: true, teamsSynced: results.length, results }
