@@ -102,7 +102,8 @@ export async function syncTeamOutlook(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
   userId: string,
-  integration: { id: string; access_token: string; refresh_token: string; config: any }
+  integration: { id: string; access_token: string; refresh_token: string; config: any },
+  options?: { daysBack?: number }
 ) {
   const startTime = Date.now()
   let msToken = integration.access_token
@@ -196,9 +197,10 @@ export async function syncTeamOutlook(
     }
   }
 
-  // Phase 2: Fetch new emails (last 1 day for daily sync)
+  // Phase 2: Fetch new emails (default 1 day for daily sync, configurable for backfill)
   if (Date.now() - startTime < TIME_BUDGET_MS) {
-    const oldestDate = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    const syncDays = options?.daysBack || 1
+    const oldestDate = new Date(Date.now() - syncDays * 24 * 60 * 60 * 1000).toISOString()
     const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
     const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead,webLink'
     let nextLink: string | null =
@@ -319,7 +321,8 @@ export async function syncTeamOutlook(
 
   if (Date.now() - startTime < TIME_BUDGET_MS) {
     const now = new Date()
-    const startDate = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    const calDaysBack = options?.daysBack || 1
+    const startDate = new Date(now.getTime() - calDaysBack * 24 * 60 * 60 * 1000).toISOString()
     const endDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
 
     const calendarUrl =

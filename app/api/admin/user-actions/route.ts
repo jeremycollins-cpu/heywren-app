@@ -85,14 +85,16 @@ export async function POST(request: NextRequest) {
 
     for (const integration of integrations || []) {
       if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
-        // Reset processed flags for outlook messages
+        // Reset processed flags for this user's outlook messages
         await adminDb.from('outlook_messages')
           .update({ processed: false, commitments_found: 0 })
           .eq('team_id', teamId)
+          .eq('user_id', userId)
         results.push('Reset Outlook processed flags')
       }
       if (integration.provider === 'slack') {
-        // Reset processed flags for slack messages
+        // Reset processed flags for slack messages in this team
+        // (slack messages use slack_user_id, not auth user_id, so scope by team)
         await adminDb.from('slack_messages')
           .update({ processed: false, commitments_found: 0 })
           .eq('team_id', teamId)
@@ -354,16 +356,23 @@ export async function POST(request: NextRequest) {
     const results: string[] = []
     const errors: string[] = []
 
+    // Full resync fetches 90 days of data (not the default 1-day daily sync window)
+    const RESYNC_DAYS = 90
+
     for (const integration of integrations) {
       if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
         try {
           const { syncTeamOutlook } = await import('@/inngest/functions/sync-outlook')
-          const result = await syncTeamOutlook(adminDb, integration.team_id, userId, integration)
+          const result = await syncTeamOutlook(adminDb, integration.team_id, userId, integration, { daysBack: RESYNC_DAYS })
           const r = result as any
-          results.push(`Outlook sync: ${r.newEmails || r.emails || 0} new emails, ${r.calendarEvents || 0} calendar events`)
+          results.push(`Outlook sync (${RESYNC_DAYS}d): ${r.newEmails || r.emails || 0} new emails, ${r.calendarEvents || 0} calendar events`)
         } catch (err) {
           errors.push(`Outlook sync failed: ${(err as Error).message}`)
         }
+      }
+
+      if (integration.provider === 'slack') {
+        results.push('Slack: use the Sync page in the user\'s dashboard for full Slack backfill')
       }
     }
 
