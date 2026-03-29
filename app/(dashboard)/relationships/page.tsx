@@ -289,7 +289,7 @@ export default function RelationshipsPage() {
           slackUserId
             ? supabase
                 .from('slack_messages')
-                .select('user_id, channel_id, message_text, created_at')
+                .select('user_id, channel_id, message_text, message_ts, thread_ts, created_at')
                 .eq('team_id', teamId)
                 .gte('created_at', thirtyDaysAgo)
                 .order('created_at', { ascending: false })
