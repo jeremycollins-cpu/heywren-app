@@ -355,6 +355,29 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Save admin notes for a user
+  if (action === 'save_notes') {
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    const notes = body.notes ?? ''
+
+    const { error } = await adminDb
+      .from('profiles')
+      .update({ admin_notes: notes })
+      .eq('id', userId)
+
+    if (error) {
+      // If column doesn't exist yet, tell the user to add it
+      if (error.code === '42703') {
+        return NextResponse.json({
+          error: 'admin_notes column not found. Run: ALTER TABLE profiles ADD COLUMN admin_notes text;',
+        }, { status: 500 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, message: 'Notes saved' })
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 

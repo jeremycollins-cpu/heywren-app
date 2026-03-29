@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, Mail, MessageSquare, Calendar, ArrowLeft,
   RotateCcw, Zap, UserX, RefreshCw, Clock, Key, Link2, Trash2,
   Globe, Database, Activity, Eye, Send, Plus, X, Copy,
+  TrendingUp, Sparkles,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -30,7 +31,7 @@ interface UserDetail {
     current_team_id: string; onboarding_completed: boolean
     onboarding_step: string; slack_user_id: string; created_at: string
   }
-  integrations: { id: string; provider: string; created_at: string }[]
+  integrations: { id: string; provider: string; updated_at: string }[]
   diagnostics: {
     commitments: { total: number; open: number; completed: number; bySource: Record<string, number> }
     emails: { total: number; processed: number; unprocessed: number }
@@ -58,6 +59,23 @@ interface UserDetail {
     waitingRoom: { subject: string; status: string; urgency: string; sent_at: string; days_waiting: number }[]
     emails: { subject: string; from_name: string; received_at: string; processed: boolean }[]
   }
+  engagement?: {
+    lastActiveDate: string | null
+    daysSinceActive: number | null
+    timeToValue: number | null
+    weeklyTrend: number[]
+    gamificationScore: number
+    streakWeeks: number
+  }
+  syncHealth?: { provider: string; daysSinceSync: number | null; stale: boolean; tokenExpired: boolean; tokenExpiresSoon: boolean; tokenExpiresAt: string | null }[]
+  featureAdoption?: {
+    features: Record<string, boolean>
+    adoptedCount: number
+    totalFeatures: number
+  }
+  backlogAlerts?: { type: string; count: number; message: string }[]
+  teamHealth?: { totalMembers: number; activeMembers: number; invitedCount: number } | null
+  adminNotes?: string | null
 }
 
 interface TeamMember {
@@ -92,6 +110,8 @@ function AdminContent() {
   const [newDomain, setNewDomain] = useState('')
   const [showDomainEditor, setShowDomainEditor] = useState(false)
   const [actionLog, setActionLog] = useState<Array<{ time: string; action: string; result: string; success: boolean }>>([])
+  const [adminNotes, setAdminNotes] = useState('')
+  const [notesSaved, setNotesSaved] = useState(true)
 
   useEffect(() => { loadOverview() }, [])
 
@@ -132,6 +152,8 @@ function AdminContent() {
       if (res.ok) {
         const data = await res.json()
         setSelectedUser(data)
+        setAdminNotes(data.adminNotes || '')
+        setNotesSaved(true)
       } else {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }))
         toast.error(err.error || `Failed to load user (${res.status})`)
@@ -367,6 +389,174 @@ function AdminContent() {
                 <p className="font-semibold text-sm">{new Date(profile.created_at).toLocaleDateString()}</p>
               </div>
             </div>
+
+            {/* Proactive Alerts */}
+            {selectedUser.backlogAlerts && selectedUser.backlogAlerts.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h3 className="font-semibold text-red-800 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  Alerts ({selectedUser.backlogAlerts.length})
+                </h3>
+                <div className="space-y-1.5">
+                  {selectedUser.backlogAlerts.map((alert, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-red-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                      {alert.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Engagement & Health Signals */}
+            {selectedUser.engagement && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-indigo-500" />
+                  Engagement Health
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className={`text-xl font-bold ${
+                      selectedUser.engagement.daysSinceActive === null ? 'text-gray-400' :
+                      selectedUser.engagement.daysSinceActive <= 3 ? 'text-green-600' :
+                      selectedUser.engagement.daysSinceActive <= 7 ? 'text-amber-600' : 'text-red-600'
+                    }`}>
+                      {selectedUser.engagement.daysSinceActive !== null ? `${selectedUser.engagement.daysSinceActive}d` : '?'}
+                    </p>
+                    <p className="text-xs text-gray-500">Since Active</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className={`text-xl font-bold ${
+                      selectedUser.engagement.timeToValue === null ? 'text-gray-400' :
+                      selectedUser.engagement.timeToValue <= 1 ? 'text-green-600' : 'text-blue-600'
+                    }`}>
+                      {selectedUser.engagement.timeToValue !== null ? `${selectedUser.engagement.timeToValue}d` : 'N/A'}
+                    </p>
+                    <p className="text-xs text-gray-500">Time to Value</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xl font-bold text-violet-600">{selectedUser.engagement.gamificationScore}</p>
+                    <p className="text-xs text-gray-500">Score</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xl font-bold text-amber-600">{selectedUser.engagement.streakWeeks}w</p>
+                    <p className="text-xs text-gray-500">Streak</p>
+                  </div>
+                </div>
+                {/* Weekly Trend */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-1.5">Commitments per Week (last 4 weeks)</p>
+                  <div className="flex items-end gap-1.5 h-12">
+                    {selectedUser.engagement.weeklyTrend.map((count, i) => {
+                      const max = Math.max(...selectedUser.engagement!.weeklyTrend, 1)
+                      const height = Math.max((count / max) * 100, 4)
+                      const isLatest = i === selectedUser.engagement!.weeklyTrend.length - 1
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                          <span className="text-[10px] text-gray-400">{count}</span>
+                          <div
+                            className={`w-full rounded-t ${isLatest ? 'bg-indigo-500' : 'bg-indigo-200'}`}
+                            style={{ height: `${height}%` }}
+                          />
+                          <span className="text-[10px] text-gray-400">{i === 0 ? '4w' : i === 1 ? '3w' : i === 2 ? '2w' : '1w'}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {selectedUser.engagement.weeklyTrend.length >= 2 && (() => {
+                    const trend = selectedUser.engagement!.weeklyTrend
+                    const recent = trend[trend.length - 1]
+                    const previous = trend[trend.length - 2]
+                    if (recent > previous) return <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Engagement increasing</p>
+                    if (recent < previous) return <p className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Engagement declining</p>
+                    return <p className="text-xs text-gray-500 mt-1">Steady engagement</p>
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Feature Adoption */}
+            {selectedUser.featureAdoption && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-500" />
+                  Feature Adoption ({selectedUser.featureAdoption.adoptedCount}/{selectedUser.featureAdoption.totalFeatures})
+                </h3>
+                <div className="w-full bg-gray-100 rounded-full h-2 mb-3">
+                  <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${Math.round(selectedUser.featureAdoption.adoptedCount / selectedUser.featureAdoption.totalFeatures * 100)}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(selectedUser.featureAdoption.features).map(([feature, adopted]) => (
+                    <span key={feature} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      adopted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-50 text-gray-400 border border-gray-200'
+                    }`}>
+                      {adopted ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                      {feature.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Team Health */}
+            {selectedUser.teamHealth && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  Team Health
+                </h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xl font-bold">{selectedUser.teamHealth.totalMembers}</p>
+                    <p className="text-xs text-gray-500">Members</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xl font-bold text-green-600">{selectedUser.teamHealth.activeMembers}</p>
+                    <p className="text-xs text-gray-500">Active (30d)</p>
+                  </div>
+                  <div className="text-center p-2 bg-gray-50 rounded-lg">
+                    <p className="text-xl font-bold text-blue-600">{selectedUser.teamHealth.invitedCount}</p>
+                    <p className="text-xs text-gray-500">Invites Sent</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sync Health */}
+            {selectedUser.syncHealth && selectedUser.syncHealth.length > 0 && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-teal-500" />
+                  Sync Health
+                </h3>
+                <div className="space-y-2">
+                  {selectedUser.syncHealth.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                      <span className="capitalize font-medium text-sm">{s.provider}</span>
+                      <div className="flex items-center gap-2">
+                        {s.daysSinceSync !== null && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            s.stale ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                          }`}>
+                            {s.stale ? `Stale (${s.daysSinceSync}d ago)` : `Synced ${s.daysSinceSync}d ago`}
+                          </span>
+                        )}
+                        {s.tokenExpired && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">Token Expired</span>
+                        )}
+                        {s.tokenExpiresSoon && !s.tokenExpired && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">Expires Soon</span>
+                        )}
+                        {!s.tokenExpired && !s.tokenExpiresSoon && !s.stale && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">Healthy</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Integration Health */}
             <div className="bg-white border rounded-lg p-4">
@@ -648,6 +838,45 @@ function AdminContent() {
                 )}
               </div>
             )}
+
+            {/* Admin Notes */}
+            <div className="bg-white border rounded-lg p-4">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Mail className="w-4 h-4 text-amber-500" />
+                CS Notes
+                {!notesSaved && <span className="text-xs text-amber-600 font-normal">(unsaved)</span>}
+              </h3>
+              <textarea
+                value={adminNotes}
+                onChange={(e) => { setAdminNotes(e.target.value); setNotesSaved(false) }}
+                placeholder="Add notes about this user (support context, call notes, issues)..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[80px]"
+                rows={3}
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={async () => {
+                    const res = await fetch('/api/admin/user-actions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'save_notes', userId: profile.id, notes: adminNotes }),
+                    })
+                    const data = await res.json()
+                    if (data.success) {
+                      setNotesSaved(true)
+                      toast.success('Notes saved')
+                    } else {
+                      toast.error(data.error || 'Failed to save notes')
+                    }
+                  }}
+                  disabled={notesSaved}
+                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Save Notes
+                </button>
+                {notesSaved && adminNotes && <span className="text-xs text-green-600">Saved</span>}
+              </div>
+            </div>
 
             {/* Quick Actions */}
             <div className="bg-white border rounded-lg p-4">

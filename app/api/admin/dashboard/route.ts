@@ -242,6 +242,129 @@ export async function GET(request: NextRequest) {
       ? userOwnedIntegrations
       : (allTeamIntegrations || []).map((i: any) => ({ id: i.id, provider: i.provider, updated_at: i.updated_at }))
 
+    // === ENGAGEMENT & HEALTH SIGNALS ===
+    const now = new Date()
+
+    // 1. Days since last sync — per integration
+    const syncHealth = healthSource.map((int: any) => {
+      const lastUpdated = int.updated_at ? new Date(int.updated_at) : null
+      const daysSinceSync = lastUpdated ? Math.floor((now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24)) : null
+      const config = int.config || {}
+      const tokenExpiresAt = config.token_expires_at ? new Date(config.token_expires_at) : null
+      const tokenExpired = tokenExpiresAt ? tokenExpiresAt < now : false
+      const tokenExpiresSoon = tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
+      return {
+        provider: int.provider,
+        daysSinceSync,
+        stale: daysSinceSync !== null && daysSinceSync >= 3,
+        tokenExpired,
+        tokenExpiresSoon,
+        tokenExpiresAt: tokenExpiresAt?.toISOString() || null,
+      }
+    })
+
+    // 2. Last active — approximate from latest data timestamp
+    const latestEmailDate = (recentEmails.data || [])[0]?.received_at || null
+    const latestCommitmentDate = (recentCommitments.data || [])[0]?.created_at || null
+    const lastActiveDates = [lastSignIn, latestEmailDate, latestCommitmentDate].filter(Boolean).map(d => new Date(d!))
+    const lastActiveDate = lastActiveDates.length > 0 ? new Date(Math.max(...lastActiveDates.map(d => d.getTime()))) : null
+    const daysSinceActive = lastActiveDate ? Math.floor((now.getTime() - lastActiveDate.getTime()) / (1000 * 60 * 60 * 24)) : null
+
+    // 3. Time-to-value: days from account creation to first commitment
+    let timeToValue: number | null = null
+    if (resolvedProfile.created_at && commitmentData.length > 0) {
+      const accountCreated = new Date(resolvedProfile.created_at)
+      const commitmentDates = commitmentData.map(c => new Date(c.created_at)).sort((a, b) => a.getTime() - b.getTime())
+      timeToValue = Math.floor((commitmentDates[0].getTime() - accountCreated.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    // 4. Weekly engagement trend — commitments created in last 4 weeks
+    const weeklyTrend: number[] = []
+    for (let w = 0; w < 4; w++) {
+      const weekStart = new Date(now.getTime() - (w + 1) * 7 * 24 * 60 * 60 * 1000)
+      const weekEnd = new Date(now.getTime() - w * 7 * 24 * 60 * 60 * 1000)
+      const count = commitmentData.filter(c => {
+        const d = new Date(c.created_at)
+        return d >= weekStart && d < weekEnd
+      }).length
+      weeklyTrend.unshift(count)
+    }
+
+    // 5. Feature adoption — check what features they actually use
+    const [
+      { count: nudgeCount },
+      { count: draftCount },
+      { count: missedEmailCount },
+      { count: missedChatCount },
+      { count: achievementCount },
+      { data: scoreData },
+      { data: notePref },
+    ] = await Promise.all([
+      adminDb.from('nudges').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminDb.from('draft_queue').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminDb.from('missed_emails').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminDb.from('missed_chats').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminDb.from('member_achievements').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminDb.from('member_scores').select('total_score, streak_weeks').eq('user_id', userId).limit(1).single(),
+      adminDb.from('notification_preferences').select('id').eq('user_id', userId).limit(1).single(),
+    ])
+
+    const featureAdoption = {
+      commitments: commitmentData.length > 0,
+      waitingRoom: (awaitingReplies.count || 0) > 0,
+      nudges: (nudgeCount || 0) > 0,
+      draftQueue: (draftCount || 0) > 0,
+      missedEmails: (missedEmailCount || 0) > 0,
+      missedChats: (missedChatCount || 0) > 0,
+      achievements: (achievementCount || 0) > 0,
+      gamification: !!scoreData,
+      notificationPrefs: !!notePref,
+      outlook: healthSource.some((i: any) => i.provider === 'outlook' || i.provider === 'microsoft'),
+      slack: healthSource.some((i: any) => i.provider === 'slack'),
+      calendar: (calEvents.count || 0) > 0,
+    }
+    const adoptedCount = Object.values(featureAdoption).filter(Boolean).length
+    const totalFeatures = Object.keys(featureAdoption).length
+
+    // 6. Unprocessed backlog alerts
+    const backlogAlerts: { type: string; count: number; message: string }[] = []
+    if (emailData.filter(e => !e.processed).length > 10) {
+      backlogAlerts.push({ type: 'email', count: emailData.filter(e => !e.processed).length, message: `${emailData.filter(e => !e.processed).length} unprocessed emails in queue` })
+    }
+    if (slackData.filter(s => !s.processed).length > 10) {
+      backlogAlerts.push({ type: 'slack', count: slackData.filter(s => !s.processed).length, message: `${slackData.filter(s => !s.processed).length} unprocessed Slack messages` })
+    }
+    if (syncHealth.some(s => s.stale)) {
+      backlogAlerts.push({ type: 'sync', count: 0, message: `Data sync is stale (3+ days) for ${syncHealth.filter(s => s.stale).map(s => s.provider).join(', ')}` })
+    }
+    if (syncHealth.some(s => s.tokenExpired)) {
+      backlogAlerts.push({ type: 'token', count: 0, message: `Token expired for ${syncHealth.filter(s => s.tokenExpired).map(s => s.provider).join(', ')}` })
+    }
+
+    // 7. Team health — teammate count & active teammates
+    let teamHealth: { totalMembers: number; activeMembers: number; invitedCount: number } | null = null
+    if (userTeamId) {
+      const { data: allMembers } = await adminDb.from('profiles').select('id, created_at').eq('current_team_id', userTeamId)
+      const { count: inviteCount } = await adminDb.from('invitations').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId)
+      const activeCount = (allMembers || []).filter(m => {
+        // Consider active if account created in last 30 days (for new users) — real activity tracking would need a separate table
+        const created = new Date(m.created_at)
+        return (now.getTime() - created.getTime()) < 30 * 24 * 60 * 60 * 1000 || m.id === userId
+      }).length
+      teamHealth = {
+        totalMembers: (allMembers || []).length,
+        activeMembers: activeCount,
+        invitedCount: inviteCount || 0,
+      }
+    }
+
+    // 8. Admin notes — stored in profiles metadata or a custom query
+    const { data: adminNotes } = await adminDb
+      .from('profiles')
+      .select('admin_notes')
+      .eq('id', userId)
+      .single()
+
     return NextResponse.json({
       profile: resolvedProfile,
       integrations: resolvedIntegrations,
@@ -289,6 +412,24 @@ export async function GET(request: NextRequest) {
         waitingRoom: recentWaiting.data || [],
         emails: recentEmails.data || [],
       },
+      // New customer success fields
+      engagement: {
+        lastActiveDate: lastActiveDate?.toISOString() || null,
+        daysSinceActive,
+        timeToValue,
+        weeklyTrend,
+        gamificationScore: scoreData?.total_score || 0,
+        streakWeeks: scoreData?.streak_weeks || 0,
+      },
+      syncHealth,
+      featureAdoption: {
+        features: featureAdoption,
+        adoptedCount,
+        totalFeatures,
+      },
+      backlogAlerts,
+      teamHealth,
+      adminNotes: adminNotes?.admin_notes || null,
     })
   }
 
