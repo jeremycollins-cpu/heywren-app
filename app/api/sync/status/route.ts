@@ -39,6 +39,7 @@ export async function GET() {
           .from('outlook_messages')
           .select('created_at')
           .eq('team_id', teamId)
+          .or(`user_id.eq.${user.id},user_id.is.null`)
           .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
           .order('created_at', { ascending: false })
           .limit(1)

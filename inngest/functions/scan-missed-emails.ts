@@ -67,6 +67,7 @@ async function scanTeamMissedEmails(
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
     .eq('team_id', teamId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .gte('received_at', scanWindowAgo)
     .order('received_at', { ascending: false })
     .limit(MAX_EMAILS_PER_RUN)

@@ -222,6 +222,7 @@ export async function POST(request: NextRequest) {
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at', { count: 'exact' })
     .eq('team_id', teamId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .eq('processed', false)
     .limit(MAX_MESSAGES_PER_RUN)
 
@@ -421,6 +422,7 @@ export async function POST(request: NextRequest) {
         .from('outlook_messages')
         .select('id, processed')
         .eq('team_id', teamId)
+        .eq('user_id', userId)
         .eq('message_id', email.id)
         .maybeSingle()
 
@@ -445,6 +447,7 @@ export async function POST(request: NextRequest) {
             .from('outlook_messages')
             .insert({
               team_id: teamId,
+              user_id: userId,
               message_id: email.id,
               conversation_id: email.conversationId || null,
               from_name: fromName,
@@ -478,6 +481,7 @@ export async function POST(request: NextRequest) {
           .from('outlook_messages')
           .insert({
             team_id: teamId,
+            user_id: userId,
             message_id: email.id,
             conversation_id: email.conversationId || null,
             from_name: fromName,
@@ -633,6 +637,7 @@ export async function POST(request: NextRequest) {
           .from('outlook_calendar_events')
           .select('id, processed')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
           .eq('event_id', event.id)
           .maybeSingle()
 
@@ -647,6 +652,7 @@ export async function POST(request: NextRequest) {
             .from('outlook_calendar_events')
             .insert({
               team_id: teamId,
+              user_id: userId,
               event_id: event.id,
               subject,
               organizer_name: organizerName,

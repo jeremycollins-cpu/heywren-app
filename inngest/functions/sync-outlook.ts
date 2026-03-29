@@ -98,7 +98,7 @@ async function graphFetch(
   return { data: await res.json(), token: currentToken }
 }
 
-async function syncTeamOutlook(
+export async function syncTeamOutlook(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
   userId: string,
@@ -130,6 +130,7 @@ async function syncTeamOutlook(
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link')
     .eq('team_id', teamId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .eq('processed', false)
     .limit(MAX_MESSAGES_PER_RUN)
 
@@ -223,6 +224,7 @@ async function syncTeamOutlook(
           .from('outlook_messages')
           .select('id, processed')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
           .eq('message_id', email.id)
           .maybeSingle()
 
@@ -252,6 +254,7 @@ async function syncTeamOutlook(
             .from('outlook_messages')
             .insert({
               team_id: teamId,
+              user_id: userId,
               message_id: email.id,
               conversation_id: email.conversationId || null,
               from_name: fromName,
@@ -359,6 +362,7 @@ async function syncTeamOutlook(
           .from('outlook_calendar_events')
           .select('id, processed')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
           .eq('event_id', event.id)
           .maybeSingle()
 
@@ -372,6 +376,7 @@ async function syncTeamOutlook(
             .from('outlook_calendar_events')
             .insert({
               team_id: teamId,
+              user_id: userId,
               event_id: event.id,
               subject,
               organizer_name: organizerName,

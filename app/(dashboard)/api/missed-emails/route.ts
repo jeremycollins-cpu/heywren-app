@@ -123,6 +123,7 @@ export async function GET() {
     .from('outlook_messages')
     .select('id', { count: 'exact', head: true })
     .eq('team_id', profile.current_team_id)
+    .or(`user_id.eq.${user.id},user_id.is.null`)
     .neq('from_email', userEmail)
     .ilike('to_recipients', `%${userEmail}%`)
 
