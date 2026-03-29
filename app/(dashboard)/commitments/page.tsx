@@ -6,7 +6,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -140,61 +140,65 @@ export default function CommitmentsPage() {
   const [userName, setUserName] = useState<string>('')
   const [userEmail, setUserEmail] = useState<string>('')
   const [userId, setUserId] = useState<string>('')
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const supabase = createClient()
-        const { data: userData } = await supabase.auth.getUser()
-        if (!userData?.user) { setLoading(false); return }
+  const loadCommitments = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData?.user) { setLoading(false); setRefreshing(false); return }
 
-        setUserId(userData.user.id)
-        setUserEmail(userData.user.email || '')
+      setUserId(userData.user.id)
+      setUserEmail(userData.user.email || '')
 
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('current_team_id, display_name')
-          .eq('id', userData.user.id)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id, display_name')
+        .eq('id', userData.user.id)
+        .single()
+
+      let teamId = profile?.current_team_id || null
+
+      // Fallback: get team from team_members
+      if (!teamId) {
+        const { data: membership } = await supabase
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', userData.user.id)
+          .limit(1)
           .single()
-
-        let teamId = profile?.current_team_id || null
-
-        // Fallback: get team from team_members
-        if (!teamId) {
-          const { data: membership } = await supabase
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', userData.user.id)
-            .limit(1)
-            .single()
-          teamId = membership?.team_id || null
-        }
-
-        if (!teamId) { setLoading(false); return }
-
-        // Store user's name for personal relevance matching
-        const name = profile?.display_name || userData.user.email?.split('@')[0] || ''
-        setUserName(name)
-
-        // Fetch commitments where user is creator OR assignee
-        const { data } = await supabase
-          .from('commitments')
-          .select('*')
-          .eq('team_id', teamId)
-          .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
-          .order('created_at', { ascending: false })
-
-        if (data) setCommitments(data)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load commitments'
-        setError(message)
-        toast.error(message)
-      } finally {
-        setLoading(false)
+        teamId = membership?.team_id || null
       }
+
+      if (!teamId) { setLoading(false); setRefreshing(false); return }
+
+      // Store user's name for personal relevance matching
+      const name = profile?.display_name || userData.user.email?.split('@')[0] || ''
+      setUserName(name)
+
+      // Fetch commitments where user is creator OR assignee
+      const { data } = await supabase
+        .from('commitments')
+        .select('*')
+        .eq('team_id', teamId)
+        .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+        .order('created_at', { ascending: false })
+
+      if (data) setCommitments(data)
+      if (isRefresh) toast.success('Commitments refreshed')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load commitments'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
-    load()
-  }, [])
+  }
+
+  useEffect(() => { loadCommitments() }, [])
 
   // Determine if a commitment is personally relevant to the current user.
   // Only shows items where the user is directly involved — not all team items.
@@ -467,13 +471,23 @@ export default function CommitmentsPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Commitment Tracing</h1>
             <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-0.5">Every promise tracked from origin to resolution</p>
           </div>
-          <button
-            onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition flex-shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            Add Task
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => loadCommitments(true)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-50"
+              title="Refresh commitments"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => setShowQuickAdd(!showQuickAdd)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition"
+            >
+              <Plus className="w-4 h-4" />
+              Add Task
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-center sm:text-right">
