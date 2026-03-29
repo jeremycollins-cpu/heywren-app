@@ -75,11 +75,16 @@ export async function GET(request: NextRequest) {
 
   // User detail: full diagnostic for a specific user
   if (view === 'user' && userId) {
-    const { data: profile } = await adminDb
+    // Use select('*') to avoid errors from columns that may not exist yet (e.g. onboarding_step)
+    const { data: profile, error: profileError } = await adminDb
       .from('profiles')
-      .select('id, email, full_name, display_name, role, current_team_id, onboarding_completed, onboarding_step, slack_user_id, created_at')
+      .select('*')
       .eq('id', userId)
       .single()
+
+    if (profileError) {
+      console.error('Admin profile query error for user', userId, ':', profileError.message)
+    }
 
     // If no profile row, try to build a minimal one from auth + membership tables
     let resolvedProfile = profile
@@ -323,7 +328,7 @@ export async function GET(request: NextRequest) {
       const [{ data: profile }, { data: integrations }, { count: commitmentCount }] = await Promise.all([
         adminDb
           .from('profiles')
-          .select('id, email, full_name, display_name, role, onboarding_completed, slack_user_id, created_at')
+          .select('*')
           .eq('id', userId)
           .single(),
         adminDb
