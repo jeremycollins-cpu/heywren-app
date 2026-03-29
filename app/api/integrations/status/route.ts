@@ -57,7 +57,6 @@ export async function GET() {
     const { data: integrations, error } = await supabaseAdmin
       .from('integrations')
       .select('id, provider, config')
-      .eq('team_id', teamId)
       .eq('user_id', userId)
 
     if (error) {

@@ -57,11 +57,13 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [walkthroughOpen, setWalkthroughOpen] = useState(false)
   const [helpPanelOpen, setHelpPanelOpen] = useState(false)
   const [showOnboardingBanner, setShowOnboardingBanner] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
   const shouldAutoStartWalkthrough = useWalkthroughAutoStart()
 
   const supabase = createBrowserClient(
@@ -69,8 +71,23 @@ export default function DashboardLayout({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // Check if user has integrations
+  // Auth guard: redirect to login if session is invalid
   useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.replace('/login')
+        return
+      }
+      setAuthChecked(true)
+    }
+    checkAuth()
+  }, [supabase, router])
+
+  // Check if user has integrations (only after auth is confirmed)
+  useEffect(() => {
+    if (!authChecked) return
+
     const checkIntegrations = async () => {
       try {
         const dismissed = sessionStorage.getItem('heywren_banner_dismissed')
@@ -93,7 +110,7 @@ export default function DashboardLayout({
     }
 
     checkIntegrations()
-  }, [supabase])
+  }, [authChecked])
 
   // Auto-start walkthrough on first login
   useEffect(() => {
@@ -101,6 +118,11 @@ export default function DashboardLayout({
       setWalkthroughOpen(true)
     }
   }, [shouldAutoStartWalkthrough])
+
+  // Don't render dashboard until auth is confirmed
+  if (!authChecked) {
+    return null
+  }
 
   const handleDismissBanner = () => {
     setBannerDismissed(true)

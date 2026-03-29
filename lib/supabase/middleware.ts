@@ -86,7 +86,6 @@ export async function updateSession(request: NextRequest) {
       const { data: integrations } = await supabase
         .from('integrations')
         .select('id')
-        .eq('team_id', profile.current_team_id)
         .eq('user_id', user.id)
         .limit(1)
 
