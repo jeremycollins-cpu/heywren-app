@@ -271,6 +271,7 @@ export default function RelationshipsPage() {
             .eq('team_id', teamId)
             .neq('from_email', userEmail || '')
             .ilike('to_recipients', `%${userEmail}%`)
+            .gte('received_at', thirtyDaysAgo)
             .order('received_at', { ascending: false })
             .limit(1000),
           supabase
@@ -278,6 +279,7 @@ export default function RelationshipsPage() {
             .select('from_email, to_recipients, received_at')
             .eq('team_id', teamId)
             .eq('from_email', userEmail || '')
+            .gte('received_at', thirtyDaysAgo)
             .order('received_at', { ascending: false })
             .limit(500),
           supabase
@@ -358,14 +360,17 @@ export default function RelationshipsPage() {
           }
         }
 
-        // Filter calendar events to only those involving this user
+        // Filter calendar events to only those where user is organizer or exact attendee match
         const userCalendarData = userEmail
           ? calendarData.filter((evt: any) => {
               if ((evt.organizer_email || '').toLowerCase() === userEmail) return true
-              const attendeesStr = JSON.stringify(evt.attendees || '').toLowerCase()
-              return attendeesStr.includes(userEmail)
+              const attendeeList = Array.isArray(evt.attendees) ? evt.attendees : []
+              return attendeeList.some((att: any) => {
+                const attEmail = (att.email || att.emailAddress?.address || '').toLowerCase()
+                return attEmail === userEmail
+              })
             })
-          : calendarData
+          : []
 
         // Build stakeholder commitment map with directionality
         const stakeholderCommitments: Record<string, CommitmentSummary> = {}
