@@ -179,6 +179,16 @@ export async function GET(request: NextRequest) {
     // (handles cases where migration backfill assigned integrations to the wrong user)
     const userIntegrations = integrationsFull.data || []
     const allTeamIntegrations = teamIntegrations.data || []
+
+    // Debug: log if integration queries returned errors
+    if (!integrationsFull.data && (integrationsFull as any).error) {
+      console.error('integrationsFull query error:', (integrationsFull as any).error)
+    }
+    if (!teamIntegrations.data && (teamIntegrations as any).error) {
+      console.error('teamIntegrations query error:', (teamIntegrations as any).error)
+    }
+    console.log(`[Admin] User ${userId}: ${userIntegrations.length} user integrations, ${allTeamIntegrations.length} team integrations`)
+
     const healthSource = userIntegrations.length > 0 ? userIntegrations : allTeamIntegrations
     const integrationHealth = healthSource.map((int: any) => {
       const hasToken = !!int.access_token

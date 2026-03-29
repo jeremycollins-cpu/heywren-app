@@ -91,6 +91,7 @@ function AdminContent() {
   const [editDomains, setEditDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
   const [showDomainEditor, setShowDomainEditor] = useState(false)
+  const [actionLog, setActionLog] = useState<Array<{ time: string; action: string; result: string; success: boolean }>>([])
 
   useEffect(() => { loadOverview() }, [])
 
@@ -142,6 +143,7 @@ function AdminContent() {
   const runAction = async (action: string, params: Record<string, any>) => {
     setActionLoading(action)
     setMagicLink(null)
+    const timestamp = new Date().toLocaleTimeString()
     try {
       const res = await fetch('/api/admin/user-actions', {
         method: 'POST',
@@ -152,12 +154,18 @@ function AdminContent() {
       if (data.success) {
         toast.success(data.message)
         if (data.link) setMagicLink(data.link)
-        // Refresh current view
+        setActionLog(prev => [{ time: timestamp, action, result: data.message, success: true }, ...prev].slice(0, 20))
         if (selectedUser) loadUser(selectedUser.profile.id)
       } else {
-        toast.error(data.message || data.error)
+        const msg = data.message || data.error || `Failed (${res.status})`
+        toast.error(msg)
+        setActionLog(prev => [{ time: timestamp, action, result: msg, success: false }, ...prev].slice(0, 20))
       }
-    } catch { toast.error('Action failed') }
+    } catch (err) {
+      const msg = `Action failed: ${(err as Error).message || 'Network error or timeout'}`
+      toast.error(msg)
+      setActionLog(prev => [{ time: timestamp, action, result: msg, success: false }, ...prev].slice(0, 20))
+    }
     setActionLoading(null)
   }
 
@@ -753,6 +761,38 @@ function AdminContent() {
                 </button>
               </div>
             </div>
+
+            {/* Action Log */}
+            {actionLog.length > 0 && (
+              <div className="bg-white border rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-gray-500" />
+                    Action Log
+                  </h3>
+                  <button
+                    onClick={() => setActionLog([])}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {actionLog.map((entry, i) => (
+                    <div key={i} className={`text-xs p-2 rounded-lg ${entry.success ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'}`}>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`font-semibold ${entry.success ? 'text-green-700' : 'text-red-700'}`}>
+                          {entry.success ? 'OK' : 'ERROR'}
+                        </span>
+                        <span className="text-gray-500">{entry.time}</span>
+                        <span className="font-mono text-gray-600">{entry.action}</span>
+                      </div>
+                      <p className={`${entry.success ? 'text-green-800' : 'text-red-800'} break-words`}>{entry.result}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -8,6 +8,9 @@
     },
     "app/api/integrations/outlook/backfill/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/admin/user-actions/route.ts": {
+      "maxDuration": 300
     }
   }
 }
