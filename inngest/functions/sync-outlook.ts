@@ -130,6 +130,7 @@ export async function syncTeamOutlook(
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link')
     .eq('team_id', teamId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .eq('processed', false)
     .limit(MAX_MESSAGES_PER_RUN)
 
@@ -223,6 +224,7 @@ export async function syncTeamOutlook(
           .from('outlook_messages')
           .select('id, processed')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
           .eq('message_id', email.id)
           .maybeSingle()
 
@@ -360,6 +362,7 @@ export async function syncTeamOutlook(
           .from('outlook_calendar_events')
           .select('id, processed')
           .eq('team_id', teamId)
+          .eq('user_id', userId)
           .eq('event_id', event.id)
           .maybeSingle()
 
