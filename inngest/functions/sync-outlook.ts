@@ -507,3 +507,50 @@ export const syncOutlook = inngest.createFunction(
     return { success: true, teamsSynced: results.length, results }
   }
 )
+
+// Background full resync triggered by admin dashboard
+export const adminFullResync = inngest.createFunction(
+  { id: 'admin-full-resync', retries: 1 },
+  { event: 'admin/full-resync' },
+  async ({ event }) => {
+    const { userId, teamId } = event.data
+    const supabase = getAdminClient()
+
+    console.log(`[Admin Resync] Starting 90-day full resync for user ${userId}`)
+
+    const { data: integrations } = await supabase
+      .from('integrations')
+      .select('id, team_id, user_id, provider, access_token, refresh_token, config')
+      .eq('user_id', userId)
+
+    if (!integrations?.length) {
+      console.error(`[Admin Resync] No integrations found for user ${userId}`)
+      return { success: false, error: 'No integrations' }
+    }
+
+    const results: string[] = []
+    const errors: string[] = []
+    const RESYNC_DAYS = 90
+
+    for (const integration of integrations) {
+      if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
+        try {
+          const result = await syncTeamOutlook(supabase, integration.team_id, userId, integration, { daysBack: RESYNC_DAYS })
+          const r = result as any
+          results.push(`Outlook: ${r.newEmails || r.emails || 0} emails, ${r.calendarEvents || 0} calendar events`)
+          console.log(`[Admin Resync] User ${userId} Outlook sync complete:`, result)
+        } catch (err) {
+          errors.push(`Outlook sync failed: ${(err as Error).message}`)
+          console.error(`[Admin Resync] User ${userId} Outlook sync failed:`, (err as Error).message)
+        }
+      }
+
+      if (integration.provider === 'slack') {
+        results.push('Slack: requires user dashboard for full backfill')
+      }
+    }
+
+    console.log(`[Admin Resync] User ${userId} complete: ${[...results, ...errors].join('; ')}`)
+    return { success: errors.length === 0, results, errors }
+  }
+)

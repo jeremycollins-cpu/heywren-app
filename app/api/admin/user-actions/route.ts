@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { inngest } from '@/inngest/client'
 
 function getAdminClient() {
   return createClient(
@@ -243,28 +244,16 @@ export async function POST(request: NextRequest) {
       .delete({ count: 'exact' }).eq('team_id', profile.current_team_id).is('user_id', null)
     if (nullCalDeleted) results.push(`Deleted ${nullCalDeleted} legacy calendar events (no user_id)`)
 
-    // Now trigger a fresh sync
-    const { data: integrations } = await adminDb
-      .from('integrations')
-      .select('id, team_id, user_id, provider, access_token, refresh_token, config')
-      .eq('user_id', userId)
-
-    for (const integration of integrations || []) {
-      if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
-        try {
-          const { syncTeamOutlook } = await import('@/inngest/functions/sync-outlook')
-          const result = await syncTeamOutlook(adminDb, integration.team_id, userId, integration)
-          const r = result as any
-          results.push(`Re-synced: ${r.newEmails || r.emails || 0} emails, ${r.calendarEvents || 0} calendar events`)
-        } catch (err) {
-          results.push(`Sync failed: ${(err as Error).message}`)
-        }
-      }
-    }
+    // Fire background resync via Inngest
+    await inngest.send({
+      name: 'admin/full-resync',
+      data: { userId, teamId: profile.current_team_id },
+    })
+    results.push('Background re-sync started (90 days)')
 
     return NextResponse.json({
       success: true,
-      message: `Clear & re-sync for ${profile.email}: ${results.join('; ')}`,
+      message: `Clear & re-sync for ${profile.email}: ${results.join('; ')}. Check Inngest dashboard for sync progress.`,
     })
   }
 
@@ -330,7 +319,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, message: `Magic link generated for ${profile.email}`, link })
   }
 
-  // Full re-sync: fetch fresh data from Outlook/Slack APIs for a user
+  // Full re-sync: fire background Inngest job — returns immediately
   if (action === 'full_resync') {
     if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
 
@@ -346,39 +335,23 @@ export async function POST(request: NextRequest) {
 
     const { data: integrations } = await adminDb
       .from('integrations')
-      .select('id, team_id, user_id, provider, access_token, refresh_token, config')
+      .select('id, provider')
       .eq('user_id', userId)
 
     if (!integrations?.length) {
       return NextResponse.json({ error: 'User has no integrations' }, { status: 400 })
     }
 
-    const results: string[] = []
-    const errors: string[] = []
+    // Fire Inngest event — runs in background, won't timeout
+    await inngest.send({
+      name: 'admin/full-resync',
+      data: { userId, teamId: profile.current_team_id },
+    })
 
-    // Full resync fetches 90 days of data (not the default 1-day daily sync window)
-    const RESYNC_DAYS = 90
-
-    for (const integration of integrations) {
-      if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
-        try {
-          const { syncTeamOutlook } = await import('@/inngest/functions/sync-outlook')
-          const result = await syncTeamOutlook(adminDb, integration.team_id, userId, integration, { daysBack: RESYNC_DAYS })
-          const r = result as any
-          results.push(`Outlook sync (${RESYNC_DAYS}d): ${r.newEmails || r.emails || 0} new emails, ${r.calendarEvents || 0} calendar events`)
-        } catch (err) {
-          errors.push(`Outlook sync failed: ${(err as Error).message}`)
-        }
-      }
-
-      if (integration.provider === 'slack') {
-        results.push('Slack: use the Sync page in the user\'s dashboard for full Slack backfill')
-      }
-    }
-
+    const providers = integrations.map(i => i.provider).join(', ')
     return NextResponse.json({
-      success: errors.length === 0,
-      message: `Re-sync for ${profile.email}: ${[...results, ...errors].join('; ')}`,
+      success: true,
+      message: `Full re-sync started in background for ${profile.email} (${providers}). This will sync 90 days of data — check Inngest dashboard for progress.`,
     })
   }
 
