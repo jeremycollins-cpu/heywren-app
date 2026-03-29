@@ -251,8 +251,11 @@ export async function GET(request: NextRequest) {
       const daysSinceSync = lastUpdated ? Math.floor((now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24)) : null
       const config = int.config || {}
       const tokenExpiresAt = config.token_expires_at ? new Date(config.token_expires_at) : null
-      const tokenExpired = tokenExpiresAt ? tokenExpiresAt < now : false
-      const tokenExpiresSoon = tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
+      const hasRefresh = !!int.refresh_token
+      // Only flag expired tokens if they've been expired 24h+ (auto-refresh should handle short-lived access tokens)
+      const tokenExpired = tokenExpiresAt ? (now.getTime() - tokenExpiresAt.getTime()) > 24 * 60 * 60 * 1000 : false
+      // Flag as warning only if no refresh token and access token expires within 24h
+      const tokenExpiresSoon = !hasRefresh && tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
       return {
         provider: int.provider,
         daysSinceSync,
