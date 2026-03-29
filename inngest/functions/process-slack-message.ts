@@ -91,13 +91,24 @@ export const processSlackMessage = inngest.createFunction(
     }
 
     // ── Find a creator_id (required: NOT NULL in schema) ──
-    // Moved BEFORE AI detection so we can pass user context to the AI
+    // First try to resolve the actual Slack message author to a HeyWren user
     const creatorId = await step.run('resolve-creator', async () => {
-      // Try: person who connected the Slack integration
+      // Try: match the Slack user ID to a HeyWren profile
+      if (slackUserId) {
+        const { data: authorProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('slack_user_id', slackUserId)
+          .limit(1)
+          .single()
+        if (authorProfile?.id) return authorProfile.id
+      }
+
+      // Fallback: person who connected the Slack integration
       const connectedBy = integration.config?.connected_by
       if (connectedBy) return connectedBy
 
-      // Try: team owner
+      // Fallback: team owner
       const { data: team } = await supabase
         .from('teams')
         .select('owner_id')
@@ -105,7 +116,7 @@ export const processSlackMessage = inngest.createFunction(
         .single()
       if (team?.owner_id) return team.owner_id
 
-      // Try: any team member
+      // Fallback: any team member
       const { data: member } = await supabase
         .from('team_members')
         .select('user_id')
