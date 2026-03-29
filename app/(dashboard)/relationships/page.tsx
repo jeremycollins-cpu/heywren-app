@@ -407,29 +407,36 @@ export default function RelationshipsPage() {
           }
         })
 
-        // Build a Slack user name cache for resolving user_id → display name
-        // Use channel messages to find other users who interact with the current user
+        // Count real Slack interactions: only @mentions and shared thread participation
         const slackUserInteractions: Record<string, { name: string; count: number; lastDate: string; thisWeek: number }> = {}
         if (slackUserId && slackData.length > 0) {
-          // Group by channel to find other users in the same channels
-          const channelUsers: Record<string, Set<string>> = {}
+          const mentionTag = `<@${slackUserId}>`
+
+          // Build thread participation map: thread_ts → set of user_ids
+          const threadParticipants: Record<string, Set<string>> = {}
           for (const msg of slackData) {
-            const chId = msg.channel_id || ''
-            if (!channelUsers[chId]) channelUsers[chId] = new Set()
-            channelUsers[chId].add(msg.user_id || '')
+            const threadKey = msg.thread_ts || msg.message_ts
+            if (!threadKey) continue
+            if (!threadParticipants[threadKey]) threadParticipants[threadKey] = new Set()
+            threadParticipants[threadKey].add(msg.user_id || '')
           }
 
-          // Count interactions: messages from OTHER users in channels where the current user also posted
-          const userChannels = new Set<string>()
-          for (const msg of slackData) {
-            if (msg.user_id === slackUserId) userChannels.add(msg.channel_id || '')
+          // Find threads the current user participated in
+          const userThreads = new Set<string>()
+          for (const [threadKey, participants] of Object.entries(threadParticipants)) {
+            if (participants.has(slackUserId)) userThreads.add(threadKey)
           }
 
           for (const msg of slackData) {
             const otherId = msg.user_id || ''
             if (otherId === slackUserId || !otherId) continue
-            // Only count if this user also participates in the same channel
-            if (!userChannels.has(msg.channel_id || '')) continue
+
+            const text = msg.message_text || ''
+            const threadKey = msg.thread_ts || msg.message_ts || ''
+            const isMention = text.includes(mentionTag)
+            const isSharedThread = threadKey && userThreads.has(threadKey)
+
+            if (!isMention && !isSharedThread) continue
 
             if (!slackUserInteractions[otherId]) {
               slackUserInteractions[otherId] = { name: '', count: 0, lastDate: msg.created_at || '', thisWeek: 0 }
