@@ -295,7 +295,6 @@ export async function GET(request: NextRequest) {
         adminDb
           .from('integrations')
           .select('provider')
-          .eq('team_id', teamId)
           .eq('user_id', userId),
         adminDb
           .from('commitments')

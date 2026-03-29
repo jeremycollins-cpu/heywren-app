@@ -587,7 +587,7 @@ export const syncPlatformRecordings = inngest.createFunction(
     const tokenResult = await step.run('get-token', async () => {
       // For Teams transcripts, we use the outlook integration
       const lookupProvider = provider === 'teams' ? 'outlook' : provider
-      return getFreshToken(supabase, teamId, lookupProvider)
+      return getFreshToken(supabase, teamId, lookupProvider, userId)
     })
 
     if (!tokenResult) {
@@ -811,21 +811,13 @@ export const scheduledPlatformSync = inngest.createFunction(
     let dispatched = 0
     await step.run('dispatch-syncs', async () => {
       for (const integration of integrations) {
-        // Find a user for this team
-        const { data: member } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', integration.team_id)
-          .limit(1)
-          .single()
-
-        if (member) {
+        if (integration.user_id) {
           await inngest.send({
             name: 'platform/sync.recordings',
             data: {
               team_id: integration.team_id,
               provider: integration.provider,
-              user_id: member.user_id,
+              user_id: integration.user_id,
               is_initial_sync: false,
             },
           })
