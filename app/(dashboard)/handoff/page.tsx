@@ -176,6 +176,7 @@ export default function HandoffPage() {
       .from('outlook_calendar_events')
       .select('id, subject, organizer_name, organizer_email, start_time, end_time')
       .eq('team_id', teamId)
+      .or(`user_id.eq.${userData.user.id},user_id.is.null`)
       .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
       .eq('is_cancelled', false)
       .gte('end_time', now)

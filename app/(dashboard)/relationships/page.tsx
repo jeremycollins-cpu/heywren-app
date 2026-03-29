@@ -269,6 +269,7 @@ export default function RelationshipsPage() {
             .from('outlook_messages')
             .select('from_email, from_name, received_at, to_recipients')
             .eq('team_id', teamId)
+            .or(`user_id.eq.${userData.user.id},user_id.is.null`)
             .neq('from_email', userEmail || '')
             .ilike('to_recipients', `%${userEmail}%`)
             .gte('received_at', thirtyDaysAgo)
@@ -278,6 +279,7 @@ export default function RelationshipsPage() {
             .from('outlook_messages')
             .select('from_email, to_recipients, received_at')
             .eq('team_id', teamId)
+            .or(`user_id.eq.${userData.user.id},user_id.is.null`)
             .eq('from_email', userEmail || '')
             .gte('received_at', thirtyDaysAgo)
             .order('received_at', { ascending: false })
@@ -302,6 +304,7 @@ export default function RelationshipsPage() {
             .from('outlook_calendar_events')
             .select('subject, organizer_email, start_time, attendees')
             .eq('team_id', teamId)
+            .or(`user_id.eq.${userData.user.id},user_id.is.null`)
             .gte('start_time', thirtyDaysAgo)
             .order('start_time', { ascending: false })
             .limit(200),

@@ -445,6 +445,7 @@ export async function POST(request: NextRequest) {
             .from('outlook_messages')
             .insert({
               team_id: teamId,
+              user_id: userId,
               message_id: email.id,
               conversation_id: email.conversationId || null,
               from_name: fromName,
@@ -478,6 +479,7 @@ export async function POST(request: NextRequest) {
           .from('outlook_messages')
           .insert({
             team_id: teamId,
+            user_id: userId,
             message_id: email.id,
             conversation_id: email.conversationId || null,
             from_name: fromName,
@@ -647,6 +649,7 @@ export async function POST(request: NextRequest) {
             .from('outlook_calendar_events')
             .insert({
               team_id: teamId,
+              user_id: userId,
               event_id: event.id,
               subject,
               organizer_name: organizerName,

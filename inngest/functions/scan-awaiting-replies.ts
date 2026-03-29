@@ -249,6 +249,7 @@ export async function scanTeamAwaitingReplies(
     .from('outlook_messages')
     .select('conversation_id, from_email, received_at')
     .eq('team_id', teamId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
     .gte('received_at', scanWindow)
 
   // Build a map of conversations that have incoming replies

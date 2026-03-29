@@ -123,6 +123,7 @@ export default function SyncPage() {
           userEmail
             ? supabase.from('outlook_messages').select('id', { count: 'exact', head: true })
                 .eq('team_id', teamId)
+                .or(`user_id.eq.${userData.user.id},user_id.is.null`)
                 .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
             : supabase.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
           // Slack: messages authored by user
@@ -135,6 +136,7 @@ export default function SyncPage() {
           userEmail
             ? supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true })
                 .eq('team_id', teamId)
+                .or(`user_id.eq.${userData.user.id},user_id.is.null`)
                 .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
             : supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
         ])
