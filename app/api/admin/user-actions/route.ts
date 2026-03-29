@@ -162,6 +162,51 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Full re-sync: fetch fresh data from Outlook/Slack APIs for a user
+  if (action === 'full_resync') {
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+
+    const { data: profile } = await adminDb
+      .from('profiles')
+      .select('current_team_id, email')
+      .eq('id', userId)
+      .single()
+
+    if (!profile?.current_team_id) {
+      return NextResponse.json({ error: 'User has no team assigned' }, { status: 400 })
+    }
+
+    const { data: integrations } = await adminDb
+      .from('integrations')
+      .select('id, team_id, user_id, provider, access_token, refresh_token, config')
+      .eq('user_id', userId)
+
+    if (!integrations?.length) {
+      return NextResponse.json({ error: 'User has no integrations' }, { status: 400 })
+    }
+
+    const results: string[] = []
+    const errors: string[] = []
+
+    for (const integration of integrations) {
+      if (integration.provider === 'outlook' || integration.provider === 'microsoft') {
+        try {
+          const { syncTeamOutlook } = await import('@/inngest/functions/sync-outlook')
+          const result = await syncTeamOutlook(adminDb, integration.team_id, userId, integration)
+          const r = result as any
+          results.push(`Outlook sync: ${r.newEmails || r.emails || 0} new emails, ${r.calendarEvents || 0} calendar events`)
+        } catch (err) {
+          errors.push(`Outlook sync failed: ${(err as Error).message}`)
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: errors.length === 0,
+      message: `Re-sync for ${profile.email}: ${[...results, ...errors].join('; ')}`,
+    })
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 

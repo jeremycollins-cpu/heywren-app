@@ -520,6 +520,14 @@ function AdminContent() {
                   {actionLoading === 'trigger_backfill' ? 'Triggering...' : 'Trigger Reprocessing'}
                 </button>
                 <button
+                  onClick={() => runAction('full_resync', { userId: profile.id })}
+                  disabled={actionLoading === 'full_resync'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {actionLoading === 'full_resync' ? 'Syncing...' : 'Full Re-Sync'}
+                </button>
+                <button
                   onClick={() => runAction('reset_processed', { teamId: profile.current_team_id })}
                   disabled={actionLoading === 'reset_processed'}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"

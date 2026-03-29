@@ -98,7 +98,7 @@ async function graphFetch(
   return { data: await res.json(), token: currentToken }
 }
 
-async function syncTeamOutlook(
+export async function syncTeamOutlook(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
   userId: string,
