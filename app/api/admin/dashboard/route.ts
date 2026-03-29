@@ -394,8 +394,9 @@ export async function GET(request: NextRequest) {
       },
       integrationHealth,
       dataMigration: {
-        emails: { withUserId: emailsWithUserId.count || 0, withoutUserId: emailsWithoutUserId.count || 0 },
-        calendar: { withUserId: calWithUserId.count || 0, withoutUserId: calWithoutUserId.count || 0 },
+        emails: { total: emailsWithUserId.count || 0, unowned: emailsWithoutUserId.count || 0 },
+        calendar: { total: calWithUserId.count || 0, unowned: calWithoutUserId.count || 0 },
+        slack: { total: slackData.length, processed: slackData.filter(s => s.processed).length },
       },
       activityLog: {
         lastSignIn,

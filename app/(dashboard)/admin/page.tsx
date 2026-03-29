@@ -41,8 +41,9 @@ interface UserDetail {
   }
   integrationHealth?: IntegrationHealth[]
   dataMigration?: {
-    emails: { withUserId: number; withoutUserId: number }
-    calendar: { withUserId: number; withoutUserId: number }
+    emails: { total: number; unowned: number }
+    calendar: { total: number; unowned: number }
+    slack: { total: number; processed: number }
   }
   activityLog?: {
     lastSignIn: string | null
@@ -601,37 +602,55 @@ function AdminContent() {
               )}
             </div>
 
-            {/* Data Migration Progress */}
+            {/* Data Ownership */}
             {selectedUser.dataMigration && (
               <div className="bg-white border rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <Database className="w-4 h-4 text-violet-500" />
-                  Data Migration (user_id)
+                  Data Ownership
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <p className="text-xs text-gray-500 mb-1">Emails</p>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Mail className="w-3 h-3 text-blue-500" />
+                      <p className="text-xs text-gray-500">Emails</p>
+                    </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-gray-100 rounded-full h-2">
-                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId > 0 ? Math.round(selectedUser.dataMigration.emails.withUserId / (selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId) * 100) : 0}%` }} />
+                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.emails.total + selectedUser.dataMigration.emails.unowned > 0 ? Math.round(selectedUser.dataMigration.emails.total / (selectedUser.dataMigration.emails.total + selectedUser.dataMigration.emails.unowned) * 100) : 0}%` }} />
                       </div>
-                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.emails.withUserId}/{selectedUser.dataMigration.emails.withUserId + selectedUser.dataMigration.emails.withoutUserId}</span>
+                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.emails.total}/{selectedUser.dataMigration.emails.total + selectedUser.dataMigration.emails.unowned}</span>
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 mb-1">Calendar</p>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Calendar className="w-3 h-3 text-teal-500" />
+                      <p className="text-xs text-gray-500">Calendar</p>
+                    </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 bg-gray-100 rounded-full h-2">
-                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId > 0 ? Math.round(selectedUser.dataMigration.calendar.withUserId / (selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId) * 100) : 0}%` }} />
+                        <div className="bg-green-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.calendar.total + selectedUser.dataMigration.calendar.unowned > 0 ? Math.round(selectedUser.dataMigration.calendar.total / (selectedUser.dataMigration.calendar.total + selectedUser.dataMigration.calendar.unowned) * 100) : 0}%` }} />
                       </div>
-                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.calendar.withUserId}/{selectedUser.dataMigration.calendar.withUserId + selectedUser.dataMigration.calendar.withoutUserId}</span>
+                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.calendar.total}/{selectedUser.dataMigration.calendar.total + selectedUser.dataMigration.calendar.unowned}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <MessageSquare className="w-3 h-3 text-purple-500" />
+                      <p className="text-xs text-gray-500">Slack</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="bg-purple-500 rounded-full h-2" style={{ width: `${selectedUser.dataMigration.slack.total > 0 ? Math.round(selectedUser.dataMigration.slack.processed / selectedUser.dataMigration.slack.total * 100) : 0}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-600">{selectedUser.dataMigration.slack.processed}/{selectedUser.dataMigration.slack.total}</span>
                     </div>
                   </div>
                 </div>
-                {(selectedUser.dataMigration.emails.withoutUserId > 0 || selectedUser.dataMigration.calendar.withoutUserId > 0) && (
+                {(selectedUser.dataMigration.emails.unowned > 0 || selectedUser.dataMigration.calendar.unowned > 0) && (
                   <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
-                    Legacy rows without user_id — run Full Re-Sync or Clear &amp; Re-Sync to fix
+                    Unowned rows found — run Full Re-Sync to assign to this user
                   </p>
                 )}
               </div>
