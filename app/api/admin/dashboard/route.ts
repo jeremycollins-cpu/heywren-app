@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
       // New: integration health, data migration, activity log, org domains
       integrationsFull, emailsWithUserId, emailsWithoutUserId, calWithUserId, calWithoutUserId, orgData,
     ] = await Promise.all([
-      userTeamId ? adminDb.from('integrations').select('id, provider, created_at').eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [] }),
+      adminDb.from('integrations').select('id, provider, created_at').eq('user_id', userId),
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
       userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId) : Promise.resolve({ data: [], count: 0 }),
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Integration health: full details including tokens and config
-      userTeamId ? adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, created_at, updated_at').eq('user_id', userId) : Promise.resolve({ data: [] }),
+      adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, created_at, updated_at').eq('user_id', userId),
       // Data migration progress: emails with user_id
       userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).not('user_id', 'is', null) : Promise.resolve({ count: 0 }),
       userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null) : Promise.resolve({ count: 0 }),
@@ -295,7 +295,6 @@ export async function GET(request: NextRequest) {
         adminDb
           .from('integrations')
           .select('provider')
-          .eq('team_id', teamId)
           .eq('user_id', userId),
         adminDb
           .from('commitments')
