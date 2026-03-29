@@ -134,8 +134,8 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
       // Outlook messages scoped to user (by user_id or email match)
       userTeamId && userEmail
-        ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
-        : userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
+        ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id', { count: 'exact' }).eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+        : userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
       // Slack messages scoped to user (by slack_user_id stored on the message)
       userTeamId && slackUserId
         ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', slackUserId)
@@ -173,6 +173,10 @@ export async function GET(request: NextRequest) {
     const emailData = outlookMsgs.data || []
     const slackData = slackMsgs.data || []
     const commitmentData = commitments.data || []
+
+    // For processing stats, only count emails owned by this user (not broad email-match)
+    const ownedEmails = emailData.filter(e => e.user_id === userId)
+    const ownedSlack = slackData
 
     // Build integration health details
     // Use user's own integrations, but fall back to team integrations for admin visibility
@@ -331,11 +335,13 @@ export async function GET(request: NextRequest) {
 
     // 6. Unprocessed backlog alerts
     const backlogAlerts: { type: string; count: number; message: string }[] = []
-    if (emailData.filter(e => !e.processed).length > 10) {
-      backlogAlerts.push({ type: 'email', count: emailData.filter(e => !e.processed).length, message: `${emailData.filter(e => !e.processed).length} unprocessed emails in queue` })
+    const unprocessedEmails = ownedEmails.filter(e => !e.processed).length
+    const unprocessedSlack = ownedSlack.filter(s => !s.processed).length
+    if (unprocessedEmails > 10) {
+      backlogAlerts.push({ type: 'email', count: unprocessedEmails, message: `${unprocessedEmails} unprocessed emails in queue` })
     }
-    if (slackData.filter(s => !s.processed).length > 10) {
-      backlogAlerts.push({ type: 'slack', count: slackData.filter(s => !s.processed).length, message: `${slackData.filter(s => !s.processed).length} unprocessed Slack messages` })
+    if (unprocessedSlack > 10) {
+      backlogAlerts.push({ type: 'slack', count: unprocessedSlack, message: `${unprocessedSlack} unprocessed Slack messages` })
     }
     if (syncHealth.some(s => s.stale)) {
       backlogAlerts.push({ type: 'sync', count: 0, message: `Data sync is stale (3+ days) for ${syncHealth.filter(s => s.stale).map(s => s.provider).join(', ')}` })
@@ -383,14 +389,14 @@ export async function GET(request: NextRequest) {
           },
         },
         emails: {
-          total: outlookMsgs.count || 0,
-          processed: emailData.filter(e => e.processed).length,
-          unprocessed: emailData.filter(e => !e.processed).length,
+          total: ownedEmails.length,
+          processed: ownedEmails.filter(e => e.processed).length,
+          unprocessed: ownedEmails.filter(e => !e.processed).length,
         },
         slackMessages: {
-          total: slackMsgs.count || 0,
-          processed: slackData.filter(s => s.processed).length,
-          unprocessed: slackData.filter(s => !s.processed).length,
+          total: ownedSlack.length,
+          processed: ownedSlack.filter(s => s.processed).length,
+          unprocessed: ownedSlack.filter(s => !s.processed).length,
         },
         calendarEvents: calEvents.count || 0,
         waitingRoomItems: awaitingReplies.count || 0,
