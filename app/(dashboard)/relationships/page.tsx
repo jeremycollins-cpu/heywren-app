@@ -240,6 +240,24 @@ export default function RelationshipsPage() {
       const userEmail = userData.user.email?.toLowerCase() || ''
       const userDomain = userEmail.includes('@') ? userEmail.split('@')[1] : ''
 
+      // Fetch organization's allowed domains for filtering
+      let allowedDomains: Set<string> = new Set()
+      try {
+        const domainsRes = await fetch('/api/organization-domains')
+        const domainsData = await domainsRes.json()
+        if (domainsData.domains?.length > 0) {
+          allowedDomains = new Set(domainsData.domains.map((d: string) => d.toLowerCase()))
+        }
+      } catch { /* fall back to user domain */ }
+      // Fallback: if no domains configured, use the user's own domain
+      if (allowedDomains.size === 0 && userDomain) {
+        allowedDomains.add(userDomain)
+      }
+      const isAllowedDomain = (email: string) => {
+        const domain = email.includes('@') ? email.split('@')[1] : ''
+        return domain && allowedDomains.has(domain)
+      }
+
       try {
         const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
 
@@ -381,9 +399,7 @@ export default function RelationshipsPage() {
 
           const senderName = msg.from_name || email.split('@')[0]
           if (!isRealPerson(email, senderName)) return
-          // Only include people from the same email domain (coworkers)
-          const senderDomain = email.includes('@') ? email.split('@')[1] : ''
-          if (userDomain && senderDomain && senderDomain !== userDomain) return
+          if (!isAllowedDomain(email)) return
 
           const receivedAt = msg.received_at || new Date().toISOString()
 
@@ -464,9 +480,7 @@ export default function RelationshipsPage() {
             const attName = att.name || att.emailAddress?.name || attEmail.split('@')[0]
             if (!attEmail || attEmail === userEmail) continue
             if (!isRealPerson(attEmail, attName)) continue
-            // Only include coworkers (same domain)
-            const attDomain = attEmail.includes('@') ? attEmail.split('@')[1] : ''
-            if (userDomain && attDomain && attDomain !== userDomain) continue
+            if (!isAllowedDomain(attEmail)) continue
 
             if (!contactMap[attEmail]) {
               contactMap[attEmail] = { name: attName, email: attEmail, countFromThem: 0, countToThem: 0, countThisWeek: 0, lastDate: meetingDate, tones: [] }
