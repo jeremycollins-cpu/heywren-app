@@ -52,6 +52,12 @@ export default function SettingsPage() {
     celebration_posts: true,
   })
   const [gamificationPrefsLoading, setGamificationPrefsLoading] = useState(true)
+  // Company domains
+  const [companyDomains, setCompanyDomains] = useState<string[]>([])
+  const [newDomain, setNewDomain] = useState('')
+  const [domainsLoading, setDomainsLoading] = useState(true)
+  const [savingDomains, setSavingDomains] = useState(false)
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false)
 
   const supabase = createClient()
 
@@ -94,6 +100,19 @@ export default function SettingsPage() {
       setGamificationPrefsLoading(false)
     }
     fetchGamificationPrefs()
+
+    const fetchDomains = async () => {
+      try {
+        const res = await fetch('/api/organization-domains')
+        const data = await res.json()
+        if (data.domains) setCompanyDomains(data.domains)
+        if (data.isAdmin) setIsOrgAdmin(true)
+      } catch (err) {
+        console.error('Error fetching company domains:', err)
+      }
+      setDomainsLoading(false)
+    }
+    fetchDomains()
   }, [])
 
   const saveEmailPrefs = async () => {
@@ -176,6 +195,44 @@ export default function SettingsPage() {
       ? current.filter(c => c !== cat)
       : [...current, cat]
     setEmailPrefs({ ...emailPrefs, enabled_categories: updated })
+  }
+
+  const addCompanyDomain = () => {
+    const domain = newDomain.trim().toLowerCase().replace(/^@/, '')
+    if (!domain || !domain.includes('.')) {
+      toast.error('Enter a valid domain (e.g. acme.com)')
+      return
+    }
+    if (companyDomains.includes(domain)) {
+      toast.error('Domain already added')
+      return
+    }
+    setCompanyDomains([...companyDomains, domain])
+    setNewDomain('')
+  }
+
+  const removeCompanyDomain = (index: number) => {
+    setCompanyDomains(companyDomains.filter((_, i) => i !== index))
+  }
+
+  const saveCompanyDomains = async () => {
+    setSavingDomains(true)
+    try {
+      const res = await fetch('/api/organization-domains', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domains: companyDomains }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Company domains saved')
+      }
+    } catch {
+      toast.error('Failed to save company domains')
+    }
+    setSavingDomains(false)
   }
 
   const toggleGamificationPref = async (key: keyof typeof gamificationPrefs) => {
@@ -479,6 +536,53 @@ export default function SettingsPage() {
               onChange={(e) => setTeamName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
             />
+          </div>
+
+          {/* Company Domains */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Company Domains</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Add all email domains your company uses. Relationship health will only show contacts from these domains.
+            </p>
+            {domainsLoading ? (
+              <div className="h-10 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+            ) : (
+              <>
+                <div className="space-y-2 mb-3">
+                  {companyDomains.map((domain, i) => (
+                    <div key={domain} className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-border-dark">
+                      <span className="text-sm text-gray-900 dark:text-white">{domain}</span>
+                      {isOrgAdmin && (
+                        <button onClick={() => removeCompanyDomain(i)} className="text-gray-400 hover:text-red-500 transition" aria-label={`Remove ${domain}`}>
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {companyDomains.length === 0 && (
+                    <p className="text-sm text-gray-400 dark:text-gray-500 italic">No domains configured yet. Add your company&apos;s email domain.</p>
+                  )}
+                </div>
+                {isOrgAdmin && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addCompanyDomain()}
+                      placeholder="e.g. acme.com"
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                    />
+                    <button onClick={addCompanyDomain} className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button onClick={saveCompanyDomains} disabled={savingDomains} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
+                      {savingDomains ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div>

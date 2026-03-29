@@ -240,6 +240,24 @@ export default function RelationshipsPage() {
       const userEmail = userData.user.email?.toLowerCase() || ''
       const userDomain = userEmail.includes('@') ? userEmail.split('@')[1] : ''
 
+      // Fetch organization's allowed domains for filtering
+      let allowedDomains: Set<string> = new Set()
+      try {
+        const domainsRes = await fetch('/api/organization-domains')
+        const domainsData = await domainsRes.json()
+        if (domainsData.domains?.length > 0) {
+          allowedDomains = new Set(domainsData.domains.map((d: string) => d.toLowerCase()))
+        }
+      } catch { /* fall back to user domain */ }
+      // Fallback: if no domains configured, use the user's own domain
+      if (allowedDomains.size === 0 && userDomain) {
+        allowedDomains.add(userDomain)
+      }
+      const isAllowedDomain = (email: string) => {
+        const domain = email.includes('@') ? email.split('@')[1] : ''
+        return domain && allowedDomains.has(domain)
+      }
+
       try {
         const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
 
@@ -271,7 +289,7 @@ export default function RelationshipsPage() {
           slackUserId
             ? supabase
                 .from('slack_messages')
-                .select('user_id, channel_id, message_text, created_at')
+                .select('user_id, channel_id, message_text, message_ts, thread_ts, created_at')
                 .eq('team_id', teamId)
                 .gte('created_at', thirtyDaysAgo)
                 .order('created_at', { ascending: false })
@@ -296,6 +314,49 @@ export default function RelationshipsPage() {
         const commitmentData = commitmentResult.data || []
         const slackData = slackResult.data || []
         const calendarData = calendarResult.data || []
+
+        // Build Slack user ID → display name map from profiles
+        const slackNameMap = new Map<string, string>()
+        if (slackData.length > 0) {
+          const uniqueSlackUserIds = [...new Set(slackData.map((m: any) => m.user_id).filter(Boolean))]
+          if (uniqueSlackUserIds.length > 0) {
+            const { data: slackProfiles } = await supabase
+              .from('profiles')
+              .select('display_name, slack_user_id, email')
+              .in('slack_user_id', uniqueSlackUserIds)
+            for (const p of slackProfiles || []) {
+              if (p.slack_user_id && p.display_name) {
+                slackNameMap.set(p.slack_user_id, p.display_name)
+              }
+            }
+            // For IDs not found in profiles, try fetching from Slack API via integration
+            const unmappedIds = uniqueSlackUserIds.filter(id => !slackNameMap.has(id))
+            if (unmappedIds.length > 0) {
+              const { data: slackIntegration } = await supabase
+                .from('integrations')
+                .select('access_token, config')
+                .eq('user_id', userData.user.id)
+                .eq('provider', 'slack')
+                .limit(1)
+                .single()
+              const botToken = slackIntegration?.config?.bot_token || slackIntegration?.access_token
+              if (botToken) {
+                await Promise.all(unmappedIds.slice(0, 50).map(async (uid) => {
+                  try {
+                    const res = await fetch(`https://slack.com/api/users.info?user=${uid}`, {
+                      headers: { Authorization: `Bearer ${botToken}` },
+                    })
+                    const data = await res.json()
+                    if (data.ok && data.user) {
+                      const name = data.user.profile?.display_name || data.user.profile?.real_name || data.user.real_name || data.user.name
+                      if (name) slackNameMap.set(uid, name)
+                    }
+                  } catch { /* skip */ }
+                }))
+              }
+            }
+          }
+        }
 
         // Filter calendar events to only those involving this user
         const userCalendarData = userEmail
@@ -329,6 +390,7 @@ export default function RelationshipsPage() {
         })
 
         // Build contact map from received emails (from them)
+        // Only include contacts from the user's own domain (coworkers)
         const contactMap: Record<string, { name: string; email: string; countFromThem: number; countToThem: number; countThisWeek: number; lastDate: string; tones: string[] }> = {}
 
         emailData.forEach((msg: any) => {
@@ -337,6 +399,7 @@ export default function RelationshipsPage() {
 
           const senderName = msg.from_name || email.split('@')[0]
           if (!isRealPerson(email, senderName)) return
+          if (!isAllowedDomain(email)) return
 
           const receivedAt = msg.received_at || new Date().toISOString()
 
@@ -364,29 +427,36 @@ export default function RelationshipsPage() {
           }
         })
 
-        // Build a Slack user name cache for resolving user_id → display name
-        // Use channel messages to find other users who interact with the current user
+        // Count real Slack interactions: only @mentions and shared thread participation
         const slackUserInteractions: Record<string, { name: string; count: number; lastDate: string; thisWeek: number }> = {}
         if (slackUserId && slackData.length > 0) {
-          // Group by channel to find other users in the same channels
-          const channelUsers: Record<string, Set<string>> = {}
+          const mentionTag = `<@${slackUserId}>`
+
+          // Build thread participation map: thread_ts → set of user_ids
+          const threadParticipants: Record<string, Set<string>> = {}
           for (const msg of slackData) {
-            const chId = msg.channel_id || ''
-            if (!channelUsers[chId]) channelUsers[chId] = new Set()
-            channelUsers[chId].add(msg.user_id || '')
+            const threadKey = msg.thread_ts || msg.message_ts
+            if (!threadKey) continue
+            if (!threadParticipants[threadKey]) threadParticipants[threadKey] = new Set()
+            threadParticipants[threadKey].add(msg.user_id || '')
           }
 
-          // Count interactions: messages from OTHER users in channels where the current user also posted
-          const userChannels = new Set<string>()
-          for (const msg of slackData) {
-            if (msg.user_id === slackUserId) userChannels.add(msg.channel_id || '')
+          // Find threads the current user participated in
+          const userThreads = new Set<string>()
+          for (const [threadKey, participants] of Object.entries(threadParticipants)) {
+            if (participants.has(slackUserId)) userThreads.add(threadKey)
           }
 
           for (const msg of slackData) {
             const otherId = msg.user_id || ''
             if (otherId === slackUserId || !otherId) continue
-            // Only count if this user also participates in the same channel
-            if (!userChannels.has(msg.channel_id || '')) continue
+
+            const text = msg.message_text || ''
+            const threadKey = msg.thread_ts || msg.message_ts || ''
+            const isMention = text.includes(mentionTag)
+            const isSharedThread = threadKey && userThreads.has(threadKey)
+
+            if (!isMention && !isSharedThread) continue
 
             if (!slackUserInteractions[otherId]) {
               slackUserInteractions[otherId] = { name: '', count: 0, lastDate: msg.created_at || '', thisWeek: 0 }
@@ -410,6 +480,7 @@ export default function RelationshipsPage() {
             const attName = att.name || att.emailAddress?.name || attEmail.split('@')[0]
             if (!attEmail || attEmail === userEmail) continue
             if (!isRealPerson(attEmail, attName)) continue
+            if (!isAllowedDomain(attEmail)) continue
 
             if (!contactMap[attEmail]) {
               contactMap[attEmail] = { name: attName, email: attEmail, countFromThem: 0, countToThem: 0, countThisWeek: 0, lastDate: meetingDate, tones: [] }
@@ -423,29 +494,55 @@ export default function RelationshipsPage() {
           }
         }
 
-        // Merge Slack interactions into contact map by matching names
-        // Since Slack uses user_ids not emails, we match by name similarity
-        for (const [slackId, slackInfo] of Object.entries(slackUserInteractions)) {
-          // Try to find this Slack user in the existing contact map by checking profiles
-          // For now, add as separate entries keyed by slack ID — they won't duplicate email contacts
-          // because email contacts are keyed by email address
-          if (slackInfo.count < 2) continue // Skip very low interaction users
+        // Build a Slack user ID → email map from profiles for merging
+        const slackEmailMap = new Map<string, string>()
+        if (slackData.length > 0) {
+          const uniqueSlackUserIds = [...new Set(slackData.map((m: any) => m.user_id).filter(Boolean))]
+          const { data: slackProfilesWithEmail } = await supabase
+            .from('profiles')
+            .select('slack_user_id, email')
+            .in('slack_user_id', uniqueSlackUserIds)
+          for (const p of slackProfilesWithEmail || []) {
+            if (p.slack_user_id && p.email) {
+              slackEmailMap.set(p.slack_user_id, p.email.toLowerCase())
+            }
+          }
+        }
 
-          // Check if we can find a matching email contact by profile lookup
-          let merged = false
-          for (const email of Object.keys(contactMap)) {
-            const contact = contactMap[email]
-            // Slack interactions will be merged when we have name matches
-            // For now, boost existing contacts' interaction count if they share channels
-            if (!merged) continue
+        // Merge Slack interactions into contact map
+        for (const [slackId, slackInfo] of Object.entries(slackUserInteractions)) {
+          if (slackInfo.count < 2) continue
+
+          // Try to merge with existing email contact
+          const profileEmail = slackEmailMap.get(slackId)
+          if (profileEmail && contactMap[profileEmail]) {
+            contactMap[profileEmail].countFromThem += slackInfo.count
+            contactMap[profileEmail].countThisWeek += slackInfo.thisWeek
+            if (slackInfo.lastDate > contactMap[profileEmail].lastDate) {
+              contactMap[profileEmail].lastDate = slackInfo.lastDate
+            }
+            continue
           }
 
-          // If no merge, Slack-only contacts are added as inferred contacts
-          // We don't have their email, so use a placeholder key
-          const slackKey = `slack:${slackId}`
-          if (!contactMap[slackKey] && slackInfo.count >= 3) {
+          // Add as new contact with resolved name
+          const resolvedName = slackNameMap.get(slackId)
+          if (!resolvedName) continue // Skip if we can't resolve the name
+
+          // Check if contact already exists under the profile email
+          if (profileEmail) {
+            contactMap[profileEmail] = {
+              name: resolvedName,
+              email: profileEmail,
+              countFromThem: slackInfo.count,
+              countToThem: 0,
+              countThisWeek: slackInfo.thisWeek,
+              lastDate: slackInfo.lastDate,
+              tones: [],
+            }
+          } else if (slackInfo.count >= 3) {
+            const slackKey = `slack:${slackId}`
             contactMap[slackKey] = {
-              name: `Slack User (${slackId.slice(0, 6)})`,
+              name: resolvedName,
               email: '',
               countFromThem: slackInfo.count,
               countToThem: 0,
