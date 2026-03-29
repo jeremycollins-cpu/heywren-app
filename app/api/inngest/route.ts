@@ -8,7 +8,7 @@ import { processSlackMention } from '@/inngest/functions/process-slack-mention'
 import { processSlackMessage } from '@/inngest/functions/process-slack-message'
 import { dailyDigest } from '@/inngest/functions/daily-digest'
 import { sendNudges } from '@/inngest/functions/send-nudges'
-import { syncOutlook } from '@/inngest/functions/sync-outlook'
+import { syncOutlook, adminFullResync } from '@/inngest/functions/sync-outlook'
 import { generateDrafts } from '@/inngest/functions/generate-drafts'
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
@@ -42,5 +42,6 @@ export const { GET, POST, PUT } = serve({
     scheduledPlatformSync,       // Cron: every 30 min — sync all connected platform recordings
     calculateWeeklyScoresJob,    // Monday 6 AM UTC — weekly scores, streaks, achievements, leaderboards
     managerWeeklyDigest,         // Monday 8 AM UTC — BI digest DM to managers via Slack
+    adminFullResync,             // On-demand — admin triggers 90-day full resync for a user
   ],
 })
