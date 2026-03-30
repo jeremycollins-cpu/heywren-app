@@ -8,6 +8,31 @@ import { detectCommitmentsBatch, calculatePriorityScore, DetectedCommitment } fr
 
 const BATCH_SIZE = 50
 
+// Pre-AI filter: skip emails that will never contain commitments
+const SKIP_SENDER_PATTERNS = [
+  /noreply@/i, /no-reply@/i, /donotreply@/i, /do-not-reply@/i,
+  /notifications?@/i, /alerts?@/i, /mailer-daemon@/i, /postmaster@/i,
+  /bounce@/i, /news@/i, /newsletter@/i, /updates?@/i, /marketing@/i,
+  /promo(tions)?@/i, /digest@/i, /automated@/i, /system@/i,
+]
+
+const SKIP_SUBJECT_PATTERNS = [
+  /\bunsubscribe\b/i, /\bnewsletter\b/i, /\bdigest\b/i,
+  /\b(weekly|daily|monthly) (update|summary|recap|report)\b/i,
+  /\bout of office\b/i, /\bautomatic reply\b/i, /\bautoreply\b/i,
+  /\bpassword reset\b/i, /\bverify your (email|account)\b/i,
+  /\bPR #\d+/i, /\b\[JIRA\]/i, /\b\[GitHub\]/i,
+  /\bbuild (passed|failed)\b/i, /\bpipeline (passed|failed)\b/i,
+  /\bCI\/CD\b/i, /\bdeployment (succeeded|failed)\b/i,
+  /\breceipt for\b/i, /\binvoice #/i, /\border confirm/i,
+]
+
+function shouldSkipEmail(fromEmail: string, subject: string): boolean {
+  if (SKIP_SENDER_PATTERNS.some(p => p.test(fromEmail))) return true
+  if (SKIP_SUBJECT_PATTERNS.some(p => p.test(subject))) return true
+  return false
+}
+
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -98,7 +123,7 @@ export const drainOutlookBacklog = inngest.createFunction(
 
             for (const msg of unprocessed) {
               const preview = msg.body_preview || ''
-              if (preview.length < 20) {
+              if (preview.length < 20 || shouldSkipEmail(msg.from_email || '', msg.subject || '')) {
                 await supabase
                   .from('outlook_messages')
                   .update({ processed: true, commitments_found: 0 })

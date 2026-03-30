@@ -285,7 +285,7 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
   const systemText = SONNET_SYSTEM_PROMPT + communityBlock
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
     system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
     tools: [EMAIL_ANALYSIS_TOOL],
@@ -536,7 +536,7 @@ export async function classifyMissedEmailBatch(
     const systemText = SONNET_SYSTEM_PROMPT + communityBlock
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
       system: [{ type: 'text', text: `Analyze batched emails numbered [1], [2], etc.\n\n${systemText}`, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
       tools: [BATCH_EMAIL_TOOL],

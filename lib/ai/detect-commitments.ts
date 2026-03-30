@@ -275,10 +275,10 @@ async function haiku_triage(text: string, userContext?: UserContext): Promise<bo
 }
 
 // ============================================================
-// TIER 3: Full Sonnet analysis via tool_use
-// ~$0.003 per call, guaranteed structured JSON
+// TIER 3: Haiku analysis via tool_use (switched from Sonnet for cost)
+// ~$0.0005 per call, guaranteed structured JSON
 // ============================================================
-async function sonnet_analyze(text: string, communityPatterns?: string[], userContext?: UserContext): Promise<DetectedCommitment[]> {
+async function haiku_analyze(text: string, communityPatterns?: string[], userContext?: UserContext): Promise<DetectedCommitment[]> {
   const communityBlock = communityPatterns && communityPatterns.length > 0
     ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : ''
@@ -286,7 +286,7 @@ async function sonnet_analyze(text: string, communityPatterns?: string[], userCo
   const systemText = buildSystemPrompt(userContext) + communityBlock
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
     system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
     tools: [COMMITMENT_EXTRACTION_TOOL],
@@ -393,7 +393,7 @@ export async function detectCommitments(
       return []
     }
 
-    // TIER 3: Sonnet full analysis ($0.003)
+    // TIER 3: Haiku full analysis ($0.0005)
     _stats.tier3_analyzed++
     let communityPatterns: string[] = []
     try {
@@ -401,7 +401,7 @@ export async function detectCommitments(
     } catch {
       // Non-fatal
     }
-    const raw = await sonnet_analyze(messageText, communityPatterns, userContext)
+    const raw = await haiku_analyze(messageText, communityPatterns, userContext)
     const commitments = raw.filter(c => !isLowQualityCommitment(c))
 
     if (raw.length > commitments.length) {
@@ -458,7 +458,7 @@ export async function detectCommitmentsBatch(
 
   if (triaged.length === 0) return results
 
-  // Tier 3: Batch Sonnet analysis via tool_use
+  // Tier 3: Batch Haiku analysis via tool_use
   _stats.tier3_analyzed += triaged.length
 
   const numberedMessages = triaged
@@ -467,7 +467,7 @@ export async function detectCommitmentsBatch(
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 8192,
       system: [{ type: 'text', text: userContext
         ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}. Be VERY selective — quality over quantity.

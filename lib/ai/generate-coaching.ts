@@ -239,7 +239,7 @@ export async function generateCoachingInsights(
     }))
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
     system: [{ type: 'text', text: `You are an expert executive communication coach ($500/hr strategic advisor). Analyze real communication data and deliver insights that are blunt, specific, and evidence-grounded.
 
