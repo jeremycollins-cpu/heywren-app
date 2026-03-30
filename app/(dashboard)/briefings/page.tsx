@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2 } from 'lucide-react'
+import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2, AlertTriangle, ListChecks } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 
 // ── Types ──
@@ -42,6 +42,9 @@ interface Briefing {
   attendees: AttendeeWithHealth[]
   location: string | null
   bodyPreview: string | null
+  agendaItems: string[]
+  hasAgenda: boolean
+  isOrganizer: boolean
   matchedCommitments: MatchedCommitment[]
   talkingPoints: string[]
 }
@@ -233,6 +236,84 @@ function parseAttendees(raw: any): Attendee[] {
     .filter((a: Attendee) => a.email)
 }
 
+// ── Extract real agenda items from body_preview, stripping conference fluff ──
+
+const CONFERENCE_PATTERNS = [
+  /https?:\/\/\S+/gi,                          // URLs (Zoom, Teams, Meet links)
+  /join (zoom|teams|meet|webex|google)\b.*/gi,
+  /meeting id[:\s]*\d+/gi,
+  /passcode[:\s]*\S+/gi,
+  /password[:\s]*\S+/gi,
+  /dial[- ]in[:\s]*.*/gi,
+  /one tap mobile.*/gi,
+  /find your local number.*/gi,
+  /phone[:\s]*[\d\s\-+()]+$/gm,
+  /join.*microsoft teams meeting/gi,
+  /join with google meet/gi,
+  /join zoom meeting/gi,
+  /________________+/g,                         // Separator lines
+  /─{3,}/g,
+  /-{5,}/g,
+  /\*{3,}/g,
+  /do not edit this section.*/gi,
+  /you('ve| have) been invited to.*/gi,
+  /when:.*\d{4}/gi,                             // Calendar metadata
+  /where:.*$/gmi,
+  /organizer:.*$/gmi,
+  /invitees:.*$/gmi,
+  /^\s*sent from.*/gmi,
+]
+
+const FLUFF_LINE_PATTERNS = [
+  /^\s*$/,                                       // Empty lines
+  /^\s*[-–—]{2,}\s*$/,                          // Separator lines
+  /^\s*(hi|hello|hey|dear|good morning|good afternoon)\b/i,
+  /^\s*(thanks|thank you|regards|best|cheers|sincerely)\b/i,
+  /^\s*please (join|dial|connect)/i,
+  /^\s*(zoom|teams|webex|meet)\s*(meeting|link|call)?$/i,
+  /^\s*\d{3}[\s.-]\d{3,4}[\s.-]\d{4}\s*$/,    // Phone numbers
+]
+
+function extractAgendaItems(bodyPreview: string | null): string[] {
+  if (!bodyPreview || bodyPreview.trim().length < 10) return []
+
+  let text = bodyPreview
+
+  // Remove conference link blocks
+  for (const pattern of CONFERENCE_PATTERNS) {
+    text = text.replace(pattern, '')
+  }
+
+  // Split into lines and filter
+  const lines = text.split(/\n/)
+    .map(l => l.trim())
+    .filter(l => {
+      if (l.length < 3) return false
+      if (FLUFF_LINE_PATTERNS.some(p => p.test(l))) return false
+      return true
+    })
+
+  if (lines.length === 0) return []
+
+  // Try to detect structured agenda (numbered/bulleted items)
+  const agendaItems: string[] = []
+  for (const line of lines) {
+    // Match lines that look like agenda items: numbered, bulleted, or dashed
+    const cleaned = line
+      .replace(/^[\d]+[.):\s]+/, '')     // Remove "1. " or "1) " prefixes
+      .replace(/^[-•*►▪▸]\s*/, '')       // Remove bullet prefixes
+      .replace(/^[a-z][.)]\s*/i, '')     // Remove "a. " prefixes
+      .trim()
+
+    if (cleaned.length >= 5) {
+      agendaItems.push(cleaned)
+    }
+  }
+
+  // Cap at 10 items to keep UI clean
+  return agendaItems.slice(0, 10)
+}
+
 export default function BriefingsPage() {
   const [briefings, setBriefings] = useState<Briefing[]>([])
   const [loading, setLoading] = useState(true)
@@ -394,8 +475,21 @@ export default function BriefingsPage() {
         // Find relevant commitments
         const matched = findMatchingCommitments(openCommitments, rawAttendees, event.subject || '', userEmail)
 
-        // Generate talking points
+        // Extract agenda items from body preview
+        const agendaItems = extractAgendaItems(event.body_preview)
+        const hasAgenda = agendaItems.length > 0
+        const isOrganizer = (event.organizer_email || '').toLowerCase() === userEmail
+
+        // Generate talking points (enhanced with agenda context)
         const talkingPoints = generateTalkingPoints(matched, enrichedAttendees, event.subject || '')
+
+        // Add agenda-related talking point
+        if (!hasAgenda && isOrganizer) {
+          talkingPoints.unshift('Add an agenda to this meeting — meetings with agendas are 30% more productive and 80% shorter (Harvard Business Review)')
+        } else if (!hasAgenda && !isOrganizer) {
+          const organizerFirst = (event.organizer_name || 'the organizer').split(' ')[0]
+          talkingPoints.unshift(`No agenda found — consider asking ${organizerFirst} to share an agenda or key topics before the meeting`)
+        }
 
         return {
           id: event.id,
@@ -409,6 +503,9 @@ export default function BriefingsPage() {
           attendees: enrichedAttendees,
           location: event.location,
           bodyPreview: event.body_preview,
+          agendaItems,
+          hasAgenda,
+          isOrganizer,
           matchedCommitments: matched,
           talkingPoints,
         }
@@ -513,6 +610,17 @@ export default function BriefingsPage() {
                           <Users aria-hidden="true" className="w-4 h-4" />
                           {briefing.attendees.length} attendee{briefing.attendees.length !== 1 ? 's' : ''}
                         </div>
+                        {briefing.hasAgenda ? (
+                          <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                            <ListChecks className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">Agenda</span>
+                          </div>
+                        ) : (
+                          <div className={`flex items-center gap-1 ${briefing.isOrganizer ? 'text-red-500' : 'text-amber-500'}`}>
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">No agenda</span>
+                          </div>
+                        )}
                         {briefing.location && (
                           <div className="text-gray-400 text-xs truncate max-w-[200px]">
                             {briefing.location}
@@ -538,6 +646,46 @@ export default function BriefingsPage() {
                 {/* Expanded view */}
                 {isExpanded && (
                   <div className="px-6 pb-6 space-y-5 border-t border-gray-100 dark:border-gray-700 pt-5">
+
+                    {/* Agenda Section */}
+                    {briefing.hasAgenda ? (
+                      <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                          <ListChecks className="w-4 h-4 text-green-600" />
+                          Meeting Agenda
+                        </h4>
+                        <div className="space-y-1.5">
+                          {briefing.agendaItems.map((item, i) => (
+                            <div key={i} className="flex items-start gap-2 text-sm text-gray-800 dark:text-gray-200">
+                              <span className="text-green-600 font-semibold text-xs mt-0.5 w-5 flex-shrink-0">{i + 1}.</span>
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`rounded-lg p-4 border ${briefing.isOrganizer ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50'}`}>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                          <AlertTriangle className={`w-4 h-4 ${briefing.isOrganizer ? 'text-red-500' : 'text-amber-500'}`} />
+                          No Agenda Found
+                        </h4>
+                        {briefing.isOrganizer ? (
+                          <div className="text-sm text-gray-700 dark:text-gray-300">
+                            <p>You&apos;re the organizer of this meeting. Add an agenda to make it productive.</p>
+                            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                              Meetings with agendas are <strong>30% more productive</strong> and up to <strong>80% shorter</strong> — attendees come prepared and discussions stay focused.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-700 dark:text-gray-300">
+                            <p>This meeting has no visible agenda. Consider reaching out to {briefing.organizer.name.split(' ')[0]} to request one, or ask what topics will be covered.</p>
+                            <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                              Tip: A quick &ldquo;What should I prepare for this meeting?&rdquo; message can save everyone time.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Attendees with health scores */}
                     <div>
@@ -652,6 +800,9 @@ export default function BriefingsPage() {
                     {/* Prep Checklist */}
                     {(() => {
                       const checklistItems = [
+                        ...(!briefing.hasAgenda && briefing.isOrganizer ? ['Add an agenda to this meeting'] : []),
+                        ...(!briefing.hasAgenda && !briefing.isOrganizer ? [`Ask ${briefing.organizer.name.split(' ')[0]} for the agenda`] : []),
+                        ...(briefing.hasAgenda ? ['Review meeting agenda'] : []),
                         ...(briefing.matchedCommitments.length > 0 ? [`Review ${briefing.matchedCommitments.length} open commitment${briefing.matchedCommitments.length > 1 ? 's' : ''}`] : []),
                         ...(briefing.attendees.filter(a => a.healthScore < 50).length > 0 ? [`Reconnect with ${briefing.attendees.filter(a => a.healthScore < 50).map(a => a.name).slice(0, 2).join(', ')}`] : []),
                         'Review talking points below',
@@ -726,6 +877,7 @@ export default function BriefingsPage() {
         <div className="bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-lg p-6">
           <h3 className="font-semibold text-indigo-900 dark:text-indigo-300 mb-2">What&apos;s Included</h3>
           <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
+            <li className="flex items-center gap-2"><ListChecks aria-hidden="true" className="w-3.5 h-3.5" /> Meeting agenda extraction (with missing agenda alerts)</li>
             <li className="flex items-center gap-2"><Heart aria-hidden="true" className="w-3.5 h-3.5" /> Relationship health scores per attendee</li>
             <li className="flex items-center gap-2"><FileText aria-hidden="true" className="w-3.5 h-3.5" /> Open commitments relevant to this meeting</li>
             <li className="flex items-center gap-2"><MessageSquare aria-hidden="true" className="w-3.5 h-3.5" /> Suggested talking points</li>
