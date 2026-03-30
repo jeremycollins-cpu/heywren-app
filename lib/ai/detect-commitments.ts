@@ -205,13 +205,16 @@ Rules:
 DO NOT extract any of these — they are NOT real commitments:
 - Vague "will discuss" or "will talk about" with no specific deliverable (e.g. "I'll discuss with Luke in our meeting")
 - Calendar events, meeting invites, or scheduling confirmations (e.g. "Meeting at 3pm", "I have a meeting in an hour")
+- Meeting agenda items that are just TOPICS to discuss (e.g. "Review Q3 budget", "Discuss roadmap") — these are discussion topics, NOT commitments unless someone explicitly promises to deliver something
+- Recurring meeting descriptions or boilerplate (e.g. "Weekly sync to align on priorities")
+- Generic action items from meeting templates (e.g. "Review action items", "Share updates", "Discuss blockers")
 - Casual conversation fragments from shared channels that are between OTHER people
 - Status updates with no action promise (e.g. "Working on it", "Looking into it" with no specific deliverable)
 - Acknowledgments and social messages (e.g. "Sure", "Sounds good", "Will do" with no specific task)
 - Past tense statements about completed actions (e.g. "I sent the report", "I already checked")
 - Messages shorter than 30 characters that lack specificity
 
-A REAL commitment must have: (1) a specific person taking responsibility, (2) a specific deliverable or action, and (3) enough context to track whether it was completed. "I will discuss" is NOT trackable. "I will send you the report by Friday" IS trackable.`
+A REAL commitment must have ALL THREE: (1) a specific person taking responsibility, (2) a specific deliverable or action (not just "discuss"), and (3) enough context to track whether it was completed. "I will discuss" is NOT trackable. "Review Q3 budget" is a TOPIC, not a commitment. "I will send you the report by Friday" IS trackable.`
 
 function buildSystemPrompt(userContext?: UserContext): string {
   if (!userContext) return BASE_SYSTEM_PROMPT
@@ -312,12 +315,19 @@ const NOISE_TITLE_PATTERNS = [
   /^(attend|join|have a) (meeting|call|sync|standup)/i,
   /meeting (with|about|regarding|on|at)/i,
   /^(calendar|schedule|scheduling)\b/i,
+  /^review\s+(the\s+)?(q\d|quarter|budget|roadmap|sprint|backlog|priorities|metrics|goals|okr)/i,
+  /^(share|provide|give)\s+(updates?|status|progress)/i,
+  /^(align|sync)\s+(on|with|about)/i,
+  /^(go over|walk through|cover)\b/i,
+  /^(weekly|daily|monthly|bi-?weekly)\s+(sync|update|check|review|standup)/i,
 ]
 
 const NOISE_QUOTE_PATTERNS = [
   /^i (have|got) a meeting/i,
   /^(let's|we should) (discuss|talk|chat|sync)/i,
   /^i('ll|'ll| will) (discuss|talk|chat|think|meet)\b/i,
+  /^(review|discuss|cover|go over)\s/i,
+  /^(agenda|topics?|items?):/i,
 ]
 
 function isLowQualityCommitment(c: DetectedCommitment): boolean {
