@@ -60,7 +60,11 @@ const CONFERENCE_LINK_PATTERNS = [
   /passcode/gi,
 ]
 
-function shouldSkipCalendarEvent(subject: string, attendeeCount: number, bodyPreview: string): boolean {
+function shouldSkipCalendarEvent(subject: string, attendeeCount: number, bodyPreview: string, eventType?: string): boolean {
+  // Skip recurring meetings — they happen automatically and won't slip through the cracks
+  // Microsoft Graph: type="occurrence" for recurring instances, "seriesMaster" for the series definition
+  if (eventType === 'occurrence' || eventType === 'seriesMaster') return true
+
   // Skip large meetings (6+ attendees) — too generic for personal commitments
   if (attendeeCount >= 6) return true
 
@@ -455,7 +459,7 @@ export async function syncTeamOutlook(
     const calendarUrl =
       `https://graph.microsoft.com/v1.0/me/calendarview` +
       `?startDateTime=${startDate}&endDateTime=${endDate}` +
-      `&$select=id,subject,organizer,attendees,start,end,location,bodyPreview,isCancelled` +
+      `&$select=id,subject,organizer,attendees,start,end,location,bodyPreview,isCancelled,type,seriesMasterId` +
       `&$orderby=start/dateTime desc&$top=50`
 
     let calNextLink: string | null = calendarUrl
@@ -488,8 +492,8 @@ export async function syncTeamOutlook(
         const endTime = event.end?.dateTime || ''
         const location = event.location?.displayName || ''
 
-        // Pre-AI filter: skip large meetings, blocked time, and events with no real body
-        if (shouldSkipCalendarEvent(subject, attendees.length, bodyPreview)) {
+        // Pre-AI filter: skip recurring, large meetings, blocked time, and events with no real body
+        if (shouldSkipCalendarEvent(subject, attendees.length, bodyPreview, event.type)) {
           // Still store the event for display, but mark as processed immediately
           const { data: existing } = await supabase
             .from('outlook_calendar_events')
