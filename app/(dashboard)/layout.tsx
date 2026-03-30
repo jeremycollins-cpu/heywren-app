@@ -63,7 +63,7 @@ function TodoPanelConnector() {
       {!todoPanelOpen && (
         <button
           onClick={toggleTodoPanel}
-          className="fixed bottom-6 right-6 z-30 w-12 h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center"
+          className="fixed bottom-6 right-20 z-30 w-12 h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center"
           title="Open To-Dos"
         >
           <ListChecks className="w-5 h-5" />
