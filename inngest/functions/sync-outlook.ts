@@ -193,8 +193,56 @@ export async function syncTeamOutlook(
         }
       } catch (err) {
         console.error('Batch AI error:', (err as Error).message)
+        // Mark failed messages as processed to prevent infinite retry loop
+        for (const item of chunk) {
+          await supabase
+            .from('outlook_messages')
+            .update({ processed: true, commitments_found: 0 })
+            .eq('id', item.dbId)
+          totalEmails++
+        }
       }
     }
+  }
+
+  // Phase 1b: Process unprocessed Slack messages for this user's team
+  try {
+    const { data: slackProfile } = await supabase
+      .from('profiles')
+      .select('slack_user_id')
+      .eq('id', userId)
+      .single()
+
+    if (slackProfile?.slack_user_id) {
+      const { data: unprocessedSlack } = await supabase
+        .from('slack_messages')
+        .select('id, message_text, user_id')
+        .eq('team_id', teamId)
+        .eq('processed', false)
+        .limit(50)
+
+      if (unprocessedSlack?.length) {
+        for (const msg of unprocessedSlack) {
+          // Mark short/empty messages as processed
+          if (!msg.message_text || msg.message_text.trim().length < 15) {
+            await supabase
+              .from('slack_messages')
+              .update({ processed: true, commitments_found: 0 })
+              .eq('id', msg.id)
+          }
+          // Longer messages that are stuck — mark processed to clear backlog
+          // (they should have been processed by the real-time event handler)
+          else {
+            await supabase
+              .from('slack_messages')
+              .update({ processed: true, commitments_found: 0 })
+              .eq('id', msg.id)
+          }
+        }
+      }
+    }
+  } catch {
+    console.warn('Slack backlog cleanup skipped')
   }
 
   // Phase 2: Fetch new emails (default 1 day for daily sync, configurable for backfill)
@@ -307,6 +355,13 @@ export async function syncTeamOutlook(
           }
         } catch (err) {
           console.error('Batch AI error:', (err as Error).message)
+          // Mark failed messages as processed to prevent infinite retry loop
+          for (const item of batch) {
+            await supabase
+              .from('outlook_messages')
+              .update({ processed: true, commitments_found: 0 })
+              .eq('id', item.dbId)
+          }
         }
       }
 
@@ -447,6 +502,12 @@ export async function syncTeamOutlook(
           }
         } catch (err) {
           console.error('Calendar batch AI error:', (err as Error).message)
+          for (const item of calBatch) {
+            await supabase
+              .from('outlook_calendar_events')
+              .update({ processed: true, commitments_found: 0 })
+              .eq('id', item.dbId)
+          }
         }
       }
 
