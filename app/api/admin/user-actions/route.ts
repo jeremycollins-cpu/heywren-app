@@ -355,6 +355,50 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Clear stuck messages: mark all unprocessed as processed immediately
+  if (action === 'clear_stuck') {
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+
+    const { data: profile } = await adminDb
+      .from('profiles')
+      .select('current_team_id, email, slack_user_id')
+      .eq('id', userId)
+      .single()
+
+    if (!profile?.current_team_id) {
+      return NextResponse.json({ error: 'User has no team assigned' }, { status: 400 })
+    }
+
+    const results: string[] = []
+
+    // Mark all unprocessed emails as processed
+    const { count: emailsCleared } = await adminDb
+      .from('outlook_messages')
+      .update({ processed: true, commitments_found: 0 }, { count: 'exact' })
+      .eq('team_id', profile.current_team_id)
+      .or(`user_id.eq.${userId},user_id.is.null`)
+      .eq('processed', false)
+    results.push(`${emailsCleared || 0} stuck emails cleared`)
+
+    // Mark all unprocessed Slack messages as processed
+    const slackFilter = profile.slack_user_id
+      ? adminDb.from('slack_messages')
+          .update({ processed: true, commitments_found: 0 }, { count: 'exact' })
+          .eq('team_id', profile.current_team_id)
+          .eq('processed', false)
+      : null
+
+    if (slackFilter) {
+      const { count: slackCleared } = await slackFilter
+      results.push(`${slackCleared || 0} stuck Slack messages cleared`)
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Cleared stuck messages for ${profile.email}: ${results.join(', ')}`,
+    })
+  }
+
   // Save admin notes for a user
   if (action === 'save_notes') {
     if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })

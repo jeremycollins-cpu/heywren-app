@@ -925,6 +925,14 @@ function AdminContent() {
                   {actionLoading === 'clear_resync' ? 'Clearing...' : 'Clear & Re-Sync'}
                 </button>
                 <button
+                  onClick={() => runAction('clear_stuck', { userId: profile.id })}
+                  disabled={actionLoading === 'clear_stuck'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {actionLoading === 'clear_stuck' ? 'Clearing...' : 'Clear Stuck Messages'}
+                </button>
+                <button
                   onClick={() => runAction('trigger_backfill', { userId: profile.id })}
                   disabled={actionLoading === 'trigger_backfill'}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
