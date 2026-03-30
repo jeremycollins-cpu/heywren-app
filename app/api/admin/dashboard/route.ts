@@ -132,14 +132,14 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       adminDb.from('integrations').select('id, provider, updated_at').eq('user_id', userId),
       userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
-      // Outlook messages scoped to user (by user_id or email match)
-      userTeamId && userEmail
-        ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id', { count: 'exact' }).eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
-        : userTeamId ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
+      // Outlook messages scoped to user (only user_id match — accurate ownership)
+      userTeamId
+        ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id').eq('team_id', userTeamId).eq('user_id', userId)
+        : Promise.resolve({ data: [], count: 0 }),
       // Slack messages scoped to user (by slack_user_id stored on the message)
       userTeamId && slackUserId
-        ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', slackUserId)
-        : userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found', { count: 'exact' }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
+        ? adminDb.from('slack_messages').select('id, processed, commitments_found').eq('team_id', userTeamId).eq('user_id', slackUserId)
+        : userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found').eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
       userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).or(`user_id.eq.${userId}${userEmail ? `,organizer_email.eq.${userEmail}` : ''}`) : Promise.resolve({ count: 0 }),
       userTeamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
       // Recent activity for support debugging
@@ -174,8 +174,8 @@ export async function GET(request: NextRequest) {
     const slackData = slackMsgs.data || []
     const commitmentData = commitments.data || []
 
-    // For processing stats, only count emails owned by this user (not broad email-match)
-    const ownedEmails = emailData.filter(e => e.user_id === userId)
+    // Query is already scoped to user_id — no client-side filtering needed
+    const ownedEmails = emailData
     const ownedSlack = slackData
 
     // Build integration health details
