@@ -7,8 +7,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2, AlertTriangle, ListChecks } from 'lucide-react'
+import { Briefcase, Clock, Users, FileText, ChevronDown, ChevronUp, Heart, MessageSquare, Copy, CheckCircle2, AlertTriangle, ListChecks, Plus } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 // ── Types ──
 
@@ -321,6 +322,7 @@ export default function BriefingsPage() {
   const [expandedBriefing, setExpandedBriefing] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [checkedItems, setCheckedItems] = useState<Record<string, Set<string>>>({})
+  const { addTodoFromPage } = useTodo()
 
   const toggleCheckItem = (briefingId: string, item: string) => {
     setCheckedItems(prev => {
@@ -820,17 +822,26 @@ export default function BriefingsPage() {
                           </h4>
                           <div className="space-y-2">
                             {checklistItems.map((item, i) => (
-                              <label key={i} className="flex items-center gap-2.5 cursor-pointer group">
-                                <input
-                                  type="checkbox"
-                                  checked={checked.has(item)}
-                                  onChange={() => toggleCheckItem(briefing.id, item)}
-                                  className="w-4 h-4 rounded cursor-pointer"
-                                />
-                                <span className={`text-sm ${checked.has(item) ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
-                                  {item}
-                                </span>
-                              </label>
+                              <div key={i} className="flex items-center gap-2.5 group">
+                                <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked.has(item)}
+                                    onChange={() => toggleCheckItem(briefing.id, item)}
+                                    className="w-4 h-4 rounded cursor-pointer"
+                                  />
+                                  <span className={`text-sm ${checked.has(item) ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                    {item}
+                                  </span>
+                                </label>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); addTodoFromPage(item) }}
+                                  className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-emerald-600 transition"
+                                  title="Add to To-Dos"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -857,9 +868,16 @@ export default function BriefingsPage() {
                       </div>
                       <div className="space-y-2">
                         {briefing.talkingPoints.map((point, i) => (
-                          <div key={i} className="flex items-start gap-2 text-sm text-indigo-800 dark:text-indigo-300">
+                          <div key={i} className="flex items-start gap-2 text-sm text-indigo-800 dark:text-indigo-300 group">
                             <span className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 flex-shrink-0" />
-                            {point}
+                            <span className="flex-1">{point}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); addTodoFromPage(point) }}
+                              className="p-1 opacity-0 group-hover:opacity-100 text-indigo-400 hover:text-emerald-600 transition flex-shrink-0"
+                              title="Add to To-Dos"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         ))}
                       </div>

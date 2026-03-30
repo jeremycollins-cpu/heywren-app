@@ -10,7 +10,9 @@ import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
 import HelpPanel from '@/components/help-panel'
 import FeatureDiscovery from '@/components/feature-discovery'
 import WrenChat from '@/components/wren-chat'
+import TodoPanel from '@/components/todo-panel'
 import { PlanProvider } from '@/lib/contexts/plan-context'
+import { TodoProvider, useTodo } from '@/lib/contexts/todo-context'
 
 function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
   const router = useRouter()
@@ -50,6 +52,11 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
       </div>
     </div>
   )
+}
+
+function TodoPanelConnector() {
+  const { todoPanelOpen, closeTodoPanel } = useTodo()
+  return <TodoPanel open={todoPanelOpen} onClose={closeTodoPanel} />
 }
 
 export default function DashboardLayout({
@@ -140,6 +147,7 @@ export default function DashboardLayout({
 
   return (
     <PlanProvider>
+    <TodoProvider>
     <div className="flex flex-col h-screen bg-surface-secondary dark:bg-surface-dark font-sans transition-colors duration-300">
       {/* Onboarding banner */}
       {showOnboardingBanner && !bannerDismissed && (
@@ -175,12 +183,16 @@ export default function DashboardLayout({
         onStartWalkthrough={handleStartWalkthrough}
       />
 
+      {/* To-Do Panel */}
+      <TodoPanelConnector />
+
       {/* Page-specific feature discovery popups */}
       {!walkthroughOpen && <FeatureDiscovery />}
 
       {/* Hey Wren floating chat */}
       <WrenChat />
     </div>
+    </TodoProvider>
     </PlanProvider>
   )
 }
