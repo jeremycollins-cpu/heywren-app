@@ -40,6 +40,50 @@ function shouldSkipEmail(fromEmail: string, subject: string): boolean {
   return false
 }
 
+// Pre-AI filter for calendar events: skip events unlikely to contain user-specific commitments
+const SKIP_MEETING_PATTERNS = [
+  /\ball[- ]?hands\b/i, /\btown hall\b/i, /\bcompany (meeting|update|sync)\b/i,
+  /\bstandup\b/i, /\bstand-up\b/i, /\bdaily scrum\b/i,
+  /\bhappy hour\b/i, /\blunch\b/i, /\bsocial\b/i, /\bcelebrat/i,
+  /\bholiday\b/i, /\bbirthday\b/i, /\banniversary\b/i,
+  /\btraining session\b/i, /\bwebinar\b/i, /\bworkshop\b/i,
+  /\boffice hours\b/i, /\bopen forum\b/i,
+  /\bblocked\b/i, /\bfocus time\b/i, /\bdo not book\b/i, /\bbusy\b/i,
+  /\bout of office\b/i, /\bOOO\b/, /\bvacation\b/i, /\bPTO\b/,
+]
+
+const CONFERENCE_LINK_PATTERNS = [
+  /https?:\/\/\S*(zoom|teams|meet|webex)\S*/gi,
+  /join.*meeting/gi,
+  /meeting id[:\s]*\d+/gi,
+  /dial[- ]in/gi,
+  /passcode/gi,
+]
+
+function shouldSkipCalendarEvent(subject: string, attendeeCount: number, bodyPreview: string): boolean {
+  // Skip large meetings (6+ attendees) — too generic for personal commitments
+  if (attendeeCount >= 6) return true
+
+  // Skip known non-commitment meeting types
+  if (SKIP_MEETING_PATTERNS.some(p => p.test(subject))) return true
+
+  // Skip meetings where body is only conference links / no real content
+  if (bodyPreview) {
+    let stripped = bodyPreview
+    for (const p of CONFERENCE_LINK_PATTERNS) {
+      stripped = stripped.replace(p, '')
+    }
+    // After stripping links, if less than 30 chars of real content, skip
+    stripped = stripped.replace(/\s+/g, ' ').trim()
+    if (stripped.length < 30) return true
+  } else {
+    // No body at all — nothing to extract commitments from
+    return true
+  }
+
+  return false
+}
+
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -443,6 +487,29 @@ export async function syncTeamOutlook(
         const eventStartTime = event.start?.dateTime || ''
         const endTime = event.end?.dateTime || ''
         const location = event.location?.displayName || ''
+
+        // Pre-AI filter: skip large meetings, blocked time, and events with no real body
+        if (shouldSkipCalendarEvent(subject, attendees.length, bodyPreview)) {
+          // Still store the event for display, but mark as processed immediately
+          const { data: existing } = await supabase
+            .from('outlook_calendar_events')
+            .select('id')
+            .eq('team_id', teamId)
+            .eq('user_id', userId)
+            .eq('event_id', event.id)
+            .maybeSingle()
+
+          if (!existing) {
+            await supabase.from('outlook_calendar_events').insert({
+              team_id: teamId, user_id: userId, event_id: event.id,
+              subject, organizer_name: organizerName, organizer_email: organizerEmail,
+              attendees, start_time: eventStartTime, end_time: endTime,
+              location, body_preview: bodyPreview, is_cancelled: false,
+              processed: true, commitments_found: 0,
+            })
+          }
+          continue
+        }
 
         const { data: existing } = await supabase
           .from('outlook_calendar_events')
