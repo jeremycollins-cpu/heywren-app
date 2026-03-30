@@ -12,7 +12,7 @@ import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
-  ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield,
+  ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -206,6 +206,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/', label: 'Dashboard', icon: BarChart3, tourId: 'nav-dashboard', badge: badges.overdue > 0 ? badges.overdue : 0, badgeColor: 'bg-red-500' },
         { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments', badge: badges.openCommitments, badgeColor: 'bg-indigo-500' },
+        { href: '/todos', label: 'To-Dos', icon: ListChecks, tourId: 'nav-todos', badge: 0, badgeColor: '' },
         { href: '/weekly', label: 'Weekly Review', icon: Calendar, tourId: 'nav-weekly', badge: 0, badgeColor: '' },
       ],
     },

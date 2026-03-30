@@ -6,9 +6,10 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 interface CommitmentStakeholder {
   name: string
@@ -113,6 +114,7 @@ type FilterHealth = 'all' | 'at_risk' | 'stalled' | 'active'
 type SortBy = 'newest' | 'oldest' | 'score' | 'urgency'
 
 export default function CommitmentsPage() {
+  const { addTodoFromPage } = useTodo()
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -837,6 +839,15 @@ export default function CommitmentsPage() {
                       Complete
                     </button>
                   ) : null}
+                  {c.status !== 'completed' && (
+                    <button
+                      onClick={() => addTodoFromPage(c.title)}
+                      className="text-xs px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 font-medium transition-colors flex items-center gap-1"
+                      title="Add to To-Dos"
+                    >
+                      <ListChecks className="w-3 h-3" /> To-Do
+                    </button>
+                  )}
                 </div>
 
                 {/* Completion evidence for likely_complete items */}
