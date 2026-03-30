@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Plus, Trash2, ListChecks, ChevronRight } from 'lucide-react'
+import { X, Plus, Trash2, ListChecks, ChevronRight, Users } from 'lucide-react'
 import { useTodo } from '@/lib/contexts/todo-context'
 import toast from 'react-hot-toast'
 
@@ -12,8 +12,27 @@ interface Todo {
   completed_at: string | null
   source_type: string | null
   parent_id: string | null
+  user_id: string
+  assigned_to: string | null
   created_at: string
 }
+
+interface TeamMember {
+  id: string
+  name: string
+  email: string
+}
+
+interface ProfileMap {
+  [userId: string]: { display_name: string; email: string }
+}
+
+function getInitials(name: string): string {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+}
+
+const AVATAR_COLORS = ['bg-indigo-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-cyan-500', 'bg-pink-500', 'bg-teal-500']
+function avatarColor(name: string) { return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length] }
 
 interface TodoPanelProps {
   open: boolean
@@ -23,12 +42,17 @@ interface TodoPanelProps {
 export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   const { pendingTitle, clearPendingTitle } = useTodo()
   const [todos, setTodos] = useState<Todo[]>([])
+  const [profiles, setProfiles] = useState<ProfileMap>({})
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
+  const [newAssignee, setNewAssignee] = useState<string | null>(null)
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false)
   const [adding, setAdding] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [addingSubFor, setAddingSubFor] = useState<string | null>(null)
   const [subTitle, setSubTitle] = useState('')
+  const [assigningFor, setAssigningFor] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const subInputRef = useRef<HTMLInputElement>(null)
 
@@ -38,6 +62,7 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
       if (res.ok) {
         const data = await res.json()
         setTodos(data.todos || [])
+        if (data.profiles) setProfiles(data.profiles)
       }
     } catch {
       // silent
@@ -46,12 +71,25 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     }
   }, [])
 
+  const fetchTeamMembers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/todos/team-members')
+      if (res.ok) {
+        const data = await res.json()
+        setTeamMembers(data.members || [])
+      }
+    } catch {
+      // silent
+    }
+  }, [])
+
   useEffect(() => {
     if (open) {
       fetchTodos()
+      fetchTeamMembers()
       setTimeout(() => inputRef.current?.focus(), 300)
     }
-  }, [open, fetchTodos])
+  }, [open, fetchTodos, fetchTeamMembers])
 
   useEffect(() => {
     if (open && pendingTitle) {
@@ -74,7 +112,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
       const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), parent_id: parentId || undefined }),
+        body: JSON.stringify({
+          title: title.trim(),
+          parent_id: parentId || undefined,
+          assigned_to: parentId ? undefined : newAssignee,
+        }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -84,6 +126,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
           setExpanded(prev => new Set(prev).add(parentId))
         } else {
           setNewTitle('')
+          setNewAssignee(null)
+          setShowAssigneePicker(false)
           inputRef.current?.focus()
         }
       }
@@ -132,6 +176,24 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     }
   }
 
+  const assignTodo = async (todoId: string, assigneeId: string | null) => {
+    setTodos(prev => prev.map(t =>
+      t.id === todoId ? { ...t, assigned_to: assigneeId } : t
+    ))
+    setAssigningFor(null)
+
+    try {
+      const res = await fetch('/api/todos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: todoId, assigned_to: assigneeId }),
+      })
+      if (res.ok && assigneeId) fetchTodos()
+    } catch {
+      toast.error('Failed to assign')
+    }
+  }
+
   const toggleExpand = (id: string) => {
     setExpanded(prev => {
       const next = new Set(prev)
@@ -140,6 +202,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
       return next
     })
   }
+
+  const getProfileName = useCallback((userId: string | null) => {
+    if (!userId || !profiles[userId]) return null
+    return profiles[userId].display_name || profiles[userId].email?.split('@')[0]
+  }, [profiles])
 
   const topLevel = todos.filter(t => !t.parent_id)
   const childrenOf = (parentId: string) => todos.filter(t => t.parent_id === parentId)
@@ -189,24 +256,69 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
         <div className="px-6 py-4 border-b border-gray-100">
           <form
             onSubmit={(e) => { e.preventDefault(); addTodo() }}
-            className="flex items-center gap-2"
+            className="space-y-2"
           >
-            <input
-              ref={inputRef}
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Add a to-do..."
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              maxLength={200}
-            />
-            <button
-              type="submit"
-              disabled={!newTitle.trim() || adding}
-              className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Add a to-do..."
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                maxLength={200}
+              />
+              <button
+                type="submit"
+                disabled={!newTitle.trim() || adding}
+                className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Assignee row */}
+            {teamMembers.length > 0 && newTitle.trim() && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {newAssignee ? (
+                  <button
+                    type="button"
+                    onClick={() => setNewAssignee(null)}
+                    className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition"
+                  >
+                    <span className={`w-3.5 h-3.5 ${avatarColor(teamMembers.find(m => m.id === newAssignee)?.name || '')} rounded-full flex items-center justify-center text-white text-[7px] font-bold`}>
+                      {getInitials(teamMembers.find(m => m.id === newAssignee)?.name || '')}
+                    </span>
+                    {teamMembers.find(m => m.id === newAssignee)?.name}
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                ) : showAssigneePicker ? (
+                  <>
+                    {teamMembers.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => { setNewAssignee(m.id); setShowAssigneePicker(false) }}
+                        className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-indigo-700 hover:bg-indigo-50 px-1.5 py-0.5 rounded-full transition"
+                      >
+                        <span className={`w-3.5 h-3.5 ${avatarColor(m.name)} rounded-full flex items-center justify-center text-white text-[7px] font-bold`}>
+                          {getInitials(m.name)}
+                        </span>
+                        {m.name.split(' ')[0]}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowAssigneePicker(true)}
+                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 transition"
+                  >
+                    <Users className="w-3 h-3" />
+                    Assign
+                  </button>
+                )}
+              </div>
+            )}
           </form>
         </div>
 
@@ -233,10 +345,10 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                     const children = childrenOf(todo.id)
                     const isExpanded = expanded.has(todo.id)
                     const hasChildren = children.length > 0
+                    const assigneeName = getProfileName(todo.assigned_to)
 
                     return (
                       <div key={todo.id}>
-                        {/* Parent item */}
                         <div className="group flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
                           <button
                             onClick={() => toggleExpand(todo.id)}
@@ -249,10 +361,28 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                             className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-400 flex-shrink-0 flex items-center justify-center transition"
                           />
                           <span className="flex-1 text-sm text-gray-800 truncate">{todo.title}</span>
+                          {assigneeName && (
+                            <span
+                              className={`w-5 h-5 ${avatarColor(assigneeName)} rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 cursor-pointer`}
+                              title={assigneeName}
+                              onClick={() => setAssigningFor(assigningFor === todo.id ? null : todo.id)}
+                            >
+                              {getInitials(assigneeName)}
+                            </span>
+                          )}
                           {hasChildren && (
                             <span className="text-[10px] text-gray-400 flex-shrink-0">
                               {children.filter(c => c.completed).length}/{children.length}
                             </span>
+                          )}
+                          {!assigneeName && teamMembers.length > 0 && (
+                            <button
+                              onClick={() => setAssigningFor(assigningFor === todo.id ? null : todo.id)}
+                              className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition flex-shrink-0"
+                              title="Assign"
+                            >
+                              <Users className="w-3.5 h-3.5" />
+                            </button>
                           )}
                           <button
                             onClick={() => { setAddingSubFor(addingSubFor === todo.id ? null : todo.id); setSubTitle(''); setExpanded(prev => new Set(prev).add(todo.id)) }}
@@ -269,6 +399,31 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                           </button>
                         </div>
 
+                        {/* Assignee picker */}
+                        {assigningFor === todo.id && (
+                          <div className="ml-6 px-2 py-1.5 flex items-center gap-1.5 flex-wrap">
+                            {todo.assigned_to && (
+                              <button onClick={() => assignTodo(todo.id, null)} className="text-[10px] text-red-500 hover:text-red-700 px-1.5 py-0.5 rounded-full hover:bg-red-50 transition">
+                                Remove
+                              </button>
+                            )}
+                            {teamMembers.map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => assignTodo(todo.id, m.id)}
+                                className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full transition ${
+                                  todo.assigned_to === m.id ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-indigo-50 hover:text-indigo-700'
+                                }`}
+                              >
+                                <span className={`w-3.5 h-3.5 ${avatarColor(m.name)} rounded-full flex items-center justify-center text-white text-[7px] font-bold`}>
+                                  {getInitials(m.name)}
+                                </span>
+                                {m.name.split(' ')[0]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Children */}
                         {isExpanded && children.length > 0 && (
                           <div className="ml-6 space-y-0.5">
@@ -277,9 +432,7 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                                 <button
                                   onClick={() => toggleTodo(child.id, child.completed)}
                                   className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
-                                    child.completed
-                                      ? 'bg-emerald-500 border-emerald-500'
-                                      : 'border-gray-300 hover:border-emerald-400'
+                                    child.completed ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-emerald-400'
                                   }`}
                                 >
                                   {child.completed && (
@@ -340,25 +493,36 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                     Completed ({completed.length})
                   </p>
                   <div className="space-y-0.5">
-                    {completed.map(todo => (
-                      <div key={todo.id} className="group flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
-                        <button
-                          onClick={() => toggleTodo(todo.id, todo.completed)}
-                          className="w-5 h-5 rounded-full border-2 bg-emerald-500 border-emerald-500 flex-shrink-0 flex items-center justify-center transition"
-                        >
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </button>
-                        <span className="flex-1 text-sm text-gray-400 line-through truncate">{todo.title}</span>
-                        <button
-                          onClick={() => deleteTodo(todo.id)}
-                          className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                    {completed.map(todo => {
+                      const assigneeName = getProfileName(todo.assigned_to)
+                      return (
+                        <div key={todo.id} className="group flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
+                          <button
+                            onClick={() => toggleTodo(todo.id, todo.completed)}
+                            className="w-5 h-5 rounded-full border-2 bg-emerald-500 border-emerald-500 flex-shrink-0 flex items-center justify-center transition"
+                          >
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <span className="flex-1 text-sm text-gray-400 line-through truncate">{todo.title}</span>
+                          {assigneeName && (
+                            <span
+                              className={`w-4 h-4 ${avatarColor(assigneeName)} rounded-full flex items-center justify-center text-white text-[7px] font-bold flex-shrink-0 opacity-50`}
+                              title={assigneeName}
+                            >
+                              {getInitials(assigneeName)}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => deleteTodo(todo.id)}
+                            className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -368,28 +532,4 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
       </div>
     </>
   )
-}
-
-// Export a hook for adding todos from anywhere
-export function useAddTodo() {
-  const addTodo = async (title: string, sourceType?: string, sourceId?: string) => {
-    try {
-      const res = await fetch('/api/todos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, source_type: sourceType, source_id: sourceId }),
-      })
-      if (res.ok) {
-        toast.success('Added to To-Dos')
-        return true
-      }
-      toast.error('Failed to add to-do')
-      return false
-    } catch {
-      toast.error('Failed to add to-do')
-      return false
-    }
-  }
-
-  return { addTodo }
 }
