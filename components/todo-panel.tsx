@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Plus, Trash2, ListChecks } from 'lucide-react'
+import { X, Plus, Trash2, ListChecks, ChevronRight } from 'lucide-react'
 import { useTodo } from '@/lib/contexts/todo-context'
 import toast from 'react-hot-toast'
 
@@ -11,6 +11,7 @@ interface Todo {
   completed: boolean
   completed_at: string | null
   source_type: string | null
+  parent_id: string | null
   created_at: string
 }
 
@@ -25,7 +26,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
   const [adding, setAdding] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [addingSubFor, setAddingSubFor] = useState<string | null>(null)
+  const [subTitle, setSubTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const subInputRef = useRef<HTMLInputElement>(null)
 
   const fetchTodos = useCallback(async () => {
     try {
@@ -48,7 +53,6 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     }
   }, [open, fetchTodos])
 
-  // Pre-fill title when opened from another page
   useEffect(() => {
     if (open && pendingTitle) {
       setNewTitle(pendingTitle)
@@ -56,20 +60,32 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     }
   }, [open, pendingTitle, clearPendingTitle])
 
-  const addTodo = async () => {
-    if (!newTitle.trim() || adding) return
+  useEffect(() => {
+    if (addingSubFor) {
+      setTimeout(() => subInputRef.current?.focus(), 50)
+    }
+  }, [addingSubFor])
+
+  const addTodo = async (parentId?: string) => {
+    const title = parentId ? subTitle : newTitle
+    if (!title.trim() || adding) return
     setAdding(true)
     try {
       const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle.trim() }),
+        body: JSON.stringify({ title: title.trim(), parent_id: parentId || undefined }),
       })
       if (res.ok) {
         const data = await res.json()
         setTodos(prev => [data.todo, ...prev])
-        setNewTitle('')
-        inputRef.current?.focus()
+        if (parentId) {
+          setSubTitle('')
+          setExpanded(prev => new Set(prev).add(parentId))
+        } else {
+          setNewTitle('')
+          inputRef.current?.focus()
+        }
       }
     } catch {
       toast.error('Failed to add to-do')
@@ -79,7 +95,6 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   }
 
   const toggleTodo = async (id: string, completed: boolean) => {
-    // Optimistic update
     setTodos(prev => prev.map(t =>
       t.id === id ? { ...t, completed: !completed, completed_at: !completed ? new Date().toISOString() : null } : t
     ))
@@ -91,7 +106,6 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
         body: JSON.stringify({ id, completed: !completed }),
       })
       if (!res.ok) {
-        // Revert on failure
         setTodos(prev => prev.map(t =>
           t.id === id ? { ...t, completed, completed_at: completed ? t.completed_at : null } : t
         ))
@@ -105,7 +119,7 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
 
   const deleteTodo = async (id: string) => {
     const prev = todos
-    setTodos(t => t.filter(todo => todo.id !== id))
+    setTodos(t => t.filter(todo => todo.id !== id && todo.parent_id !== id))
 
     try {
       const res = await fetch(`/api/todos?id=${id}`, { method: 'DELETE' })
@@ -118,8 +132,19 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     }
   }
 
-  const incomplete = todos.filter(t => !t.completed)
-  const completed = todos.filter(t => t.completed)
+  const toggleExpand = (id: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const topLevel = todos.filter(t => !t.parent_id)
+  const childrenOf = (parentId: string) => todos.filter(t => t.parent_id === parentId)
+  const incomplete = topLevel.filter(t => !t.completed)
+  const completed = topLevel.filter(t => t.completed)
 
   return (
     <>
@@ -186,9 +211,9 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4">
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 px-2">
               {[1, 2, 3].map(i => (
                 <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
               ))}
@@ -203,32 +228,136 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
             <>
               {/* Incomplete */}
               {incomplete.length > 0 && (
-                <div className="space-y-1">
-                  {incomplete.map(todo => (
-                    <TodoItem
-                      key={todo.id}
-                      todo={todo}
-                      onToggle={toggleTodo}
-                      onDelete={deleteTodo}
-                    />
-                  ))}
+                <div className="space-y-0.5">
+                  {incomplete.map(todo => {
+                    const children = childrenOf(todo.id)
+                    const isExpanded = expanded.has(todo.id)
+                    const hasChildren = children.length > 0
+
+                    return (
+                      <div key={todo.id}>
+                        {/* Parent item */}
+                        <div className="group flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
+                          <button
+                            onClick={() => toggleExpand(todo.id)}
+                            className={`w-3.5 h-3.5 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''} ${hasChildren ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => toggleTodo(todo.id, todo.completed)}
+                            className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-400 flex-shrink-0 flex items-center justify-center transition"
+                          />
+                          <span className="flex-1 text-sm text-gray-800 truncate">{todo.title}</span>
+                          {hasChildren && (
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">
+                              {children.filter(c => c.completed).length}/{children.length}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => { setAddingSubFor(addingSubFor === todo.id ? null : todo.id); setSubTitle(''); setExpanded(prev => new Set(prev).add(todo.id)) }}
+                            className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-emerald-600 transition flex-shrink-0"
+                            title="Add sub-item"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => deleteTodo(todo.id)}
+                            className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Children */}
+                        {isExpanded && children.length > 0 && (
+                          <div className="ml-6 space-y-0.5">
+                            {children.map(child => (
+                              <div key={child.id} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition">
+                                <button
+                                  onClick={() => toggleTodo(child.id, child.completed)}
+                                  className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
+                                    child.completed
+                                      ? 'bg-emerald-500 border-emerald-500'
+                                      : 'border-gray-300 hover:border-emerald-400'
+                                  }`}
+                                >
+                                  {child.completed && (
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </button>
+                                <span className={`flex-1 text-sm truncate ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                  {child.title}
+                                </span>
+                                <button
+                                  onClick={() => deleteTodo(child.id)}
+                                  className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Inline add sub-item */}
+                        {addingSubFor === todo.id && (
+                          <form
+                            onSubmit={(e) => { e.preventDefault(); addTodo(todo.id) }}
+                            className="flex items-center gap-2 ml-6 px-2 py-1.5"
+                          >
+                            <input
+                              ref={subInputRef}
+                              type="text"
+                              value={subTitle}
+                              onChange={(e) => setSubTitle(e.target.value)}
+                              placeholder="Add sub-item..."
+                              className="flex-1 text-sm border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                              maxLength={200}
+                              onKeyDown={(e) => { if (e.key === 'Escape') setAddingSubFor(null) }}
+                            />
+                            <button
+                              type="submit"
+                              disabled={!subTitle.trim() || adding}
+                              className="text-xs px-2 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition font-medium disabled:opacity-40"
+                            >
+                              Add
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
               {/* Completed */}
               {completed.length > 0 && (
                 <div className="mt-6">
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 px-2">
                     Completed ({completed.length})
                   </p>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {completed.map(todo => (
-                      <TodoItem
-                        key={todo.id}
-                        todo={todo}
-                        onToggle={toggleTodo}
-                        onDelete={deleteTodo}
-                      />
+                      <div key={todo.id} className="group flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
+                        <button
+                          onClick={() => toggleTodo(todo.id, todo.completed)}
+                          className="w-5 h-5 rounded-full border-2 bg-emerald-500 border-emerald-500 flex-shrink-0 flex items-center justify-center transition"
+                        >
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <span className="flex-1 text-sm text-gray-400 line-through truncate">{todo.title}</span>
+                        <button
+                          onClick={() => deleteTodo(todo.id)}
+                          className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -238,48 +367,6 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
         </div>
       </div>
     </>
-  )
-}
-
-function TodoItem({
-  todo,
-  onToggle,
-  onDelete,
-}: {
-  todo: Todo
-  onToggle: (id: string, completed: boolean) => void
-  onDelete: (id: string) => void
-}) {
-  return (
-    <div className="group flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50 transition">
-      <button
-        onClick={() => onToggle(todo.id, todo.completed)}
-        className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
-          todo.completed
-            ? 'bg-emerald-500 border-emerald-500'
-            : 'border-gray-300 hover:border-emerald-400'
-        }`}
-      >
-        {todo.completed && (
-          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-      </button>
-      <span
-        className={`flex-1 text-sm ${
-          todo.completed ? 'text-gray-400 line-through' : 'text-gray-800'
-        }`}
-      >
-        {todo.title}
-      </span>
-      <button
-        onClick={() => onDelete(todo.id)}
-        className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
-    </div>
   )
 }
 

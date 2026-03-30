@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { ListChecks, Plus, Trash2 } from 'lucide-react'
+import { ListChecks, Plus, Trash2, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -11,6 +11,7 @@ interface Todo {
   completed: boolean
   completed_at: string | null
   source_type: string | null
+  parent_id: string | null
   created_at: string
 }
 
@@ -19,11 +20,21 @@ export default function TodosPage() {
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
   const [adding, setAdding] = useState(false)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [addingSubFor, setAddingSubFor] = useState<string | null>(null)
+  const [subTitle, setSubTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const subInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchTodos()
   }, [])
+
+  useEffect(() => {
+    if (addingSubFor) {
+      setTimeout(() => subInputRef.current?.focus(), 50)
+    }
+  }, [addingSubFor])
 
   const fetchTodos = async () => {
     try {
@@ -39,20 +50,26 @@ export default function TodosPage() {
     }
   }
 
-  const addTodo = async () => {
-    if (!newTitle.trim() || adding) return
+  const addTodo = async (parentId?: string) => {
+    const title = parentId ? subTitle : newTitle
+    if (!title.trim() || adding) return
     setAdding(true)
     try {
       const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle.trim() }),
+        body: JSON.stringify({ title: title.trim(), parent_id: parentId || undefined }),
       })
       if (res.ok) {
         const data = await res.json()
         setTodos(prev => [data.todo, ...prev])
-        setNewTitle('')
-        inputRef.current?.focus()
+        if (parentId) {
+          setSubTitle('')
+          setExpanded(prev => new Set(prev).add(parentId))
+        } else {
+          setNewTitle('')
+          inputRef.current?.focus()
+        }
       }
     } catch {
       toast.error('Failed to add to-do')
@@ -86,7 +103,8 @@ export default function TodosPage() {
 
   const deleteTodo = async (id: string) => {
     const prev = todos
-    setTodos(t => t.filter(todo => todo.id !== id))
+    // Remove the todo and any children
+    setTodos(t => t.filter(todo => todo.id !== id && todo.parent_id !== id))
 
     try {
       const res = await fetch(`/api/todos?id=${id}`, { method: 'DELETE' })
@@ -99,10 +117,23 @@ export default function TodosPage() {
     }
   }
 
+  const toggleExpand = (id: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   if (loading) return <LoadingSkeleton />
 
-  const incomplete = todos.filter(t => !t.completed)
-  const completed = todos.filter(t => t.completed)
+  // Separate top-level and children
+  const topLevel = todos.filter(t => !t.parent_id)
+  const childrenOf = (parentId: string) => todos.filter(t => t.parent_id === parentId)
+
+  const incomplete = topLevel.filter(t => !t.completed)
+  const completed = topLevel.filter(t => t.completed)
 
   return (
     <div className="space-y-6">
@@ -163,26 +194,120 @@ export default function TodosPage() {
             </h2>
           </div>
           <div className="divide-y divide-gray-50">
-            {incomplete.map(todo => (
-              <div key={todo.id} className="group flex items-center gap-4 px-6 py-3 hover:bg-gray-50 transition">
-                <button
-                  onClick={() => toggleTodo(todo.id, todo.completed)}
-                  className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-400 flex-shrink-0 flex items-center justify-center transition"
-                />
-                <span className="flex-1 text-sm text-gray-800">{todo.title}</span>
-                {todo.source_type && todo.source_type !== 'manual' && (
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {todo.source_type}
-                  </span>
-                )}
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+            {incomplete.map(todo => {
+              const children = childrenOf(todo.id)
+              const isExpanded = expanded.has(todo.id)
+              const hasChildren = children.length > 0
+
+              return (
+                <div key={todo.id}>
+                  {/* Parent row */}
+                  <div className="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 transition">
+                    {/* Expand toggle */}
+                    <button
+                      onClick={() => toggleExpand(todo.id)}
+                      className={`w-4 h-4 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''} ${hasChildren ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => toggleTodo(todo.id, todo.completed)}
+                      className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-400 flex-shrink-0 flex items-center justify-center transition"
+                    />
+                    <span className="flex-1 text-sm text-gray-800">{todo.title}</span>
+                    {hasChildren && (
+                      <span className="text-xs text-gray-400">
+                        {children.filter(c => c.completed).length}/{children.length}
+                      </span>
+                    )}
+                    {todo.source_type && todo.source_type !== 'manual' && (
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                        {todo.source_type}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => { setAddingSubFor(addingSubFor === todo.id ? null : todo.id); setSubTitle(''); setExpanded(prev => new Set(prev).add(todo.id)) }}
+                      className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-emerald-600 transition"
+                      title="Add sub-item"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteTodo(todo.id)}
+                      className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Children */}
+                  {isExpanded && children.length > 0 && (
+                    <div className="border-t border-gray-50">
+                      {children.map(child => (
+                        <div key={child.id} className="group flex items-center gap-3 pl-16 pr-6 py-2.5 hover:bg-gray-50 transition">
+                          <button
+                            onClick={() => toggleTodo(child.id, child.completed)}
+                            className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
+                              child.completed
+                                ? 'bg-emerald-500 border-emerald-500'
+                                : 'border-gray-300 hover:border-emerald-400'
+                            }`}
+                          >
+                            {child.completed && (
+                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className={`flex-1 text-sm ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                            {child.title}
+                          </span>
+                          <button
+                            onClick={() => deleteTodo(child.id)}
+                            className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Inline add sub-item */}
+                  {addingSubFor === todo.id && (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); addTodo(todo.id) }}
+                      className="flex items-center gap-2 pl-16 pr-6 py-2.5 bg-gray-50 border-t border-gray-100"
+                    >
+                      <input
+                        ref={subInputRef}
+                        type="text"
+                        value={subTitle}
+                        onChange={(e) => setSubTitle(e.target.value)}
+                        placeholder="Add a sub-item..."
+                        className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                        maxLength={200}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setAddingSubFor(null) }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={!subTitle.trim() || adding}
+                        className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium disabled:opacity-40"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddingSubFor(null)}
+                        className="text-xs px-2 py-1.5 text-gray-500 hover:text-gray-700 transition"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

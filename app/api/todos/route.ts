@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { title, source_type, source_id } = body
+  const { title, source_type, source_id, parent_id } = body
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       title: title.trim(),
       source_type: source_type || 'manual',
       source_id: source_id || null,
+      parent_id: parent_id || null,
     })
     .select()
     .single()
