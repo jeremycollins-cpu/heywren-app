@@ -59,6 +59,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   const [subTitle, setSubTitle] = useState('')
   const [notesOpen, setNotesOpen] = useState<string | null>(null)
   const [editingNotes, setEditingNotes] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const subInputRef = useRef<HTMLInputElement>(null)
 
@@ -193,6 +195,41 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
     } catch {
       setTodos(prev => prev.map(t =>
         t.id === id ? { ...t, notes: todo.notes } : t
+      ))
+    }
+  }
+
+  const startEditingTitle = (id: string, title: string) => {
+    setEditingId(id)
+    setEditingTitle(title)
+  }
+
+  const saveTitle = async (id: string) => {
+    const trimmed = editingTitle.trim()
+    if (!trimmed) {
+      setEditingId(null)
+      return
+    }
+    const todo = todos.find(t => t.id === id)
+    if (!todo || trimmed === todo.title) {
+      setEditingId(null)
+      return
+    }
+
+    setTodos(prev => prev.map(t =>
+      t.id === id ? { ...t, title: trimmed } : t
+    ))
+    setEditingId(null)
+
+    try {
+      await fetch('/api/todos', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, title: trimmed }),
+      })
+    } catch {
+      setTodos(prev => prev.map(t =>
+        t.id === id ? { ...t, title: todo.title } : t
       ))
     }
   }
@@ -345,7 +382,27 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                             onClick={() => toggleTodo(todo.id, todo.completed)}
                             className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-emerald-400 flex-shrink-0 flex items-center justify-center transition"
                           />
-                          <span className="flex-1 text-sm text-gray-800 truncate">{todo.title}</span>
+                          {editingId === todo.id ? (
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onBlur={() => saveTitle(todo.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveTitle(todo.id)
+                                if (e.key === 'Escape') setEditingId(null)
+                              }}
+                              className="flex-1 text-sm border border-gray-200 rounded-md px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                              autoFocus
+                            />
+                          ) : (
+                            <span
+                              className="flex-1 text-sm text-gray-800 truncate cursor-text"
+                              onClick={() => startEditingTitle(todo.id, todo.title)}
+                            >
+                              {todo.title}
+                            </span>
+                          )}
                           {todo.category && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium ${getCategoryColor(todo.category)}`}>
                               {getCategoryLabel(todo.category)}
@@ -447,9 +504,27 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                                       </svg>
                                     )}
                                   </button>
-                                  <span className={`flex-1 text-sm truncate ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                                    {child.title}
-                                  </span>
+                                  {editingId === child.id ? (
+                                    <input
+                                      type="text"
+                                      value={editingTitle}
+                                      onChange={(e) => setEditingTitle(e.target.value)}
+                                      onBlur={() => saveTitle(child.id)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveTitle(child.id)
+                                        if (e.key === 'Escape') setEditingId(null)
+                                      }}
+                                      className="flex-1 text-sm border border-gray-200 rounded-md px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span
+                                      className={`flex-1 text-sm truncate cursor-text ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
+                                      onClick={() => startEditingTitle(child.id, child.title)}
+                                    >
+                                      {child.title}
+                                    </span>
+                                  )}
                                   {child.notes && (
                                     <FileText className="w-2.5 h-2.5 text-gray-300 flex-shrink-0" />
                                   )}
@@ -554,7 +629,27 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
                         </button>
-                        <span className="flex-1 text-sm text-gray-400 line-through truncate">{todo.title}</span>
+                        {editingId === todo.id ? (
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => saveTitle(todo.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveTitle(todo.id)
+                              if (e.key === 'Escape') setEditingId(null)
+                            }}
+                            className="flex-1 text-sm border border-gray-200 rounded-md px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                            autoFocus
+                          />
+                        ) : (
+                          <span
+                            className="flex-1 text-sm text-gray-400 line-through truncate cursor-text"
+                            onClick={() => startEditingTitle(todo.id, todo.title)}
+                          >
+                            {todo.title}
+                          </span>
+                        )}
                         <button
                           onClick={() => deleteTodo(todo.id)}
                           className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
