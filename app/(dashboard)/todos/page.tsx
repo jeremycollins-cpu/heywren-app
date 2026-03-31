@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { ListChecks, Plus, Trash2, ChevronRight, Star, ChevronDown, FileText, X } from 'lucide-react'
+import { ListChecks, Plus, Trash2, ChevronRight, Star, ChevronDown, FileText, X, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { TODO_CATEGORIES, getCategoryLabel, getCategoryColor } from '@/components/todo-panel'
@@ -438,10 +438,11 @@ export default function TodosPage() {
                       />
                     ) : (
                       <span
-                        className="flex-1 text-sm text-gray-800 cursor-text"
-                        onClick={() => startEditingTitle(todo.id, todo.title)}
+                        className="flex-1 text-sm text-gray-800 cursor-pointer hover:text-emerald-700 transition group/title inline-flex items-center gap-1"
+                        onClick={(e) => { e.stopPropagation(); startEditingTitle(todo.id, todo.title) }}
                       >
                         {todo.title}
+                        <Pencil className="w-3 h-3 text-gray-300 opacity-0 group-hover/title:opacity-100 transition flex-shrink-0" />
                       </span>
                     )}
                     {todo.category && (
@@ -575,10 +576,11 @@ export default function TodosPage() {
                               />
                             ) : (
                               <span
-                                className={`flex-1 text-sm cursor-text ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
-                                onClick={() => startEditingTitle(child.id, child.title)}
+                                className={`flex-1 text-sm cursor-pointer hover:text-emerald-700 transition group/subtitle inline-flex items-center gap-1 ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
+                                onClick={(e) => { e.stopPropagation(); startEditingTitle(child.id, child.title) }}
                               >
                                 {child.title}
+                                <Pencil className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/subtitle:opacity-100 transition flex-shrink-0" />
                               </span>
                             )}
                             {child.notes && (
@@ -719,10 +721,11 @@ export default function TodosPage() {
                   />
                 ) : (
                   <span
-                    className="flex-1 text-sm text-gray-400 line-through cursor-text"
-                    onClick={() => startEditingTitle(todo.id, todo.title)}
+                    className="flex-1 text-sm text-gray-400 line-through cursor-pointer hover:text-gray-600 transition group/ctitle inline-flex items-center gap-1"
+                    onClick={(e) => { e.stopPropagation(); startEditingTitle(todo.id, todo.title) }}
                   >
                     {todo.title}
+                    <Pencil className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/ctitle:opacity-100 transition flex-shrink-0" />
                   </span>
                 )}
                 {todo.category && (

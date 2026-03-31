@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Plus, Trash2, ListChecks, ChevronRight, Star, ChevronDown, FileText } from 'lucide-react'
+import { X, Plus, Trash2, ListChecks, ChevronRight, Star, ChevronDown, FileText, Pencil } from 'lucide-react'
 import { useTodo } from '@/lib/contexts/todo-context'
 import toast from 'react-hot-toast'
 
@@ -397,10 +397,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                             />
                           ) : (
                             <span
-                              className="flex-1 text-sm text-gray-800 truncate cursor-text"
-                              onClick={() => startEditingTitle(todo.id, todo.title)}
+                              className="flex-1 text-sm text-gray-800 truncate cursor-pointer hover:text-emerald-700 transition group/title inline-flex items-center gap-1"
+                              onClick={(e) => { e.stopPropagation(); startEditingTitle(todo.id, todo.title) }}
                             >
-                              {todo.title}
+                              <span className="truncate">{todo.title}</span>
+                              <Pencil className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/title:opacity-100 transition flex-shrink-0" />
                             </span>
                           )}
                           {todo.category && (
@@ -519,10 +520,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                                     />
                                   ) : (
                                     <span
-                                      className={`flex-1 text-sm truncate cursor-text ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
-                                      onClick={() => startEditingTitle(child.id, child.title)}
+                                      className={`flex-1 text-sm truncate cursor-pointer hover:text-emerald-700 transition group/sub inline-flex items-center gap-1 ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
+                                      onClick={(e) => { e.stopPropagation(); startEditingTitle(child.id, child.title) }}
                                     >
-                                      {child.title}
+                                      <span className="truncate">{child.title}</span>
+                                      <Pencil className="w-2 h-2 text-gray-300 opacity-0 group-hover/sub:opacity-100 transition flex-shrink-0" />
                                     </span>
                                   )}
                                   {child.notes && (
@@ -644,8 +646,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                           />
                         ) : (
                           <span
-                            className="flex-1 text-sm text-gray-400 line-through truncate cursor-text"
-                            onClick={() => startEditingTitle(todo.id, todo.title)}
+                            className="flex-1 text-sm text-gray-400 line-through truncate cursor-pointer hover:text-gray-600 transition"
+                            onClick={(e) => { e.stopPropagation(); startEditingTitle(todo.id, todo.title) }}
                           >
                             {todo.title}
                           </span>
