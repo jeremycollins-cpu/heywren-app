@@ -137,6 +137,10 @@ export const sendNudges = inngest.createFunction(
       const integration = slackIntegrations.get(group.teamId)
       if (!integration?.access_token) continue
 
+      // Check if nudges are disabled for this team
+      const integrationConfig = (integration.config as Record<string, unknown>) || {}
+      if (integrationConfig.nudges_enabled === false) continue
+
       const profile = assigneeProfiles.get(group.assigneeId)
       if (!profile?.email) continue
 

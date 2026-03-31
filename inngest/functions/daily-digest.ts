@@ -69,6 +69,12 @@ export const dailyDigest = inngest.createFunction(
     for (const team of teams) {
       await step.run(`digest-${team.id}`, async () => {
         try {
+          // Check if daily digest is disabled for this team
+          const config = (team.integration.config as Record<string, unknown>) || {}
+          if (config.daily_digest_enabled === false) {
+            return // Skip — admin disabled the daily digest
+          }
+
           // -- 2. Calculate team-level stats --------------------------------
           const statsResult = await calculateTeamStats(supabase, team.id, weekStart.toISOString())
 

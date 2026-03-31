@@ -218,6 +218,9 @@ function AdminContent() {
           />
         </div>
 
+        {/* Slack Notification Controls */}
+        <SlackControls />
+
         {/* Team List */}
         {loading ? (
           <div className="text-center py-8 text-gray-500">Loading...</div>
@@ -1073,6 +1076,113 @@ export default function AdminPage() {
       >
         <AdminContent />
       </RoleGate>
+    </div>
+  )
+}
+
+// ── Slack Notification Controls ─────────────────────────────────────────────
+
+function SlackControls() {
+  const [digestEnabled, setDigestEnabled] = useState(true)
+  const [nudgesEnabled, setNudgesEnabled] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/slack-controls')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setDigestEnabled(data.daily_digest_enabled)
+          setNudgesEnabled(data.nudges_enabled)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const toggle = async (field: 'daily_digest_enabled' | 'nudges_enabled', value: boolean) => {
+    setSaving(true)
+    if (field === 'daily_digest_enabled') setDigestEnabled(value)
+    else setNudgesEnabled(value)
+
+    try {
+      const res = await fetch('/api/admin/slack-controls', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      if (res.ok) {
+        toast.success(`${field === 'daily_digest_enabled' ? 'Daily digest' : 'Nudges'} ${value ? 'enabled' : 'disabled'}`)
+      } else {
+        if (field === 'daily_digest_enabled') setDigestEnabled(!value)
+        else setNudgesEnabled(!value)
+        toast.error('Failed to update')
+      }
+    } catch {
+      if (field === 'daily_digest_enabled') setDigestEnabled(!value)
+      else setNudgesEnabled(!value)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition"
+      >
+        <div className="flex items-center gap-3">
+          <MessageSquare className="w-4 h-4 text-purple-600" />
+          <span className="text-sm font-semibold text-gray-800">Slack Notifications</span>
+          <span className="text-xs text-gray-400">
+            Digest {digestEnabled ? 'on' : 'off'} &middot; Nudges {nudgesEnabled ? 'on' : 'off'}
+          </span>
+        </div>
+        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-4 pt-1 space-y-4 border-t border-gray-100">
+          {/* Daily Digest toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Daily Digest</p>
+              <p className="text-xs text-gray-500">Posts team stats to Slack at 8 AM daily</p>
+            </div>
+            <button
+              onClick={() => toggle('daily_digest_enabled', !digestEnabled)}
+              disabled={saving}
+              className={`relative w-11 h-6 rounded-full transition-colors ${digestEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${digestEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          {/* Nudges toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Nudges</p>
+              <p className="text-xs text-gray-500">DMs assignees about overdue commitments at 9 AM weekdays</p>
+            </div>
+            <button
+              onClick={() => toggle('nudges_enabled', !nudgesEnabled)}
+              disabled={saving}
+              className={`relative w-11 h-6 rounded-full transition-colors ${nudgesEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${nudgesEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 pt-1">
+            To delete existing Slack messages: hover the message in Slack, click &quot;...&quot; &rarr; &quot;Delete message&quot; (requires workspace admin).
+          </p>
+        </div>
+      )}
     </div>
   )
 }
