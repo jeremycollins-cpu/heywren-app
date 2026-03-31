@@ -92,6 +92,8 @@ export default function MissedEmailsPage() {
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
   const [feedbackModal, setFeedbackModal] = useState<{ email: MissedEmail; show: boolean } | null>(null)
   const [feedbackReason, setFeedbackReason] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkActioning, setBulkActioning] = useState(false)
 
   async function submitFeedback(email: MissedEmail, feedback: 'valid' | 'invalid', reason?: string) {
     try {
@@ -240,6 +242,38 @@ export default function MissedEmailsPage() {
     }
   }
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function bulkAction(status: 'replied' | 'dismissed') {
+    if (selectedIds.size === 0) return
+    setBulkActioning(true)
+    const ids = Array.from(selectedIds)
+    try {
+      const res = await fetch('/api/missed-emails', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: ids[0], status, threadEmailIds: ids }),
+      })
+      if (res.ok) {
+        const idsToRemove = new Set(ids)
+        setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
+        toast.success(`${ids.length} email${ids.length > 1 ? 's' : ''} ${status === 'replied' ? 'marked as replied' : 'dismissed'}`)
+        setSelectedIds(new Set())
+      }
+    } catch {
+      toast.error('Failed to update')
+    } finally {
+      setBulkActioning(false)
+    }
+  }
+
   const filteredEmails = filter === 'all'
     ? emails
     : emails.filter(e => e.urgency === filter)
@@ -367,6 +401,51 @@ export default function MissedEmailsPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {filteredEmails.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg">
+          <input
+            type="checkbox"
+            checked={selectedIds.size === filteredEmails.length && filteredEmails.length > 0}
+            onChange={() => {
+              if (selectedIds.size === filteredEmails.length) {
+                setSelectedIds(new Set())
+              } else {
+                setSelectedIds(new Set(filteredEmails.map(e => e.id)))
+              }
+            }}
+            className="w-4 h-4 rounded cursor-pointer accent-indigo-600"
+          />
+          {selectedIds.size > 0 ? (
+            <>
+              <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                {selectedIds.size} selected
+              </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() => bulkAction('replied')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Mark as Replied
+                </button>
+                <button
+                  onClick={() => bulkAction('dismissed')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Dismiss
+                </button>
+              </div>
+            </>
+          ) : (
+            <span className="text-sm text-gray-500 dark:text-gray-400">Select emails for bulk actions</span>
+          )}
+        </div>
+      )}
+
       {/* Email List */}
       <div className="space-y-3">
         {filteredEmails.length === 0 ? (
@@ -411,6 +490,13 @@ export default function MissedEmailsPage() {
                   }}
                 >
                   <div className="flex items-start justify-between gap-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(email.id)}
+                      onChange={() => toggleSelect(email.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded cursor-pointer accent-indigo-600 mt-1 flex-shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       {/* Top row: badges */}
                       <div className="flex items-center gap-1.5 sm:gap-2 mb-2 flex-wrap">

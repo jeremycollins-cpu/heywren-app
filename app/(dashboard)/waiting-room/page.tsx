@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown } from 'lucide-react'
+import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface WaitingItem {
@@ -63,6 +63,8 @@ export default function WaitingRoomPage() {
   const [scanning, setScanning] = useState(false)
   const [filter, setFilter] = useState<'all' | 'critical' | 'email' | 'slack'>('all')
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest' | 'urgency'>('urgency')
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [bulkActioning, setBulkActioning] = useState(false)
 
   const fetchItems = useCallback(async () => {
     try {
@@ -138,6 +140,44 @@ export default function WaitingRoomPage() {
       const mailtoUrl = `mailto:${item.to_recipients}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
       window.open(mailtoUrl, '_blank')
       toast.success('Nudge drafted — send it!')
+    }
+  }
+
+  const toggleSelectGroup = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  async function bulkAction(status: 'replied' | 'dismissed') {
+    if (selectedKeys.size === 0) return
+    setBulkActioning(true)
+    // Collect all item IDs from selected groups
+    const allIds: string[] = []
+    for (const group of groups) {
+      if (selectedKeys.has(group.key)) {
+        for (const gi of group.items) allIds.push(gi.id)
+      }
+    }
+    try {
+      await Promise.all(allIds.map(id =>
+        fetch('/api/awaiting-replies', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, status }),
+        })
+      ))
+      const idsToRemove = new Set(allIds)
+      setItems(prev => prev.filter(i => !idsToRemove.has(i.id)))
+      toast.success(`${selectedKeys.size} item${selectedKeys.size > 1 ? 's' : ''} ${status === 'replied' ? 'marked as replied' : 'dismissed'}`)
+      setSelectedKeys(new Set())
+    } catch {
+      toast.error('Failed to update')
+    } finally {
+      setBulkActioning(false)
     }
   }
 
@@ -345,6 +385,51 @@ export default function WaitingRoomPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {groups.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg">
+          <input
+            type="checkbox"
+            checked={selectedKeys.size === groups.length && groups.length > 0}
+            onChange={() => {
+              if (selectedKeys.size === groups.length) {
+                setSelectedKeys(new Set())
+              } else {
+                setSelectedKeys(new Set(groups.map(g => g.key)))
+              }
+            }}
+            className="w-4 h-4 rounded cursor-pointer accent-indigo-600"
+          />
+          {selectedKeys.size > 0 ? (
+            <>
+              <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                {selectedKeys.size} selected
+              </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() => bulkAction('replied')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Already Replied
+                </button>
+                <button
+                  onClick={() => bulkAction('dismissed')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Dismiss
+                </button>
+              </div>
+            </>
+          ) : (
+            <span className="text-sm text-gray-500 dark:text-gray-400">Select items for bulk actions</span>
+          )}
+        </div>
+      )}
+
       {/* Waiting items — grouped by conversation */}
       <div className="space-y-3">
         {groups.map(group => {
@@ -368,9 +453,15 @@ export default function WaitingRoomPage() {
           return (
             <div key={group.key} className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark border-l-4 ${urg.border} rounded-xl transition hover:shadow-md`}>
               <div className="p-4 sm:p-5">
-                {/* Top row: badges + group indicator + dismiss */}
+                {/* Top row: checkbox + badges + group indicator + dismiss */}
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(group.key)}
+                      onChange={() => toggleSelectGroup(group.key)}
+                      className="w-4 h-4 rounded cursor-pointer accent-indigo-600 flex-shrink-0"
+                    />
                     <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold ${urg.bg} ${urg.color}`}>
                       {urg.label.toUpperCase()}
                     </span>
