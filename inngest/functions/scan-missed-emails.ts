@@ -12,6 +12,121 @@ function getAdminClient() {
   )
 }
 
+async function refreshMicrosoftToken(
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: process.env.AZURE_AD_CLIENT_ID || process.env.AZURE_CLIENT_ID || '',
+          client_secret: process.env.AZURE_AD_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || '',
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+          scope: 'openid profile email Mail.Read Calendars.Read User.Read offline_access',
+        }).toString(),
+      }
+    )
+
+    const tokenData = await res.json()
+    if (tokenData.error) return null
+
+    await supabase
+      .from('integrations')
+      .update({
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || refreshToken,
+      })
+      .eq('id', integrationId)
+
+    return tokenData.access_token
+  } catch {
+    return null
+  }
+}
+
+async function graphFetch(
+  url: string,
+  token: string,
+  supabase: ReturnType<typeof getAdminClient>,
+  integrationId: string,
+  refreshToken: string
+): Promise<{ data: any; token: string }> {
+  let currentToken = token
+
+  const res = await fetch(url, {
+    headers: { Authorization: 'Bearer ' + currentToken },
+  })
+
+  if (res.status === 401) {
+    const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
+    if (!newToken) return { data: { error: 'Token refresh failed' }, token: currentToken }
+    currentToken = newToken
+    const retryRes = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + currentToken },
+    })
+    return { data: await retryRes.json(), token: currentToken }
+  }
+
+  return { data: await res.json(), token: currentToken }
+}
+
+// Fetch conversation IDs from the user's sent items to detect replies
+async function fetchRepliedConversationIds(
+  supabase: ReturnType<typeof getAdminClient>,
+  userId: string,
+  scanWindowDays: number
+): Promise<Set<string>> {
+  const repliedConversations = new Set<string>()
+
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('id, access_token, refresh_token')
+    .eq('user_id', userId)
+    .eq('provider', 'outlook')
+    .limit(1)
+    .single()
+
+  if (!integration) return repliedConversations
+
+  const scanWindow = new Date(Date.now() - scanWindowDays * 86400000).toISOString()
+  const filter = encodeURIComponent(`sentDateTime ge ${scanWindow} and isDraft eq false`)
+  const selectFields = 'conversationId'
+
+  let nextLink: string | null =
+    `https://graph.microsoft.com/v1.0/me/mailFolders/sentItems/messages?$filter=${filter}&$select=${selectFields}&$top=100`
+
+  let msToken = integration.access_token
+
+  while (nextLink) {
+    try {
+      const { data, token } = await graphFetch(
+        nextLink, msToken, supabase, integration.id, integration.refresh_token || ''
+      )
+      msToken = token
+
+      if (data.error) break
+
+      for (const msg of data.value || []) {
+        if (msg.conversationId) {
+          repliedConversations.add(msg.conversationId)
+        }
+      }
+
+      nextLink = data['@odata.nextLink'] || null
+    } catch {
+      break
+    }
+  }
+
+  return repliedConversations
+}
+
 async function scanTeamMissedEmails(
   supabase: ReturnType<typeof getAdminClient>,
   teamId: string,
@@ -69,12 +184,64 @@ async function scanTeamMissedEmails(
 
   const userEmail = profile?.email?.toLowerCase() || ''
 
+  // Fetch conversation IDs from the user's sent items to detect replies
+  const repliedConversations = await fetchRepliedConversationIds(supabase, userId, scanWindowDays)
+
+  // Auto-mark existing pending missed emails as replied if the user has responded
+  if (repliedConversations.size > 0) {
+    // Get pending missed emails that have a matching outlook_message with a conversation_id
+    const { data: pendingMissed } = await supabase
+      .from('missed_emails')
+      .select('id, outlook_message_id')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+
+    if (pendingMissed && pendingMissed.length > 0) {
+      // Look up conversation_ids for these missed emails via outlook_messages
+      const outlookIds = pendingMissed
+        .map(m => m.outlook_message_id)
+        .filter(Boolean)
+
+      if (outlookIds.length > 0) {
+        const { data: outlookMsgs } = await supabase
+          .from('outlook_messages')
+          .select('id, conversation_id')
+          .in('id', outlookIds)
+
+        const outlookIdToConversation = new Map<string, string>()
+        for (const msg of outlookMsgs || []) {
+          if (msg.conversation_id) {
+            outlookIdToConversation.set(msg.id, msg.conversation_id)
+          }
+        }
+
+        let autoReplied = 0
+        for (const missed of pendingMissed) {
+          if (!missed.outlook_message_id) continue
+          const convId = outlookIdToConversation.get(missed.outlook_message_id)
+          if (convId && repliedConversations.has(convId)) {
+            await supabase
+              .from('missed_emails')
+              .update({ status: 'replied' })
+              .eq('id', missed.id)
+            autoReplied++
+          }
+        }
+
+        if (autoReplied > 0) {
+          console.log(`Team ${teamId}: Auto-marked ${autoReplied} missed email(s) as replied`)
+        }
+      }
+    }
+  }
+
   // Fetch recent outlook_messages that haven't been classified for missed emails yet
   const scanWindowAgo = new Date(Date.now() - scanWindowDays * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: emails, error: fetchErr } = await supabase
     .from('outlook_messages')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, conversation_id')
     .eq('team_id', teamId)
     .or(`user_id.eq.${userId},user_id.is.null`)
     .gte('received_at', scanWindowAgo)
@@ -97,6 +264,8 @@ async function scanTeamMissedEmails(
     if (existingIds.has(e.message_id)) return false
     // Exclude emails sent BY the user — they don't need to respond to their own messages
     if (userEmail && e.from_email?.toLowerCase() === userEmail) return false
+    // Exclude emails in conversations the user has already replied to
+    if (e.conversation_id && repliedConversations.has(e.conversation_id)) return false
     return true
   })
 
@@ -185,6 +354,7 @@ async function scanTeamMissedEmails(
     teamId,
     scanned: newEmails.length,
     missed: totalMissed,
+    repliedConversationsFound: repliedConversations.size,
     stats,
     duration,
   }
