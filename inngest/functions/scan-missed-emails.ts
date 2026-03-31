@@ -60,6 +60,15 @@ async function scanTeamMissedEmails(
 
   const scanWindowDays = prefsRow?.scan_window_days || 7
 
+  // Fetch the user's email address so we can filter out emails they sent
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId)
+    .single()
+
+  const userEmail = profile?.email?.toLowerCase() || ''
+
   // Fetch recent outlook_messages that haven't been classified for missed emails yet
   const scanWindowAgo = new Date(Date.now() - scanWindowDays * 24 * 60 * 60 * 1000).toISOString()
 
@@ -84,7 +93,12 @@ async function scanTeamMissedEmails(
     .eq('team_id', teamId)
 
   const existingIds = new Set((existing || []).map(e => e.message_id))
-  const newEmails = emails.filter(e => !existingIds.has(e.message_id))
+  const newEmails = emails.filter(e => {
+    if (existingIds.has(e.message_id)) return false
+    // Exclude emails sent BY the user — they don't need to respond to their own messages
+    if (userEmail && e.from_email?.toLowerCase() === userEmail) return false
+    return true
+  })
 
   if (newEmails.length === 0) {
     return { success: true, teamId, scanned: 0, missed: 0, duration: 0 }
