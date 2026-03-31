@@ -363,8 +363,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                             onClick={() => toggleStar(todo.id, todo.starred)}
                             className={`p-0.5 flex-shrink-0 transition ${
                               todo.starred
-                                ? 'text-amber-400'
-                                : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+                                ? 'text-amber-400 hover:text-amber-500'
+                                : 'text-gray-300 hover:text-amber-400'
                             }`}
                             title={todo.starred ? 'Unstar' : 'Star'}
                           >
