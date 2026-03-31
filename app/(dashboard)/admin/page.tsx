@@ -761,8 +761,7 @@ function AdminContent() {
                     <p className="text-sm font-medium">No commitments found — pipeline may be broken</p>
                   </div>
                 )
-              })()
-              ) : (
+              })() : (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="text-center p-2 bg-gray-50 rounded-lg">
                     <p className="text-2xl font-bold">{d.commitments.total}</p>
