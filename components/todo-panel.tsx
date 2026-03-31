@@ -431,30 +431,76 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
                         {isExpanded && children.length > 0 && (
                           <div className="ml-6 space-y-0.5">
                             {children.map(child => (
-                              <div key={child.id} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition">
-                                <button
-                                  onClick={() => toggleTodo(child.id, child.completed)}
-                                  className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
-                                    child.completed
-                                      ? 'bg-emerald-500 border-emerald-500'
-                                      : 'border-gray-300 hover:border-emerald-400'
-                                  }`}
-                                >
-                                  {child.completed && (
-                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
+                              <div key={child.id}>
+                                <div className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition">
+                                  <button
+                                    onClick={() => toggleTodo(child.id, child.completed)}
+                                    className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
+                                      child.completed
+                                        ? 'bg-emerald-500 border-emerald-500'
+                                        : 'border-gray-300 hover:border-emerald-400'
+                                    }`}
+                                  >
+                                    {child.completed && (
+                                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <span className={`flex-1 text-sm truncate ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                    {child.title}
+                                  </span>
+                                  {child.notes && (
+                                    <FileText className="w-2.5 h-2.5 text-gray-300 flex-shrink-0" />
                                   )}
-                                </button>
-                                <span className={`flex-1 text-sm truncate ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                                  {child.title}
-                                </span>
-                                <button
-                                  onClick={() => deleteTodo(child.id)}
-                                  className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition flex-shrink-0"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                                  <button
+                                    onClick={() => {
+                                      if (notesOpen === child.id) {
+                                        saveNotes(child.id)
+                                      } else {
+                                        setNotesOpen(child.id)
+                                        setEditingNotes(child.notes || '')
+                                      }
+                                    }}
+                                    className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition flex-shrink-0"
+                                    title="Notes"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteTodo(child.id)}
+                                    className="p-0.5 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                {/* Subtask notes editor */}
+                                {notesOpen === child.id && (
+                                  <div className="ml-6 mr-2 mb-1">
+                                    <textarea
+                                      value={editingNotes}
+                                      onChange={(e) => setEditingNotes(e.target.value)}
+                                      placeholder="Add notes..."
+                                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                                      rows={2}
+                                      autoFocus
+                                    />
+                                    <div className="flex justify-end gap-1 mt-1">
+                                      <button
+                                        onClick={() => setNotesOpen(null)}
+                                        className="text-xs px-2 py-1 text-gray-500 hover:text-gray-700"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        onClick={() => saveNotes(child.id)}
+                                        className="text-xs px-2 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

@@ -487,30 +487,85 @@ export default function TodosPage() {
                   {isExpanded && children.length > 0 && (
                     <div className="border-t border-gray-50">
                       {children.map(child => (
-                        <div key={child.id} className="group flex items-center gap-3 pl-16 pr-6 py-2.5 hover:bg-gray-50 transition">
-                          <button
-                            onClick={() => toggleTodo(child.id, child.completed)}
-                            className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
-                              child.completed
-                                ? 'bg-emerald-500 border-emerald-500'
-                                : 'border-gray-300 hover:border-emerald-400'
-                            }`}
-                          >
-                            {child.completed && (
-                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
+                        <div key={child.id}>
+                          <div className="group flex items-center gap-3 pl-16 pr-6 py-2.5 hover:bg-gray-50 transition">
+                            <button
+                              onClick={() => toggleTodo(child.id, child.completed)}
+                              className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition ${
+                                child.completed
+                                  ? 'bg-emerald-500 border-emerald-500'
+                                  : 'border-gray-300 hover:border-emerald-400'
+                              }`}
+                            >
+                              {child.completed && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
+                            <span className={`flex-1 text-sm ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                              {child.title}
+                            </span>
+                            {child.notes && (
+                              <FileText className="w-3 h-3 text-gray-300 flex-shrink-0" />
                             )}
-                          </button>
-                          <span className={`flex-1 text-sm ${child.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                            {child.title}
-                          </span>
-                          <button
-                            onClick={() => deleteTodo(child.id)}
-                            className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <button
+                              onClick={() => {
+                                if (notesOpen === child.id) {
+                                  saveNotes(child.id)
+                                } else {
+                                  setNotesOpen(child.id)
+                                  setEditingNotes(child.notes || '')
+                                }
+                              }}
+                              className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition"
+                              title="Notes"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => deleteTodo(child.id)}
+                              className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          {/* Subtask notes editor */}
+                          {notesOpen === child.id && (
+                            <div className="pl-16 pr-6 pb-3 pt-1 bg-gray-50/50">
+                              <textarea
+                                value={editingNotes}
+                                onChange={(e) => setEditingNotes(e.target.value)}
+                                placeholder="Add notes..."
+                                className="w-full text-sm border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                                rows={3}
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-2 mt-2">
+                                <button
+                                  onClick={() => setNotesOpen(null)}
+                                  className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-700"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => saveNotes(child.id)}
+                                  className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {/* Subtask saved notes inline */}
+                          {notesOpen !== child.id && child.notes && (
+                            <div
+                              className="pl-20 pr-6 pb-2 cursor-pointer"
+                              onClick={() => { setNotesOpen(child.id); setEditingNotes(child.notes || '') }}
+                            >
+                              <p className="text-xs text-gray-400 line-clamp-2 whitespace-pre-wrap">{child.notes}</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
