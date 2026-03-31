@@ -746,11 +746,22 @@ function AdminContent() {
             {/* Commitment Output */}
             <div className="bg-white border rounded-lg p-4">
               <h3 className="font-semibold text-gray-900 mb-3">Commitments</h3>
-              {d.commitments.total === 0 ? (
-                <div className="flex items-center gap-2 text-red-600">
-                  <AlertTriangle className="w-4 h-4" />
-                  <p className="text-sm font-medium">No commitments found — pipeline may be broken</p>
-                </div>
+              {d.commitments.total === 0 ? (() => {
+                const ageHours = (Date.now() - new Date(profile.created_at).getTime()) / (1000 * 60 * 60)
+                const isNewUser = ageHours < 48
+                const hasNoData = d.slackMessages.total === 0 && d.emails.total === 0 && d.calendarEvents === 0
+                return isNewUser || hasNoData ? (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <Clock className="w-4 h-4" />
+                    <p className="text-sm">No commitments yet — user {isNewUser ? `signed up ${ageHours < 1 ? 'just now' : `${Math.round(ageHours)}h ago`}` : 'has no data sources synced'}</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-4 h-4" />
+                    <p className="text-sm font-medium">No commitments found — pipeline may be broken</p>
+                  </div>
+                )
+              })()
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="text-center p-2 bg-gray-50 rounded-lg">
