@@ -8,6 +8,10 @@ const DEFAULTS = {
   challenge_notifications: true,
   weekly_digest: true,
   celebration_posts: true,
+  slack_notifications: true,
+  email_digests: true,
+  overdue_alerts: true,
+  weekly_review: true,
 }
 
 export async function GET() {
@@ -53,6 +57,10 @@ export async function GET() {
       challenge_notifications: prefs.challenge_notifications,
       weekly_digest: prefs.weekly_digest,
       celebration_posts: prefs.celebration_posts,
+      slack_notifications: prefs.slack_notifications ?? true,
+      email_digests: prefs.email_digests ?? true,
+      overdue_alerts: prefs.overdue_alerts ?? true,
+      weekly_review: prefs.weekly_review ?? true,
     },
   })
 }
@@ -85,6 +93,10 @@ export async function PUT(req: Request) {
     challenge_notifications,
     weekly_digest,
     celebration_posts,
+    slack_notifications,
+    email_digests,
+    overdue_alerts,
+    weekly_review,
   } = body
 
   const { error } = await supabase
@@ -99,6 +111,10 @@ export async function PUT(req: Request) {
         challenge_notifications: challenge_notifications ?? true,
         weekly_digest: weekly_digest ?? true,
         celebration_posts: celebration_posts ?? true,
+        slack_notifications: slack_notifications ?? true,
+        email_digests: email_digests ?? true,
+        overdue_alerts: overdue_alerts ?? true,
+        weekly_review: weekly_review ?? true,
       },
       { onConflict: 'organization_id,user_id' }
     )

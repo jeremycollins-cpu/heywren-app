@@ -23,6 +23,7 @@ export default function SettingsPage() {
     overdue: true,
     weekly: true,
   })
+  const [notificationsLoading, setNotificationsLoading] = useState(true)
   // Missed email preferences
   const [emailPrefs, setEmailPrefs] = useState({
     vip_contacts: [] as Array<{ name?: string; email?: string; domain?: string }>,
@@ -93,11 +94,18 @@ export default function SettingsPage() {
         const data = await res.json()
         if (data.preferences) {
           setGamificationPrefs(data.preferences)
+          setNotifications({
+            slack: data.preferences.slack_notifications ?? true,
+            email: data.preferences.email_digests ?? true,
+            overdue: data.preferences.overdue_alerts ?? true,
+            weekly: data.preferences.weekly_review ?? true,
+          })
         }
       } catch (err) {
-        console.error('Error fetching gamification notification preferences:', err)
+        console.error('Error fetching notification preferences:', err)
       }
       setGamificationPrefsLoading(false)
+      setNotificationsLoading(false)
     }
     fetchGamificationPrefs()
 
@@ -235,6 +243,32 @@ export default function SettingsPage() {
     setSavingDomains(false)
   }
 
+  const toggleNotification = async (key: keyof typeof notifications) => {
+    const updated = { ...notifications, [key]: !notifications[key] }
+    setNotifications(updated) // optimistic update
+    try {
+      const res = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...gamificationPrefs,
+          slack_notifications: updated.slack,
+          email_digests: updated.email,
+          overdue_alerts: updated.overdue,
+          weekly_review: updated.weekly,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setNotifications(notifications) // revert
+        toast.error(data.error)
+      }
+    } catch {
+      setNotifications(notifications) // revert
+      toast.error('Failed to update notification preference')
+    }
+  }
+
   const toggleGamificationPref = async (key: keyof typeof gamificationPrefs) => {
     const updated = { ...gamificationPrefs, [key]: !gamificationPrefs[key] }
     setGamificationPrefs(updated) // optimistic update
@@ -242,7 +276,13 @@ export default function SettingsPage() {
       const res = await fetch('/api/notification-preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
+        body: JSON.stringify({
+          ...updated,
+          slack_notifications: notifications.slack,
+          email_digests: notifications.email,
+          overdue_alerts: notifications.overdue,
+          weekly_review: notifications.weekly,
+        }),
       })
       const data = await res.json()
       if (data.error) {
@@ -434,49 +474,61 @@ export default function SettingsPage() {
           Notifications
         </h2>
 
-        <div className="space-y-4">
-          {[
-            {
-              id: 'slack',
-              label: 'Slack Notifications',
-              description: 'Get real-time alerts in Slack',
-            },
-            {
-              id: 'email',
-              label: 'Email Digests',
-              description: 'Daily and weekly email summaries',
-            },
-            {
-              id: 'overdue',
-              label: 'Overdue Alerts',
-              description: 'Be notified of overdue commitments',
-            },
-            {
-              id: 'weekly',
-              label: 'Weekly Review',
-              description: 'Sunday summary of the week',
-            },
-          ].map((setting) => (
-            <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900 dark:text-white">{setting.label}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{setting.description}</p>
+        {notificationsLoading ? (
+          <div className="animate-pulse space-y-4" role="status" aria-busy="true" aria-label="Loading notification preferences">
+            {[1, 2, 3, 4].map(i => <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 rounded-lg"></div>)}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {([
+              {
+                id: 'slack' as const,
+                label: 'Slack Notifications',
+                description: 'Get real-time alerts in Slack',
+              },
+              {
+                id: 'email' as const,
+                label: 'Email Digests',
+                description: 'Daily and weekly email summaries',
+              },
+              {
+                id: 'overdue' as const,
+                label: 'Overdue Alerts',
+                description: 'Be notified of overdue commitments',
+              },
+              {
+                id: 'weekly' as const,
+                label: 'Weekly Review',
+                description: 'Sunday summary of the week',
+              },
+            ]).map((setting) => (
+              <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">{setting.label}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{setting.description}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={notifications[setting.id]}
+                  aria-label={setting.label}
+                  onClick={() => toggleNotification(setting.id)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                    notifications[setting.id]
+                      ? 'bg-indigo-600'
+                      : 'bg-gray-200 dark:bg-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      notifications[setting.id] ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
-              <input
-                type="checkbox"
-                checked={notifications[setting.id as keyof typeof notifications]}
-                onChange={(e) =>
-                  setNotifications({
-                    ...notifications,
-                    [setting.id]: e.target.checked,
-                  })
-                }
-                aria-label={setting.label}
-                className="w-5 h-5 cursor-pointer"
-              />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Privacy Settings */}
