@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
-  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare
+  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -431,6 +431,14 @@ export default function MissedEmailsPage() {
                   Mark as Replied
                 </button>
                 <button
+                  onClick={() => { bulkAction('replied'); toast.success('Marked as handled offline') }}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  Handled Offline
+                </button>
+                <button
                   onClick={() => bulkAction('dismissed')}
                   disabled={bulkActioning}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
@@ -656,6 +664,13 @@ export default function MissedEmailsPage() {
                               Reply to all ({email.threadCount})
                             </button>
                             <button
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id, email.threadEmailIds); toast.success('Marked as handled offline') }}
+                              className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
+                            >
+                              <Phone aria-hidden="true" className="w-4 h-4" />
+                              Handled Offline
+                            </button>
+                            <button
                               onClick={(e) => { e.stopPropagation(); snooze(email.id, email.threadEmailIds) }}
                               className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
                             >
@@ -679,6 +694,13 @@ export default function MissedEmailsPage() {
                             >
                               <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
                               Mark as Replied
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
+                            >
+                              <Phone aria-hidden="true" className="w-4 h-4" />
+                              Handled Offline
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); snooze(email.id) }}

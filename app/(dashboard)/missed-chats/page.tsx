@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   MessageSquare, AlertTriangle, Clock, CheckCircle2, X,
   RefreshCw, ChevronDown, ChevronUp, Hash, ExternalLink,
-  ThumbsUp, ThumbsDown,
+  ThumbsUp, ThumbsDown, Phone,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
@@ -333,6 +333,14 @@ export default function MissedChatsPage() {
                   Mark as Replied
                 </button>
                 <button
+                  onClick={() => { bulkAction('replied'); toast.success('Marked as handled offline') }}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  Handled Offline
+                </button>
+                <button
                   onClick={() => bulkAction('dismissed')}
                   disabled={bulkActioning}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
@@ -502,6 +510,13 @@ export default function MissedChatsPage() {
                           Open in Slack
                         </a>
                       )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); markReplied(chat.id) }}
+                        className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
+                      >
+                        <Phone aria-hidden="true" className="w-4 h-4" />
+                        Handled Offline
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); snooze(chat.id) }}
                         className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
