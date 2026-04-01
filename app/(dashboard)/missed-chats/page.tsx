@@ -100,7 +100,12 @@ export default function MissedChatsPage() {
     loadChats()
   }, [])
 
-  async function markReplied(id: string) {
+  const [actioningIds, setActioningIds] = useState<Set<string>>(new Set())
+
+  async function markReplied(id: string, toastMsg?: string) {
+    if (actioningIds.has(id)) return
+    setActioningIds(prev => new Set(prev).add(id))
+    setChats(prev => prev.filter(c => c.id !== id))
     try {
       const res = await fetch('/api/missed-chats', {
         method: 'PATCH',
@@ -108,11 +113,11 @@ export default function MissedChatsPage() {
         body: JSON.stringify({ id, status: 'replied' }),
       })
       if (res.ok) {
-        setChats(chats.filter(c => c.id !== id))
-        toast.success('Marked as replied')
+        toast.success(toastMsg || 'Marked as replied')
       }
     } catch {
       toast.error('Failed to update')
+      loadChats()
     }
   }
 
@@ -511,7 +516,7 @@ export default function MissedChatsPage() {
                         </a>
                       )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); markReplied(chat.id) }}
+                        onClick={(e) => { e.stopPropagation(); markReplied(chat.id, 'Marked as handled offline') }}
                         className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
                       >
                         <Phone aria-hidden="true" className="w-4 h-4" />
