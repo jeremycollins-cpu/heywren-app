@@ -47,7 +47,7 @@ interface CommunicationProfile {
   topStakeholders: Array<{ name: string; interactions: number; openCommitments: number }>
   completionRate: number
   avgCompletionDays: number
-  commitmentVolume: { weekly: number; trend: 'increasing' | 'decreasing' | 'stable' }
+  commitmentVolume: { weekly: number; trend: 'increasing' | 'decreasing' | 'stable'; openCount?: number }
   commonCommitmentTypes: Record<string, number>
   missedEmailRate: number
   peakActivityHours: number[]
@@ -305,8 +305,8 @@ export default function CoachPage() {
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
               <BarChart3 className="w-3 h-3" /> Active Commitments
             </p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{profile.commitmentVolume.weekly}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">this week</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{profile.commitmentVolume.openCount ?? profile.commitmentVolume.weekly}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{profile.commitmentVolume.weekly} new this week</p>
           </div>
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">

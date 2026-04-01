@@ -148,7 +148,7 @@ export function buildCommunicationProfile(
     topStakeholders,
     completionRate,
     avgCompletionDays,
-    commitmentVolume: { weekly: weeklyCount, trend },
+    commitmentVolume: { weekly: weeklyCount, trend, openCount: commitments.filter(c => c.status === 'open' || c.status === 'in_progress').length },
     commonCommitmentTypes,
     missedEmailRate,
     peakActivityHours,
