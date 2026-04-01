@@ -17,12 +17,17 @@ export default function SettingsPage() {
   const [role, setRole] = useState('')
   const [teamName, setTeamName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savingNotifications, setSavingNotifications] = useState(false)
   const [notifications, setNotifications] = useState({
     slack: true,
     email: true,
     overdue: true,
     weekly: true,
   })
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
   // Missed email preferences
   const [emailPrefs, setEmailPrefs] = useState({
     vip_contacts: [] as Array<{ name?: string; email?: string; domain?: string }>,
@@ -269,6 +274,14 @@ export default function SettingsPage() {
 
         setUser(user)
         setFullName(user.user_metadata?.full_name || '')
+        if (user.user_metadata?.notifications) {
+          setNotifications({
+            slack: user.user_metadata.notifications.slack ?? true,
+            email: user.user_metadata.notifications.email ?? true,
+            overdue: user.user_metadata.notifications.overdue ?? true,
+            weekly: user.user_metadata.notifications.weekly ?? true,
+          })
+        }
 
         // Fetch profile to get role and current_team_id
         const { data: profile, error: profileError } = await supabase
@@ -311,16 +324,78 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
+      // Save profile metadata
       const { error } = await supabase.auth.updateUser({
         data: { full_name: fullName, role },
       })
       if (error) throw error
+
+      // Save team name if user has a team
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.current_team_id && teamName.trim()) {
+        const { error: teamError } = await supabase
+          .from('teams')
+          .update({ name: teamName.trim() })
+          .eq('id', profile.current_team_id)
+        if (teamError) throw teamError
+      }
+
       toast.success('Settings saved successfully')
     } catch (err) {
       console.error('Error saving settings:', err)
       toast.error('Failed to save settings')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSaveNotifications = async () => {
+    setSavingNotifications(true)
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { notifications },
+      })
+      if (error) throw error
+      toast.success('Notification preferences saved')
+    } catch (err) {
+      console.error('Error saving notifications:', err)
+      toast.error('Failed to save notification preferences')
+    } finally {
+      setSavingNotifications(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (!newPassword.trim()) {
+      toast.error('Password cannot be empty')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match')
+      return
+    }
+    if (newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters')
+      return
+    }
+    setSavingPassword(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) throw error
+      toast.success('Password changed successfully')
+      setShowPasswordModal(false)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      console.error('Error changing password:', err)
+      toast.error('Failed to change password')
+    } finally {
+      setSavingPassword(false)
     }
   }
 
@@ -477,6 +552,14 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
+
+        <button
+          onClick={handleSaveNotifications}
+          disabled={savingNotifications}
+          className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {savingNotifications ? 'Saving...' : 'Save Notifications'}
+        </button>
       </div>
 
       {/* Privacy Settings */}
@@ -492,7 +575,10 @@ export default function SettingsPage() {
               <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
               <p className="text-sm text-gray-600 dark:text-gray-400">Add extra security to your account</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+            <button
+              onClick={() => toast('Two-factor authentication is not yet available. Coming soon!', { icon: 'ℹ️' })}
+              className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+            >
               Enable
             </button>
           </div>
@@ -502,7 +588,10 @@ export default function SettingsPage() {
               <p className="font-medium text-gray-900 dark:text-white">Change Password</p>
               <p className="text-sm text-gray-600 dark:text-gray-400">Update your password</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+            >
               Change
             </button>
           </div>
@@ -512,7 +601,10 @@ export default function SettingsPage() {
               <p className="font-medium text-gray-900 dark:text-white">Data & Privacy</p>
               <p className="text-sm text-gray-600 dark:text-gray-400">Download your data or delete account</p>
             </div>
-            <button className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+            <button
+              onClick={() => toast('Data & Privacy management is not yet available. Coming soon!', { icon: 'ℹ️' })}
+              className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+            >
               Manage
             </button>
           </div>
@@ -536,6 +628,7 @@ export default function SettingsPage() {
               onChange={(e) => setTeamName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
             />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Saved with profile changes above</p>
           </div>
 
           {/* Company Domains */}
@@ -601,9 +694,12 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <button className="w-full px-4 py-2 border border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-500 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition">
+          <a
+            href="/team-management"
+            className="block w-full px-4 py-2 border border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-500 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition text-center"
+          >
             + Invite Team Member
-          </button>
+          </a>
         </div>
       </div>
 
@@ -997,6 +1093,54 @@ export default function SettingsPage() {
           Go to Integrations
         </a>
       </div>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Change Password</h3>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="new-password" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">New Password</label>
+                <input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                />
+              </div>
+              <div>
+                <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Confirm Password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter your password"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                />
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => { setShowPasswordModal(false); setNewPassword(''); setConfirmPassword('') }}
+                  className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleChangePassword}
+                  disabled={savingPassword}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingPassword ? 'Changing...' : 'Change Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
