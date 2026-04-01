@@ -337,7 +337,7 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json()
-  const { id, status, snoozed_until, threadEmailIds } = body
+  const { id, status, snoozed_until, threadEmailIds, resolution_type, delegated_to } = body
 
   if (!id || !status) {
     return NextResponse.json({ error: 'Missing id or status' }, { status: 400 })
@@ -346,6 +346,12 @@ export async function PATCH(req: Request) {
   const updateData: Record<string, unknown> = { status }
   if (snoozed_until) {
     updateData.snoozed_until = snoozed_until
+  }
+  if (resolution_type) {
+    updateData.resolution_type = resolution_type
+  }
+  if (delegated_to) {
+    updateData.delegated_to = delegated_to
   }
 
   // If threadEmailIds provided, bulk update all emails in the thread

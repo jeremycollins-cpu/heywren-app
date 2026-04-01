@@ -237,12 +237,69 @@ async function scanTeamMissedEmails(
     }
   }
 
+  // Auto-resolve missed emails when the user had a meeting with the sender shortly after
+  {
+    const { data: pendingForMeeting } = await supabase
+      .from('missed_emails')
+      .select('id, from_email, from_name, received_at')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+
+    if (pendingForMeeting && pendingForMeeting.length > 0) {
+      // Get calendar events from the scan window
+      const calWindowStart = new Date(Date.now() - scanWindowDays * 86400000).toISOString()
+      const { data: calEvents } = await supabase
+        .from('outlook_calendar_events')
+        .select('attendees, start_time, subject')
+        .eq('team_id', teamId)
+        .or(`user_id.eq.${userId},user_id.is.null`)
+        .gte('start_time', calWindowStart)
+
+      if (calEvents && calEvents.length > 0) {
+        let autoMeeting = 0
+        for (const missed of pendingForMeeting) {
+          const senderEmail = (missed.from_email || '').toLowerCase()
+          const senderName = (missed.from_name || '').toLowerCase()
+          const emailTime = new Date(missed.received_at).getTime()
+
+          // Check if there's a calendar event within 4 hours after the email
+          // where the sender is an attendee
+          const hadMeeting = calEvents.some(evt => {
+            const meetingTime = new Date(evt.start_time).getTime()
+            // Meeting must be after the email and within 4 hours
+            if (meetingTime < emailTime || meetingTime > emailTime + 4 * 3600000) return false
+
+            const attendees = evt.attendees || []
+            return attendees.some((a: any) => {
+              const email = (a.emailAddress?.address || a.email || '').toLowerCase()
+              const name = (a.emailAddress?.name || a.name || '').toLowerCase()
+              return (email && email === senderEmail) || (senderName.length > 3 && name.includes(senderName))
+            })
+          })
+
+          if (hadMeeting) {
+            await supabase
+              .from('missed_emails')
+              .update({ status: 'replied', resolution_type: 'auto_meeting' })
+              .eq('id', missed.id)
+            autoMeeting++
+          }
+        }
+
+        if (autoMeeting > 0) {
+          console.log(`Team ${teamId}: Auto-resolved ${autoMeeting} missed email(s) via meeting detection`)
+        }
+      }
+    }
+  }
+
   // Fetch recent outlook_messages that haven't been classified for missed emails yet
   const scanWindowAgo = new Date(Date.now() - scanWindowDays * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: emails, error: fetchErr } = await supabase
     .from('outlook_messages')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, conversation_id')
+    .select('id, message_id, from_name, from_email, to_recipients, cc_recipients, subject, body_preview, received_at, conversation_id')
     .eq('team_id', teamId)
     .or(`user_id.eq.${userId},user_id.is.null`)
     .gte('received_at', scanWindowAgo)
@@ -281,16 +338,26 @@ async function scanTeamMissedEmails(
     if (Date.now() - startTime > TIME_BUDGET_MS) break
 
     const chunk = newEmails.slice(i, i + 15)
-    const batchInput = chunk.map(email => ({
-      id: email.message_id,
-      fromEmail: email.from_email || '',
-      fromName: email.from_name || '',
-      subject: email.subject || '(no subject)',
-      bodyPreview: email.body_preview || '',
-      receivedAt: email.received_at,
-      recipientEmail: userEmail,
-      recipientName: userName,
-    }))
+    const batchInput = chunk.map(email => {
+      // Determine if user is CC-only (not in TO, but in CC)
+      const toStr = (email.to_recipients || '').toLowerCase()
+      const ccStr = (email.cc_recipients || '').toLowerCase()
+      const isInTo = userEmail ? toStr.includes(userEmail) : true
+      const isInCc = userEmail ? ccStr.includes(userEmail) : false
+      const isCcOnly = !isInTo && isInCc
+
+      return {
+        id: email.message_id,
+        fromEmail: email.from_email || '',
+        fromName: email.from_name || '',
+        subject: email.subject || '(no subject)',
+        bodyPreview: email.body_preview || '',
+        receivedAt: email.received_at,
+        recipientEmail: userEmail,
+        recipientName: userName,
+        isCcOnly,
+      }
+    })
 
     try {
       const classifications = await classifyMissedEmailBatch(batchInput, userPrefs)

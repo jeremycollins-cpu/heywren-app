@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
-  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone
+  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone, Forward
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -206,6 +206,25 @@ export default function MissedEmailsPage() {
       }
     } catch {
       toast.error('Failed to snooze')
+    }
+  }
+
+  async function delegate(id: string, threadEmailIds?: string[]) {
+    const name = prompt('Who did you forward this to?')
+    if (!name) return
+    try {
+      const res = await fetch('/api/missed-emails', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'replied', resolution_type: 'delegated', delegated_to: name.trim(), threadEmailIds }),
+      })
+      if (res.ok) {
+        const idsToRemove = new Set(threadEmailIds || [id])
+        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        toast.success(`Delegated to ${name.trim()}`)
+      }
+    } catch {
+      toast.error('Failed to update')
     }
   }
 
@@ -671,6 +690,13 @@ export default function MissedEmailsPage() {
                               Handled Offline
                             </button>
                             <button
+                              onClick={(e) => { e.stopPropagation(); delegate(email.id, email.threadEmailIds) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition text-sm font-medium"
+                            >
+                              <Forward aria-hidden="true" className="w-4 h-4" />
+                              Forwarded
+                            </button>
+                            <button
                               onClick={(e) => { e.stopPropagation(); snooze(email.id, email.threadEmailIds) }}
                               className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
                             >
@@ -701,6 +727,13 @@ export default function MissedEmailsPage() {
                             >
                               <Phone aria-hidden="true" className="w-4 h-4" />
                               Handled Offline
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); delegate(email.id) }}
+                              className="flex items-center gap-2 px-4 py-2 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition text-sm font-medium"
+                            >
+                              <Forward aria-hidden="true" className="w-4 h-4" />
+                              Forwarded
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); snooze(email.id) }}
