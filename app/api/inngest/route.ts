@@ -23,6 +23,7 @@ import {
 } from '@/inngest/functions/sync-platform-recordings'
 import { calculateWeeklyScoresJob } from '@/inngest/functions/calculate-weekly-scores'
 import { managerWeeklyDigest } from '@/inngest/functions/manager-weekly-digest'
+import { detectStaleCommitments } from '@/inngest/functions/detect-stale-commitments'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -45,5 +46,6 @@ export const { GET, POST, PUT } = serve({
     managerWeeklyDigest,         // Monday 8 AM UTC — BI digest DM to managers via Slack
     adminFullResync,             // On-demand — admin triggers 90-day full resync for a user
     drainOutlookBacklog,         // Hourly + on-demand — processes all unprocessed email backlog
+    detectStaleCommitments,      // 8 AM PT weekdays — notify users about 14+ day old open commitments
   ],
 })

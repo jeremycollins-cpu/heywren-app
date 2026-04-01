@@ -320,6 +320,78 @@ export default function WeeklyPage() {
         ))}
       </div>
 
+      {/* AI Insights */}
+      {(() => {
+        const insights: Array<{ icon: string; text: string; type: 'warning' | 'success' | 'info' }> = []
+
+        // Stale commitments
+        const staleCount = open.filter(c => {
+          const age = (Date.now() - new Date(c.created_at).getTime()) / 86400000
+          return age > 14
+        }).length
+        if (staleCount > 0) {
+          insights.push({
+            icon: '🔴',
+            text: `${staleCount} commitment${staleCount > 1 ? 's have' : ' has'} been open for 14+ days. Consider completing, updating, or dropping them.`,
+            type: 'warning',
+          })
+        }
+
+        // Follow-through feedback
+        if (followThrough >= 70) {
+          insights.push({ icon: '🏆', text: `Strong follow-through at ${followThrough}%. You're closing commitments consistently.`, type: 'success' })
+        } else if (followThrough > 0 && followThrough < 30 && thisWeekNew.length > 3) {
+          insights.push({ icon: '⚠️', text: `Follow-through is at ${followThrough}% with ${thisWeekNew.length} new items. Consider focusing on completing existing work before taking on more.`, type: 'warning' })
+        }
+
+        // Meeting load
+        const totalMeetingHours = calendarEvents.reduce((sum, e) => {
+          const start = new Date(e.start_time).getTime()
+          const end = e.end_time ? new Date(e.end_time).getTime() : start + 3600000
+          return sum + (end - start) / 3600000
+        }, 0)
+        if (totalMeetingHours > 25) {
+          insights.push({ icon: '📅', text: `You had ${Math.round(totalMeetingHours)} hours of meetings this week. Consider blocking focus time to work on your ${open.length} open commitments.`, type: 'info' })
+        }
+
+        // Volume spike
+        if (weekOverWeekChange !== null && weekOverWeekChange > 50) {
+          insights.push({ icon: '📈', text: `${weekOverWeekChange}% more new commitments than last week. Watch for overcommitment.`, type: 'warning' })
+        }
+
+        // Email/Slack balance
+        const emailCommitments = thisWeekNew.filter(c => c.source === 'outlook' || c.source === 'email').length
+        const slackCommitments = thisWeekNew.filter(c => c.source === 'slack').length
+        if (emailCommitments > 0 && slackCommitments > 0) {
+          insights.push({ icon: '💬', text: `${slackCommitments} commitments from Slack, ${emailCommitments} from email. ${slackCommitments > emailCommitments * 2 ? 'Most of your action items come from chat — consider consolidating in email for better tracking.' : 'Good balance across channels.'}`, type: 'info' })
+        }
+
+        if (insights.length === 0) return null
+
+        return (
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+              <span className="text-base">💡</span> Weekly Insights
+            </h3>
+            <div className="space-y-2.5">
+              {insights.map((insight, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-2.5 text-sm px-3 py-2.5 rounded-lg ${
+                    insight.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-300' :
+                    insight.type === 'success' ? 'bg-green-50 dark:bg-green-900/10 text-green-800 dark:text-green-300' :
+                    'bg-blue-50 dark:bg-blue-900/10 text-blue-800 dark:text-blue-300'
+                  }`}
+                >
+                  <span className="flex-shrink-0">{insight.icon}</span>
+                  <span>{insight.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Calendar Heatmap */}
       {calendarEvents.length > 0 && (() => {
         // Group events by day of week (Mon-Fri)

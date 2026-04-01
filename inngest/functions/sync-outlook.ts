@@ -77,6 +77,7 @@ export async function insertCommitmentIfNotDuplicate(
     source: 'outlook',
     source_ref: params.sourceRef,
     source_url: params.sourceUrl || null,
+    category: commitment.commitmentType || null,
     metadata: buildCommitmentMetadata(commitment),
   })
 
@@ -649,6 +650,7 @@ export async function syncTeamOutlook(
                 priority_score: calculatePriorityScore(commitment),
                 source: 'calendar',
                 source_ref: item.dbId,
+                category: commitment.commitmentType || null,
                 metadata: buildCommitmentMetadata(commitment),
               })
               if (!commitErr) {

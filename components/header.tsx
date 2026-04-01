@@ -4,9 +4,19 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff, ListChecks } from 'lucide-react'
+import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff, ListChecks, Bell, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTodo } from '@/lib/contexts/todo-context'
+
+interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string | null
+  link: string | null
+  read: boolean
+  created_at: string
+}
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -21,6 +31,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
+  // Notifications state
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const notifRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -28,6 +44,48 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }
     fetchUser()
   }, [supabase])
+
+  // Fetch notifications
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications')
+      if (res.ok) {
+        const data = await res.json()
+        setNotifications(data.notifications || [])
+        setUnreadCount(data.unreadCount || 0)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 60000) // refresh every minute
+    return () => clearInterval(interval)
+  }, [fetchNotifications])
+
+  const markAllRead = async () => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markAllRead: true }),
+      })
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setUnreadCount(0)
+    } catch { /* ignore */ }
+  }
+
+  const markRead = async (id: string) => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    } catch { /* ignore */ }
+  }
 
   // Initialize dark mode from localStorage
   useEffect(() => {
@@ -50,17 +108,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }
   }
 
-  // Close dropdown on Escape key
+  // Close dropdowns on Escape key
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') setShowDropdown(false)
+    if (e.key === 'Escape') {
+      setShowDropdown(false)
+      setShowNotifications(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (showDropdown) {
+    if (showDropdown || showNotifications) {
       document.addEventListener('keydown', handleKeyDown)
       return () => document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [showDropdown, handleKeyDown])
+  }, [showDropdown, showNotifications, handleKeyDown])
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
@@ -72,7 +133,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }
   }
 
-  // Sync status: fetch real last sync time from API
+  // Sync status
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [syncLoaded, setSyncLoaded] = useState(false)
 
@@ -88,7 +149,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
       setSyncLoaded(true)
     }
     fetchSyncStatus()
-    // Refresh every 2 minutes
     const interval = setInterval(fetchSyncStatus, 120000)
     return () => clearInterval(interval)
   }, [])
@@ -105,12 +165,21 @@ export default function Header({ onMenuClick }: HeaderProps) {
     return `${Math.floor(hours / 24)}d ago`
   }
 
-  // Re-render the sync time label periodically
   const [, setTick] = useState(0)
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 30000)
     return () => clearInterval(interval)
   }, [])
+
+  function formatNotifTime(dateStr: string): string {
+    const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+    if (seconds < 60) return 'Just now'
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
 
   const initials = (user?.user_metadata?.full_name || user?.email || 'U')
     .split(' ')
@@ -160,6 +229,89 @@ export default function Header({ onMenuClick }: HeaderProps) {
           {darkMode ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
         </button>
 
+        {/* Notifications */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => { setShowNotifications(!showNotifications); setShowDropdown(false) }}
+            className="relative p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-all duration-200"
+            aria-label="Notifications"
+            title="Notifications"
+          >
+            <Bell className="w-4.5 h-4.5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} aria-hidden="true" />
+              <div
+                className="absolute right-0 mt-1.5 w-80 sm:w-96 bg-white dark:bg-surface-dark-secondary rounded-xl border border-gray-200 dark:border-border-dark z-50 animate-scale-in overflow-hidden"
+                style={{ boxShadow: 'var(--shadow-md)', maxHeight: '480px' }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-border-dark">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium"
+                    >
+                      <Check className="w-3 h-3" />
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                {/* List */}
+                <div className="overflow-y-auto" style={{ maxHeight: '400px' }}>
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No notifications yet</p>
+                      <p className="text-xs text-gray-400 mt-1">We'll let you know when something needs your attention</p>
+                    </div>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 border-b border-gray-50 dark:border-border-dark last:border-b-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition ${
+                          !n.read ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''
+                        }`}
+                        onClick={() => {
+                          if (!n.read) markRead(n.id)
+                          if (n.link) {
+                            router.push(n.link)
+                            setShowNotifications(false)
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {!n.read && (
+                            <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
+                          )}
+                          <div className={`flex-1 min-w-0 ${n.read ? 'ml-5' : ''}`}>
+                            <p className={`text-sm ${n.read ? 'text-gray-600 dark:text-gray-400' : 'text-gray-900 dark:text-white font-medium'}`}>
+                              {n.title}
+                            </p>
+                            {n.body && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
+                            )}
+                            <p className="text-[10px] text-gray-400 mt-1">{formatNotifTime(n.created_at)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* To-Dos toggle */}
         <button
           onClick={toggleTodoPanel}
@@ -173,7 +325,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         {/* User Menu */}
         <div className="relative" ref={dropdownRef}>
           <button
-            onClick={() => setShowDropdown(!showDropdown)}
+            onClick={() => { setShowDropdown(!showDropdown); setShowNotifications(false) }}
             className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-all duration-200"
             aria-expanded={showDropdown}
             aria-haspopup="true"
