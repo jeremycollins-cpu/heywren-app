@@ -390,7 +390,7 @@ export async function syncTeamOutlook(
     const syncDays = options?.daysBack || 1
     const oldestDate = new Date(Date.now() - syncDays * 24 * 60 * 60 * 1000).toISOString()
     const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
-    const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead,webLink'
+    const selectFields = 'id,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,conversationId,isRead,webLink'
     let nextLink: string | null =
       `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
 
@@ -427,6 +427,9 @@ export async function syncTeamOutlook(
         const toList = (email.toRecipients || [])
           .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
           .join(', ')
+        const ccList = (email.ccRecipients || [])
+          .map((r: any) => r.emailAddress?.name || r.emailAddress?.address || '')
+          .join(', ')
         const subject = email.subject || '(no subject)'
 
         const messageText = [
@@ -452,6 +455,7 @@ export async function syncTeamOutlook(
               from_name: fromName,
               from_email: fromEmail,
               to_recipients: toList,
+              cc_recipients: ccList || null,
               subject,
               body_preview: preview,
               received_at: email.receivedDateTime,

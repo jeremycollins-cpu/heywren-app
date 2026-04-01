@@ -95,6 +95,7 @@ export interface EmailInput {
   receivedAt: string
   recipientEmail?: string  // The user's email — helps detect when they're directly addressed
   recipientName?: string   // The user's name — helps detect @mentions
+  isCcOnly?: boolean       // True if user is only on CC, not TO — deprioritize unless @mentioned
 }
 
 // ============================================================
@@ -148,6 +149,15 @@ function isLikelyAutomated(email: EmailInput): boolean {
 }
 
 function likelyNeedsResponse(email: EmailInput): boolean {
+  // CC-only emails don't need a response unless the user is @mentioned
+  if (email.isCcOnly) {
+    if (email.recipientName && email.recipientName.length > 2) {
+      const nameLower = email.recipientName.toLowerCase()
+      const bodyLower = email.bodyPreview.toLowerCase()
+      if (bodyLower.includes(`@${nameLower}`) || bodyLower.includes(nameLower)) return true
+    }
+    return false
+  }
   const text = email.subject + ' ' + email.bodyPreview
   if (QUESTION_PATTERNS.some(p => p.test(text))) return true
   // If the user is @mentioned by name in the body, it likely needs their response

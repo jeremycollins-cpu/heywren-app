@@ -36,6 +36,9 @@ interface Commitment {
   metadata: CommitmentMetadata | null
   creator_id: string | null
   assignee_id: string | null
+  category: string | null
+  recurrence: string | null
+  due_date: string | null
   created_at: string
   updated_at: string
 }
@@ -244,10 +247,26 @@ export default function CommitmentsPage() {
       const supabase = createClient()
       const now = new Date().toISOString()
       const ids = Array.from(selectedIds)
-      await supabase.from('commitments').update({ status: 'completed', updated_at: now }).in('id', ids)
+      await supabase.from('commitments').update({ status: 'completed', updated_at: now, completed_at: now }).in('id', ids)
       setCommitments(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: 'completed', updated_at: now } : c))
       toast.success(`${ids.length} commitment${ids.length > 1 ? 's' : ''} marked complete`)
       setSelectedIds(new Set())
+
+      // Auto-create next instances for recurring commitments
+      const recurringIds = commitments.filter(c => ids.includes(c.id) && c.recurrence).map(c => c.id)
+      for (const cId of recurringIds) {
+        try {
+          const res = await fetch('/api/commitments/recur', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commitmentId: cId }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            setCommitments(prev => [...prev, { ...commitments.find(c => c.id === cId)!, id: data.commitment.id, status: 'open', due_date: data.commitment.due_date, created_at: now, updated_at: now }])
+          }
+        } catch { /* non-fatal */ }
+      }
     } catch {
       toast.error('Failed to update commitments')
     } finally {
