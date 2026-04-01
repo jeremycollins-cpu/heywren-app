@@ -210,7 +210,7 @@ export default function MissedEmailsPage() {
       })
       if (res.ok) {
         const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
         toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Snoozed ${threadEmailIds.length} emails` : 'Snoozed until tomorrow')
       }
     } catch {
@@ -229,7 +229,7 @@ export default function MissedEmailsPage() {
       })
       if (res.ok) {
         const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
         toast.success(`Delegated to ${name.trim()}`)
       }
     } catch {

@@ -10,6 +10,7 @@ import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
 import HelpPanel from '@/components/help-panel'
 import FeatureDiscovery from '@/components/feature-discovery'
 import WrenChat from '@/components/wren-chat'
+import { SectionErrorBoundary } from '@/components/ui/error-boundary'
 import TodoPanel from '@/components/todo-panel'
 import { PlanProvider } from '@/lib/contexts/plan-context'
 import { TodoProvider, useTodo } from '@/lib/contexts/todo-context'
@@ -164,7 +165,9 @@ export default function DashboardLayout({
           <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
           <main id="main-content" className="flex-1 overflow-auto">
             <div className="max-w-7xl mx-auto px-6 py-8">
-              {children}
+              <SectionErrorBoundary fallbackTitle="Something went wrong on this page">
+                {children}
+              </SectionErrorBoundary>
             </div>
           </main>
         </div>
