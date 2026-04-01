@@ -26,7 +26,7 @@ export interface UserCommunicationProfile {
   topStakeholders: Array<{ name: string; interactions: number; openCommitments: number }>
   completionRate: number
   avgCompletionDays: number
-  commitmentVolume: { weekly: number; trend: 'increasing' | 'decreasing' | 'stable' }
+  commitmentVolume: { weekly: number; trend: 'increasing' | 'decreasing' | 'stable'; openCount: number }
   commonCommitmentTypes: Record<string, number>
   missedEmailRate: number
   peakActivityHours: number[]
@@ -148,7 +148,7 @@ export function buildCommunicationProfile(
     topStakeholders,
     completionRate,
     avgCompletionDays,
-    commitmentVolume: { weekly: weeklyCount, trend },
+    commitmentVolume: { weekly: weeklyCount, trend, openCount: commitments.filter(c => c.status === 'open' || c.status === 'in_progress').length },
     commonCommitmentTypes,
     missedEmailRate,
     peakActivityHours,
