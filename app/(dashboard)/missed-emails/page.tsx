@@ -157,7 +157,13 @@ export default function MissedEmailsPage() {
     loadEmails()
   }, [])
 
-  async function markReplied(id: string, threadEmailIds?: string[]) {
+  const [actioningIds, setActioningIds] = useState<Set<string>>(new Set())
+
+  async function markReplied(id: string, threadEmailIds?: string[], toastMsg?: string) {
+    if (actioningIds.has(id)) return
+    setActioningIds(prev => new Set(prev).add(id))
+    const idsToRemove = new Set(threadEmailIds || [id])
+    setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
     try {
       const res = await fetch('/api/missed-emails', {
         method: 'PATCH',
@@ -165,16 +171,21 @@ export default function MissedEmailsPage() {
         body: JSON.stringify({ id, status: 'replied', threadEmailIds }),
       })
       if (res.ok) {
-        const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
-        toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Marked ${threadEmailIds.length} emails as replied` : 'Marked as replied')
+        toast.success(toastMsg || (threadEmailIds && threadEmailIds.length > 1 ? `Marked ${threadEmailIds.length} emails as replied` : 'Marked as replied'))
       }
     } catch {
       toast.error('Failed to update')
+      loadEmails()
+    } finally {
+      setActioningIds(prev => { const next = new Set(prev); next.delete(id); return next })
     }
   }
 
   async function dismiss(id: string, threadEmailIds?: string[]) {
+    if (actioningIds.has(id)) return
+    setActioningIds(prev => new Set(prev).add(id))
+    const idsToRemove = new Set(threadEmailIds || [id])
+    setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
     try {
       const res = await fetch('/api/missed-emails', {
         method: 'PATCH',
@@ -182,8 +193,6 @@ export default function MissedEmailsPage() {
         body: JSON.stringify({ id, status: 'dismissed', threadEmailIds }),
       })
       if (res.ok) {
-        const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
         toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Dismissed ${threadEmailIds.length} emails` : 'Dismissed')
       }
     } catch {
@@ -201,7 +210,7 @@ export default function MissedEmailsPage() {
       })
       if (res.ok) {
         const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
         toast.success(threadEmailIds && threadEmailIds.length > 1 ? `Snoozed ${threadEmailIds.length} emails` : 'Snoozed until tomorrow')
       }
     } catch {
@@ -220,7 +229,7 @@ export default function MissedEmailsPage() {
       })
       if (res.ok) {
         const idsToRemove = new Set(threadEmailIds || [id])
-        setEmails(emails.filter(e => !idsToRemove.has(e.id)))
+        setEmails(prev => prev.filter(e => !idsToRemove.has(e.id)))
         toast.success(`Delegated to ${name.trim()}`)
       }
     } catch {
@@ -683,7 +692,7 @@ export default function MissedEmailsPage() {
                               Reply to all ({email.threadCount})
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); markReplied(email.id, email.threadEmailIds); toast.success('Marked as handled offline') }}
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id, email.threadEmailIds, 'Marked as handled offline') }}
                               className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
                             >
                               <Phone aria-hidden="true" className="w-4 h-4" />
@@ -722,7 +731,7 @@ export default function MissedEmailsPage() {
                               Mark as Replied
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); markReplied(email.id) }}
+                              onClick={(e) => { e.stopPropagation(); markReplied(email.id, undefined, 'Marked as handled offline') }}
                               className="flex items-center gap-2 px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-sm font-medium"
                             >
                               <Phone aria-hidden="true" className="w-4 h-4" />
