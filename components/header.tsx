@@ -272,7 +272,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                     <div className="px-4 py-8 text-center">
                       <Bell className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">No notifications yet</p>
-                      <p className="text-xs text-gray-400 mt-1">We'll let you know when something needs your attention</p>
+                      <p className="text-xs text-gray-400 mt-1">We&apos;ll let you know when something needs your attention</p>
                     </div>
                   ) : (
                     notifications.map(n => (
