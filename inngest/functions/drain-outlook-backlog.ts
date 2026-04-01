@@ -5,6 +5,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, calculatePriorityScore, DetectedCommitment } from '@/lib/ai/detect-commitments'
+import { insertCommitmentIfNotDuplicate } from './sync-outlook'
 
 const BATCH_SIZE = 50
 
@@ -107,7 +108,7 @@ export const drainOutlookBacklog = inngest.createFunction(
           async () => {
             const { data: unprocessed } = await supabase
               .from('outlook_messages')
-              .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link')
+              .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link, conversation_id')
               .eq('team_id', user.teamId)
               .or(`user_id.eq.${user.userId},user_id.is.null`)
               .eq('processed', false)
@@ -141,7 +142,7 @@ export const drainOutlookBacklog = inngest.createFunction(
                 preview,
               ].join('\n')
 
-              aiBatch.push({ id: msg.message_id, text: messageText, dbId: msg.id, webLink: msg.web_link || undefined })
+              aiBatch.push({ id: msg.message_id, text: messageText, dbId: msg.id, webLink: msg.web_link || undefined, conversationId: msg.conversation_id || undefined })
             }
 
             // Process AI batch in chunks of 15
@@ -153,24 +154,21 @@ export const drainOutlookBacklog = inngest.createFunction(
 
                 for (const item of chunk) {
                   const detected = batchResults.get(item.id) || []
+                  let inserted = 0
                   for (const commitment of detected) {
-                    const { error: commitErr } = await supabase.from('commitments').insert({
-                      team_id: user.teamId,
-                      creator_id: user.userId,
-                      title: commitment.title || 'Untitled commitment',
-                      description: commitment.description || null,
-                      status: 'open',
-                      priority_score: calculatePriorityScore(commitment),
-                      source: 'outlook',
-                      source_ref: item.dbId,
-                      source_url: item.webLink || null,
-                      metadata: buildCommitmentMetadata(commitment),
+                    const ok = await insertCommitmentIfNotDuplicate(supabase, commitment, {
+                      teamId: user.teamId,
+                      userId: user.userId,
+                      sourceRef: item.dbId,
+                      sourceUrl: item.webLink,
+                      conversationId: item.conversationId,
                     })
-                    if (!commitErr) commitments++
+                    if (ok) inserted++
                   }
+                  commitments += inserted
                   await supabase
                     .from('outlook_messages')
-                    .update({ processed: true, commitments_found: detected.length })
+                    .update({ processed: true, commitments_found: inserted })
                     .eq('id', item.dbId)
                   processed++
                 }

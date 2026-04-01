@@ -2,7 +2,7 @@ import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore, DetectedCommitment } from '@/lib/ai/detect-commitments'
 
-function buildCommitmentMetadata(commitment: DetectedCommitment): Record<string, unknown> {
+export function buildCommitmentMetadata(commitment: DetectedCommitment): Record<string, unknown> {
   const metadata: Record<string, unknown> = {}
   if (commitment.urgency) metadata.urgency = commitment.urgency
   if (commitment.tone) metadata.tone = commitment.tone
@@ -14,6 +14,74 @@ function buildCommitmentMetadata(commitment: DetectedCommitment): Record<string,
 
 const MAX_MESSAGES_PER_RUN = 100
 const TIME_BUDGET_MS = 240000
+
+// Normalize a commitment title for fuzzy dedup comparison
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Check if a similar commitment already exists for this conversation, to avoid
+// extracting the same commitment from every email in a thread.
+export async function insertCommitmentIfNotDuplicate(
+  supabase: ReturnType<typeof getAdminClient>,
+  commitment: DetectedCommitment,
+  params: {
+    teamId: string
+    userId: string
+    sourceRef: string
+    sourceUrl?: string
+    conversationId?: string | null
+  }
+): Promise<boolean> {
+  const title = commitment.title || 'Untitled commitment'
+  const normalized = normalizeTitle(title)
+
+  if (params.conversationId) {
+    // Look up all source_refs from outlook_messages in the same conversation
+    const { data: convMsgs } = await supabase
+      .from('outlook_messages')
+      .select('id')
+      .eq('conversation_id', params.conversationId)
+
+    if (convMsgs && convMsgs.length > 1) {
+      const convMsgIds = convMsgs.map(m => m.id)
+
+      // Check if any existing commitment from this conversation has a similar title
+      const { data: existing } = await supabase
+        .from('commitments')
+        .select('id, title')
+        .eq('team_id', params.teamId)
+        .in('source_ref', convMsgIds)
+
+      if (existing) {
+        for (const e of existing) {
+          if (normalizeTitle(e.title) === normalized) {
+            return false // duplicate — skip
+          }
+        }
+      }
+    }
+  }
+
+  const { error } = await supabase.from('commitments').insert({
+    team_id: params.teamId,
+    creator_id: params.userId,
+    title,
+    description: commitment.description || null,
+    status: 'open',
+    priority_score: calculatePriorityScore(commitment),
+    source: 'outlook',
+    source_ref: params.sourceRef,
+    source_url: params.sourceUrl || null,
+    metadata: buildCommitmentMetadata(commitment),
+  })
+
+  return !error
+}
 
 // Pre-AI filter: skip emails that will never contain commitments
 const SKIP_SENDER_PATTERNS = [
@@ -202,7 +270,7 @@ export async function syncTeamOutlook(
   // Phase 1: Process unprocessed stored messages
   const { data: unprocessed } = await supabase
     .from('outlook_messages')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, web_link, conversation_id')
     .eq('team_id', teamId)
     .or(`user_id.eq.${userId},user_id.is.null`)
     .eq('processed', false)
@@ -232,7 +300,7 @@ export async function syncTeamOutlook(
         preview,
       ].join('\n')
 
-      batch.push({ id: msg.message_id, text: messageText, dbId: msg.id, webLink: msg.web_link || undefined })
+      batch.push({ id: msg.message_id, text: messageText, dbId: msg.id, webLink: msg.web_link || undefined, conversationId: msg.conversation_id || undefined })
     }
 
     for (let i = 0; i < batch.length; i += 15) {
@@ -244,26 +312,23 @@ export async function syncTeamOutlook(
 
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
+          let inserted = 0
           for (const commitment of commitments) {
-            const { error: commitErr } = await supabase.from('commitments').insert({
-              team_id: teamId,
-              creator_id: userId,
-              title: commitment.title || 'Untitled commitment',
-              description: commitment.description || null,
-              status: 'open',
-              priority_score: calculatePriorityScore(commitment),
-              source: 'outlook',
-              source_ref: item.dbId,
-              source_url: item.webLink || null,
-              metadata: buildCommitmentMetadata(commitment),
+            const ok = await insertCommitmentIfNotDuplicate(supabase, commitment, {
+              teamId,
+              userId,
+              sourceRef: item.dbId,
+              sourceUrl: item.webLink,
+              conversationId: item.conversationId,
             })
-            if (!commitErr) totalCommitments++
+            if (ok) inserted++
           }
           await supabase
             .from('outlook_messages')
-            .update({ processed: true, commitments_found: commitments.length })
+            .update({ processed: true, commitments_found: inserted })
             .eq('id', item.dbId)
           totalEmails++
+          totalCommitments += inserted
         }
       } catch (err) {
         console.error('Batch AI error:', (err as Error).message)
@@ -399,7 +464,7 @@ export async function syncTeamOutlook(
         }
 
         totalNewEmails++
-        batch.push({ id: email.id, text: messageText, dbId, webLink: email.webLink || undefined })
+        batch.push({ id: email.id, text: messageText, dbId, webLink: email.webLink || undefined, conversationId: email.conversationId || undefined })
       }
 
       if (batch.length > 0) {
@@ -409,24 +474,21 @@ export async function syncTeamOutlook(
 
           for (const item of batch) {
             const commitments = batchResults.get(item.id) || []
+            let inserted = 0
             for (const commitment of commitments) {
-              const { error: commitErr } = await supabase.from('commitments').insert({
-                team_id: teamId,
-                creator_id: userId,
-                title: commitment.title || 'Untitled commitment',
-                description: commitment.description || null,
-                status: 'open',
-                priority_score: calculatePriorityScore(commitment),
-                source: 'outlook',
-                source_ref: item.dbId,
-                source_url: item.webLink || null,
-                metadata: buildCommitmentMetadata(commitment),
+              const ok = await insertCommitmentIfNotDuplicate(supabase, commitment, {
+                teamId,
+                userId,
+                sourceRef: item.dbId,
+                sourceUrl: item.webLink,
+                conversationId: item.conversationId,
               })
-              if (!commitErr) totalCommitments++
+              if (ok) inserted++
             }
+            totalCommitments += inserted
             await supabase
               .from('outlook_messages')
-              .update({ processed: true, commitments_found: commitments.length })
+              .update({ processed: true, commitments_found: inserted })
               .eq('id', item.dbId)
           }
         } catch (err) {
