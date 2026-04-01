@@ -27,7 +27,8 @@ export async function GET() {
     .single()
 
   if (!membership?.organization_id) {
-    return NextResponse.json({ error: 'No organization found' }, { status: 400 })
+    // User has no organization yet (e.g. onboarding incomplete) — return defaults
+    return NextResponse.json({ preferences: DEFAULTS })
   }
 
   const { data: prefs, error } = await supabase
@@ -73,7 +74,8 @@ export async function PUT(req: Request) {
     .single()
 
   if (!membership?.organization_id) {
-    return NextResponse.json({ error: 'No organization found' }, { status: 400 })
+    // Cannot save preferences without an organization
+    return NextResponse.json({ error: 'Complete onboarding to save preferences' }, { status: 422 })
   }
 
   const body = await req.json()

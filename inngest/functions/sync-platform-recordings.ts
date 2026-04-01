@@ -437,13 +437,16 @@ async function syncTeamsRecordings(
   const startDateTime = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
 
   // List recent calendar events that are online meetings
+  // Note: calendarView does not support $orderby combined with $filter — omit $orderby
+  const endDateTime = new Date().toISOString()
   const eventsRes = await fetch(
-    `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${startDateTime}&endDateTime=${new Date().toISOString()}&$filter=isOnlineMeeting eq true&$select=id,subject,start,end,onlineMeeting&$top=20&$orderby=start/dateTime desc`,
+    `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${startDateTime}&endDateTime=${endDateTime}&$filter=isOnlineMeeting eq true&$select=id,subject,start,end,onlineMeeting&$top=20`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
 
   if (!eventsRes.ok) {
-    throw new Error(`Microsoft Graph API error: ${eventsRes.status}`)
+    const body = await eventsRes.text().catch(() => '')
+    throw new Error(`Microsoft Graph API error: ${eventsRes.status} ${body}`)
   }
 
   const eventsData = await eventsRes.json()

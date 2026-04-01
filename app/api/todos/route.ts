@@ -24,6 +24,7 @@ export async function GET() {
     .select('*')
     .eq('user_id', user.id)
     .order('completed', { ascending: true })
+    .order('starred', { ascending: false })
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { title, source_type, source_id, parent_id } = body
+  const { title, source_type, source_id, parent_id, category, notes, starred } = body
 
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -70,6 +71,9 @@ export async function POST(request: NextRequest) {
       source_type: source_type || 'manual',
       source_id: source_id || null,
       parent_id: parent_id || null,
+      category: category || null,
+      notes: notes || null,
+      starred: starred ?? false,
     })
     .select()
     .single()
@@ -91,7 +95,7 @@ export async function PATCH(request: NextRequest) {
 
   const admin = getAdminClient()
   const body = await request.json()
-  const { id, completed, title } = body
+  const { id, completed, title, category, notes, starred } = body
 
   if (!id) {
     return NextResponse.json({ error: 'Todo ID is required' }, { status: 400 })
@@ -104,6 +108,15 @@ export async function PATCH(request: NextRequest) {
   }
   if (typeof title === 'string' && title.trim().length > 0) {
     updates.title = title.trim()
+  }
+  if (category !== undefined) {
+    updates.category = category || null
+  }
+  if (notes !== undefined) {
+    updates.notes = notes ?? null
+  }
+  if (typeof starred === 'boolean') {
+    updates.starred = starred
   }
 
   const { data: todo, error } = await admin

@@ -4,8 +4,9 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff } from 'lucide-react'
+import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff, ListChecks } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
   const router = useRouter()
+  const { toggleTodoPanel } = useTodo()
   const [user, setUser] = useState<any>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
@@ -156,6 +158,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
           aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {darkMode ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
+        </button>
+
+        {/* To-Dos toggle */}
+        <button
+          onClick={toggleTodoPanel}
+          className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-all duration-200"
+          aria-label="Open To-Dos"
+          title="To-Dos"
+        >
+          <ListChecks className="w-4.5 h-4.5" />
         </button>
 
         {/* User Menu */}

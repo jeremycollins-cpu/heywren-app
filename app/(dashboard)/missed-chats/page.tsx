@@ -72,6 +72,8 @@ export default function MissedChatsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [scanning, setScanning] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkActioning, setBulkActioning] = useState(false)
 
   async function loadChats() {
     try {
@@ -182,6 +184,38 @@ export default function MissedChatsPage() {
       .replace(/<(https?:\/\/[^>]+)>/g, '$1')
   }
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function bulkAction(status: 'replied' | 'dismissed') {
+    if (selectedIds.size === 0) return
+    setBulkActioning(true)
+    const ids = Array.from(selectedIds)
+    try {
+      await Promise.all(ids.map(id =>
+        fetch('/api/missed-chats', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, status }),
+        })
+      ))
+      const idsToRemove = new Set(ids)
+      setChats(prev => prev.filter(c => !idsToRemove.has(c.id)))
+      toast.success(`${ids.length} chat${ids.length > 1 ? 's' : ''} ${status === 'replied' ? 'marked as replied' : 'dismissed'}`)
+      setSelectedIds(new Set())
+    } catch {
+      toast.error('Failed to update')
+    } finally {
+      setBulkActioning(false)
+    }
+  }
+
   const filteredChats = filter === 'all'
     ? chats
     : chats.filter(c => c.urgency === filter)
@@ -269,6 +303,51 @@ export default function MissedChatsPage() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {filteredChats.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg">
+          <input
+            type="checkbox"
+            checked={selectedIds.size === filteredChats.length && filteredChats.length > 0}
+            onChange={() => {
+              if (selectedIds.size === filteredChats.length) {
+                setSelectedIds(new Set())
+              } else {
+                setSelectedIds(new Set(filteredChats.map(c => c.id)))
+              }
+            }}
+            className="w-4 h-4 rounded cursor-pointer accent-indigo-600"
+          />
+          {selectedIds.size > 0 ? (
+            <>
+              <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                {selectedIds.size} selected
+              </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() => bulkAction('replied')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Mark as Replied
+                </button>
+                <button
+                  onClick={() => bulkAction('dismissed')}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Dismiss
+                </button>
+              </div>
+            </>
+          ) : (
+            <span className="text-sm text-gray-500 dark:text-gray-400">Select chats for bulk actions</span>
+          )}
+        </div>
+      )}
+
       {/* Chat List */}
       <div className="space-y-3">
         {filteredChats.length === 0 ? (
@@ -313,6 +392,13 @@ export default function MissedChatsPage() {
                   }}
                 >
                   <div className="flex items-start justify-between gap-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(chat.id)}
+                      onChange={() => toggleSelect(chat.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded cursor-pointer accent-indigo-600 mt-1 flex-shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       {/* Badges */}
                       <div className="flex items-center gap-2 mb-2 flex-wrap">

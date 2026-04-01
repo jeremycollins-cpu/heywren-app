@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { AlertTriangle, ArrowRight, X, ListChecks } from 'lucide-react'
+import { AlertTriangle, ArrowRight, X } from 'lucide-react'
 import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
 import Walkthrough, { useWalkthroughAutoStart } from '@/components/walkthrough'
@@ -55,22 +55,8 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
 }
 
 function TodoPanelConnector() {
-  const { todoPanelOpen, closeTodoPanel, toggleTodoPanel } = useTodo()
-  return (
-    <>
-      <TodoPanel open={todoPanelOpen} onClose={closeTodoPanel} />
-      {/* Floating To-Do button */}
-      {!todoPanelOpen && (
-        <button
-          onClick={toggleTodoPanel}
-          className="fixed bottom-6 right-6 z-30 w-12 h-12 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center"
-          title="Open To-Dos"
-        >
-          <ListChecks className="w-5 h-5" />
-        </button>
-      )}
-    </>
-  )
+  const { todoPanelOpen, closeTodoPanel } = useTodo()
+  return <TodoPanel open={todoPanelOpen} onClose={closeTodoPanel} />
 }
 
 export default function DashboardLayout({
