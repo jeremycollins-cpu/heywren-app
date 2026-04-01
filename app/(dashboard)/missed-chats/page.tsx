@@ -129,7 +129,7 @@ export default function MissedChatsPage() {
         body: JSON.stringify({ id, status: 'dismissed' }),
       })
       if (res.ok) {
-        setChats(chats.filter(c => c.id !== id))
+        setChats(prev => prev.filter(c => c.id !== id))
         toast.success('Dismissed')
       }
     } catch {
@@ -146,7 +146,7 @@ export default function MissedChatsPage() {
         body: JSON.stringify({ id, status: 'snoozed', snoozed_until: tomorrow }),
       })
       if (res.ok) {
-        setChats(chats.filter(c => c.id !== id))
+        setChats(prev => prev.filter(c => c.id !== id))
         toast.success('Snoozed until tomorrow')
       }
     } catch {
