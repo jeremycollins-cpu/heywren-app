@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+
 import toast from 'react-hot-toast'
 import { Check } from 'lucide-react'
 import { getStripe } from '@/lib/stripe/client'
@@ -171,12 +171,6 @@ export default function PlanPage() {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="text-center space-y-4">
-        <p className="text-gray-600">
-          Can&apos;t decide? <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">Start for free</Link>
-        </p>
       </div>
     </div>
   )
