@@ -304,6 +304,7 @@ export const processSlackMention = inngest.createFunction(
               source: 'slack', // matches commitment_source enum
               source_ref: messageRecord?.id || ts, // NOT 'source_message_id'
               source_url: slackPermalink,
+              category: commitment.commitmentType || null,
               metadata,
             })
             .select('id, title')

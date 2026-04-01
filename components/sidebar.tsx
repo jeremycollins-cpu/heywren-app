@@ -40,6 +40,14 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const { plan } = usePlan()
   const supabase = createClient()
 
+  // Auto-close sidebar on mobile when route changes
+  useEffect(() => {
+    if (open && typeof window !== 'undefined' && window.innerWidth < 1024) {
+      onToggle()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
+
   // Collapsed = icon-only mode (persisted in localStorage)
   const [collapsed, setCollapsed] = useState(false)
   useEffect(() => {
