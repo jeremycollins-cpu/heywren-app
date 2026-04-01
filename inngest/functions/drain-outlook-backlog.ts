@@ -120,7 +120,7 @@ export const drainOutlookBacklog = inngest.createFunction(
             let commitments = 0
 
             // Separate short messages (skip) from ones that need AI
-            const aiBatch: Array<{ id: string; text: string; dbId: string; webLink?: string }> = []
+            const aiBatch: Array<{ id: string; text: string; dbId: string; webLink?: string; conversationId?: string }> = []
 
             for (const msg of unprocessed) {
               const preview = msg.body_preview || ''

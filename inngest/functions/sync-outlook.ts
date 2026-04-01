@@ -277,7 +277,7 @@ export async function syncTeamOutlook(
     .limit(MAX_MESSAGES_PER_RUN)
 
   if (unprocessed && unprocessed.length > 0) {
-    const batch: Array<{ id: string; text: string; dbId: string; webLink?: string }> = []
+    const batch: Array<{ id: string; text: string; dbId: string; webLink?: string; conversationId?: string }> = []
 
     for (const msg of unprocessed) {
       const preview = msg.body_preview || ''
@@ -402,7 +402,7 @@ export async function syncTeamOutlook(
       if (pageData.error) break
 
       const emails = pageData.value || []
-      const batch: Array<{ id: string; text: string; dbId: string; webLink?: string }> = []
+      const batch: Array<{ id: string; text: string; dbId: string; webLink?: string; conversationId?: string }> = []
 
       for (const email of emails) {
         totalEmails++
