@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown, CheckCircle2 } from 'lucide-react'
+import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown, CheckCircle2, Phone } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface WaitingItem {
@@ -415,6 +415,14 @@ export default function WaitingRoomPage() {
                   Already Replied
                 </button>
                 <button
+                  onClick={() => { bulkAction('replied'); toast.success('Marked as handled offline') }}
+                  disabled={bulkActioning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  Handled Offline
+                </button>
+                <button
                   onClick={() => bulkAction('dismissed')}
                   disabled={bulkActioning}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
@@ -562,6 +570,16 @@ export default function WaitingRoomPage() {
                     className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
                   >
                     Already replied
+                  </button>
+                  <button
+                    onClick={() => {
+                      for (const gi of group.items) updateStatus(gi.id, 'replied')
+                      toast.success('Marked as handled offline')
+                    }}
+                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    Handled Offline
                   </button>
                   {item.permalink && (
                     <a
