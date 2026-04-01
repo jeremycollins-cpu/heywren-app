@@ -175,14 +175,15 @@ async function scanTeamMissedEmails(
 
   const scanWindowDays = prefsRow?.scan_window_days || 7
 
-  // Fetch the user's email address so we can filter out emails they sent
+  // Fetch the user's email and name so we can filter out sent emails and pass to classifier
   const { data: profile } = await supabase
     .from('profiles')
-    .select('email')
+    .select('email, full_name')
     .eq('id', userId)
     .single()
 
   const userEmail = profile?.email?.toLowerCase() || ''
+  const userName = profile?.full_name || ''
 
   // Fetch conversation IDs from the user's sent items to detect replies
   const repliedConversations = await fetchRepliedConversationIds(supabase, userId, scanWindowDays)
@@ -287,6 +288,8 @@ async function scanTeamMissedEmails(
       subject: email.subject || '(no subject)',
       bodyPreview: email.body_preview || '',
       receivedAt: email.received_at,
+      recipientEmail: userEmail,
+      recipientName: userName,
     }))
 
     try {

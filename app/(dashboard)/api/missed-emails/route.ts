@@ -198,6 +198,7 @@ export async function POST() {
 
   // Fetch recent emails — scoped to emails relevant to this user
   const userEmail = user.email?.toLowerCase() || ''
+  const userName = user.user_metadata?.full_name || ''
   let { data: emails, error: fetchErr } = await adminDb
     .from('outlook_messages')
     .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at')
@@ -285,6 +286,8 @@ export async function POST() {
       subject: email.subject || '(no subject)',
       bodyPreview: email.body_preview || '',
       receivedAt: email.received_at,
+      recipientEmail: userEmail,
+      recipientName: userName,
     }))
 
     try {

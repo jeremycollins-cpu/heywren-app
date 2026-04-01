@@ -93,6 +93,8 @@ export interface EmailInput {
   subject: string
   bodyPreview: string
   receivedAt: string
+  recipientEmail?: string  // The user's email — helps detect when they're directly addressed
+  recipientName?: string   // The user's name — helps detect @mentions
 }
 
 // ============================================================
@@ -147,7 +149,14 @@ function isLikelyAutomated(email: EmailInput): boolean {
 
 function likelyNeedsResponse(email: EmailInput): boolean {
   const text = email.subject + ' ' + email.bodyPreview
-  return QUESTION_PATTERNS.some(p => p.test(text))
+  if (QUESTION_PATTERNS.some(p => p.test(text))) return true
+  // If the user is @mentioned by name in the body, it likely needs their response
+  if (email.recipientName && email.recipientName.length > 2) {
+    const nameLower = email.recipientName.toLowerCase()
+    const bodyLower = email.bodyPreview.toLowerCase()
+    if (bodyLower.includes(`@${nameLower}`) || bodyLower.includes(nameLower)) return true
+  }
+  return false
 }
 
 // ============================================================
@@ -228,6 +237,7 @@ Urgency:
 - low: Nice-to-respond; introductions; optional
 
 IMPLICIT SIGNALS (upgrade even without deadline words):
+- Recipient is @mentioned by name in a group email -> critical/high (directly addressed)
 - Meeting scheduling -> high+ (need reply to book)
 - "Let me know" / "convenient time" -> high (waiting)
 - Vendor follow-ups -> high (business relationship)
@@ -236,6 +246,7 @@ IMPLICIT SIGNALS (upgrade even without deadline words):
 - Multiple questions -> boost urgency
 - "This week" / "earliest convenience" -> high
 - Direct personalized emails -> medium minimum
+- Multi-recipient email but question is directed at the Recipient specifically -> high+
 
 expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" -> this_week; open-ended -> no_rush
 
@@ -246,12 +257,15 @@ needsResponse=false for: sales/marketing, automated notifications, newsletters, 
 // ============================================================
 async function haikuTriage(email: EmailInput): Promise<boolean> {
   try {
-    const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\n\n${email.bodyPreview}`
+    const recipientCtx = email.recipientName || email.recipientEmail
+      ? `\nRecipient (you are classifying for): ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
+      : ''
+    const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}${recipientCtx}\n\n${email.bodyPreview}`
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? Ignore sales, automated, newsletters, mass emails.',
+      system: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Ignore sales, automated, newsletters, mass emails.',
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],
@@ -276,7 +290,10 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
     (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
   )
 
-  const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)\n\n${email.bodyPreview}`
+  const recipientCtx = email.recipientName || email.recipientEmail
+    ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
+    : ''
+  const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
 
   const communityBlock = communityPatterns && communityPatterns.length > 0
     ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
@@ -528,7 +545,10 @@ export async function classifyMissedEmailBatch(
       const daysSince = Math.floor(
         (Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24)
       )
-      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)\n\n${email.bodyPreview}`
+      const recipientCtx = email.recipientName || email.recipientEmail
+        ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
+        : ''
+      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
     })
     .join('\n\n---\n\n')
 
