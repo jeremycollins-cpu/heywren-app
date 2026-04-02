@@ -13,7 +13,7 @@ import {
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
-  SlidersHorizontal, Star, GitBranch, TrendingUp,
+  SlidersHorizontal, Star, TrendingUp,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -228,7 +228,6 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings', badge: 0, badgeColor: '' },
         { href: '/meetings', label: 'Meetings', icon: Mic, tourId: 'nav-meetings', badge: 0, badgeColor: '' },
         { href: '/wren-score', label: 'Wren Score', icon: Star, tourId: 'nav-wren-score', badge: 0, badgeColor: '' },
-        { href: '/dependencies', label: 'Dependencies', icon: GitBranch, tourId: 'nav-dependencies', badge: 0, badgeColor: '' },
         { href: '/insights', label: 'Insights', icon: TrendingUp, tourId: 'nav-insights', badge: 0, badgeColor: '' },
         { href: '/achievements', label: 'Achievements', icon: Trophy, tourId: 'nav-achievements', badge: 0, badgeColor: '' },
       ],

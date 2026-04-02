@@ -6,7 +6,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
@@ -23,6 +23,7 @@ interface CommitmentMetadata {
   stakeholders?: CommitmentStakeholder[]
   originalQuote?: string
   channelName?: string
+  direction?: 'inbound' | 'outbound'
 }
 
 interface Commitment {
@@ -114,6 +115,7 @@ function getToneLabel(tone?: string): string | null {
 type FilterSource = 'all' | 'slack' | 'outlook' | 'recording' | 'manual'
 type FilterUrgency = 'all' | 'critical' | 'high' | 'medium' | 'low'
 type FilterHealth = 'all' | 'at_risk' | 'stalled' | 'active'
+type FilterDirection = 'all' | 'inbound' | 'outbound'
 type SortBy = 'newest' | 'oldest' | 'score' | 'urgency'
 
 export default function CommitmentsPage() {
@@ -128,6 +130,7 @@ export default function CommitmentsPage() {
   const [filterSource, setFilterSource] = useState<FilterSource>('all')
   const [filterUrgency, setFilterUrgency] = useState<FilterUrgency>('all')
   const [filterHealth, setFilterHealth] = useState<FilterHealth>('all')
+  const [filterDirection, setFilterDirection] = useState<FilterDirection>('all')
   const [sortBy, setSortBy] = useState<SortBy>('newest')
   const [showFilters, setShowFilters] = useState(false)
 
@@ -385,6 +388,16 @@ export default function CommitmentsPage() {
       })
     }
 
+    // Direction filter
+    if (filterDirection !== 'all') {
+      result = result.filter(c => {
+        const dir = (c.metadata as CommitmentMetadata | null)?.direction
+        if (filterDirection === 'inbound') return dir === 'inbound'
+        if (filterDirection === 'outbound') return dir === 'outbound'
+        return true
+      })
+    }
+
     // Sort
     switch (sortBy) {
       case 'oldest':
@@ -417,10 +430,10 @@ export default function CommitmentsPage() {
 
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitments, activeTab, searchQuery, filterSource, filterUrgency, filterHealth, sortBy])
+  }, [commitments, activeTab, searchQuery, filterSource, filterUrgency, filterHealth, filterDirection, sortBy])
 
-  const hasActiveFilters = filterSource !== 'all' || filterUrgency !== 'all' || filterHealth !== 'all' || searchQuery.trim() !== ''
-  const activeFilterCount = [filterSource !== 'all', filterUrgency !== 'all', filterHealth !== 'all'].filter(Boolean).length
+  const hasActiveFilters = filterSource !== 'all' || filterUrgency !== 'all' || filterHealth !== 'all' || filterDirection !== 'all' || searchQuery.trim() !== ''
+  const activeFilterCount = [filterSource !== 'all', filterUrgency !== 'all', filterHealth !== 'all', filterDirection !== 'all'].filter(Boolean).length
 
   const selectAll = () => {
     if (selectedIds.size === filteredAndSorted.length) {
@@ -643,11 +656,32 @@ export default function CommitmentsPage() {
                 </button>
               ))}
             </div>
+            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Direction</span>
+              {([
+                { key: 'all' as FilterDirection, label: 'All' },
+                { key: 'inbound' as FilterDirection, label: 'Waiting on you' },
+                { key: 'outbound' as FilterDirection, label: "You're waiting" },
+              ]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setFilterDirection(key)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-full transition ${
+                    filterDirection === key
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {hasActiveFilters && (
               <>
                 <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
                 <button
-                  onClick={() => { setFilterSource('all'); setFilterUrgency('all'); setFilterHealth('all'); setSearchQuery('') }}
+                  onClick={() => { setFilterSource('all'); setFilterUrgency('all'); setFilterHealth('all'); setFilterDirection('all'); setSearchQuery('') }}
                   className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline"
                 >
                   Clear all
@@ -751,7 +785,7 @@ export default function CommitmentsPage() {
           </p>
           {hasActiveFilters && (
             <button
-              onClick={() => { setFilterSource('all'); setFilterUrgency('all'); setFilterHealth('all'); setSearchQuery('') }}
+              onClick={() => { setFilterSource('all'); setFilterUrgency('all'); setFilterHealth('all'); setFilterDirection('all'); setSearchQuery('') }}
               className="mt-4 px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
             >
               Clear all filters
@@ -904,6 +938,19 @@ export default function CommitmentsPage() {
                   <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium ${sourceBadge.color}`}>
                     {sourceBadge.label}
                   </span>
+                  {meta.direction && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium ${
+                      meta.direction === 'inbound'
+                        ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
+                        : 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
+                    }`}>
+                      {meta.direction === 'inbound' ? (
+                        <><ArrowDownLeft className="w-3 h-3" /> Waiting on you</>
+                      ) : (
+                        <><ArrowUpRight className="w-3 h-3" /> You&apos;re waiting</>
+                      )}
+                    </span>
+                  )}
                   <span className="text-[10px] sm:text-xs text-gray-400">{age}d ago</span>
                 </div>
 
