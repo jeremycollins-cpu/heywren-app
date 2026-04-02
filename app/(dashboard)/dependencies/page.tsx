@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock, ExternalLink,
-  AlertTriangle, Users, Link2,
+  AlertTriangle, Link2,
 } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import toast from 'react-hot-toast'
@@ -69,7 +69,7 @@ function getAgingStatus(c: Commitment): { color: string; pulse: boolean; label: 
   return { color: 'bg-green-500', pulse: false, label: 'On track' }
 }
 
-function getPersonName(c: Commitment, userId: string, isOutbound: boolean): string {
+function getPersonName(c: Commitment, isOutbound: boolean): string | null {
   const stakeholders = c.metadata?.stakeholders
   if (stakeholders && stakeholders.length > 0) {
     if (isOutbound) {
@@ -81,14 +81,14 @@ function getPersonName(c: Commitment, userId: string, isOutbound: boolean): stri
     }
     return stakeholders[0].name
   }
-  return 'Unknown'
+  return null
 }
 
-function groupByPerson(commitments: Commitment[], userId: string, isOutbound: boolean): PersonGroup[] {
+function groupByPerson(commitments: Commitment[], isOutbound: boolean): PersonGroup[] {
   const map = new Map<string, Commitment[]>()
 
   commitments.forEach(c => {
-    const name = getPersonName(c, userId, isOutbound)
+    const name = getPersonName(c, isOutbound) || c.title
     if (!map.has(name)) map.set(name, [])
     map.get(name)!.push(c)
   })
@@ -102,7 +102,6 @@ function groupByPerson(commitments: Commitment[], userId: string, isOutbound: bo
     return { name, commitments: items, overdueCount, urgency }
   })
 
-  // Sort: overdue first, then by count
   groups.sort((a, b) => {
     const urgencyOrder = { overdue: 0, due_soon: 1, on_track: 2 }
     if (urgencyOrder[a.urgency] !== urgencyOrder[b.urgency]) return urgencyOrder[a.urgency] - urgencyOrder[b.urgency]
@@ -116,6 +115,49 @@ function urgencyBorderColor(urgency: string): string {
   if (urgency === 'overdue') return 'border-l-red-500'
   if (urgency === 'due_soon') return 'border-l-amber-500'
   return 'border-l-green-500'
+}
+
+function CommitmentRow({ c, onComplete, showCompleteButton }: { c: Commitment; onComplete: (id: string) => void; showCompleteButton: boolean }) {
+  const aging = getAgingStatus(c)
+  return (
+    <li className="px-4 py-3 flex items-start gap-3">
+      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${aging.color} ${aging.pulse ? 'animate-pulse' : ''}`} title={aging.label} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{c.title}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          {c.due_date
+            ? `Due ${new Date(c.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+            : timeAgo(c.created_at)}
+          {c.source && <span className="ml-2 text-gray-300 dark:text-gray-600">&middot;</span>}
+          {c.source && <span className="ml-2 capitalize">{c.source}</span>}
+        </p>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {showCompleteButton && (
+          <button
+            onClick={() => onComplete(c.id)}
+            className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-gray-400 hover:text-green-600 transition"
+            aria-label="Mark complete"
+            title="Mark complete"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+          </button>
+        )}
+        {c.source_url && (
+          <a
+            href={c.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-400 hover:text-indigo-600 transition"
+            aria-label="View source"
+            title="View source"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        )}
+      </div>
+    </li>
+  )
 }
 
 export default function DependenciesPage() {
@@ -163,7 +205,6 @@ export default function DependenciesPage() {
   }, [])
 
   const handleComplete = async (id: string) => {
-    // Optimistic update
     setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: 'completed', completed_at: new Date().toISOString() } : c))
 
     const supabase = createClient()
@@ -194,20 +235,30 @@ export default function DependenciesPage() {
     return c.assignee_id === userId && c.creator_id !== userId
   })
 
-  const outboundGroups = groupByPerson(outbound, userId, true)
-  const inboundGroups = groupByPerson(inbound, userId, false)
+  // Check if we have real stakeholder data to group by
+  const hasStakeholderData = commitments.some(c => c.metadata?.stakeholders && c.metadata.stakeholders.length > 0)
 
-  const outboundPeople = outboundGroups.length
-  const inboundPeople = inboundGroups.length
+  const outboundGroups = hasStakeholderData ? groupByPerson(outbound, true) : []
+  const inboundGroups = hasStakeholderData ? groupByPerson(inbound, false) : []
+
   const totalOverdue = commitments.filter(c => c.status === 'overdue' || (c.due_date && daysUntil(c.due_date) < 0)).length
   const onTrack = commitments.length > 0
     ? Math.round(((commitments.length - totalOverdue) / commitments.length) * 100)
     : 100
 
-  // Detect cross-panel people (dependency chains)
+  // Detect cross-panel people (dependency chains) — only when grouped
   const outboundNames = new Set(outboundGroups.map(g => g.name))
   const inboundNames = new Set(inboundGroups.map(g => g.name))
-  const chainedPeople = new Set([...outboundNames].filter(n => inboundNames.has(n)))
+  const chainedPeople = new Set([...outboundNames].filter(n => inboundNames.has(n) && n !== 'Unknown'))
+
+  // Sort flat lists by urgency
+  const sortByUrgency = (items: Commitment[]) => {
+    return [...items].sort((a, b) => {
+      const aUrgency = a.status === 'overdue' ? 0 : (a.due_date && daysUntil(a.due_date) <= 2) ? 1 : 2
+      const bUrgency = b.status === 'overdue' ? 0 : (b.due_date && daysUntil(b.due_date) <= 2) ? 1 : 2
+      return aUrgency - bUrgency
+    })
+  }
 
   return (
     <UpgradeGate featureKey="dependencies">
@@ -230,14 +281,14 @@ export default function DependenciesPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-4">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Waiting on You</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{outboundPeople} <span className="text-sm font-normal text-gray-400">people</span></p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{outbound.length} <span className="text-sm font-normal text-gray-400">items</span></p>
           </div>
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-4">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">You&apos;re Waiting On</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{inboundPeople} <span className="text-sm font-normal text-gray-400">people</span></p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{inbound.length} <span className="text-sm font-normal text-gray-400">items</span></p>
           </div>
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-4">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Overdue Items</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Overdue</p>
             <p className={`text-2xl font-bold ${totalOverdue > 0 ? 'text-red-600' : 'text-green-600'}`}>{totalOverdue}</p>
           </div>
           <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-4">
@@ -258,12 +309,12 @@ export default function DependenciesPage() {
               </span>
             </div>
 
-            {outboundGroups.length === 0 ? (
+            {outbound.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl">
                 <CheckCircle2 className="w-8 h-8 text-green-400 mb-3" />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No one is waiting on you. You&apos;re all clear!</p>
               </div>
-            ) : (
+            ) : hasStakeholderData ? (
               <div className="space-y-3">
                 {outboundGroups.map(group => (
                   <div
@@ -280,47 +331,20 @@ export default function DependenciesPage() {
                       </span>
                     </div>
                     <ul className="divide-y divide-gray-50 dark:divide-gray-800">
-                      {group.commitments.map(c => {
-                        const aging = getAgingStatus(c)
-                        return (
-                          <li key={c.id} className="px-4 py-3 flex items-start gap-3">
-                            <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${aging.color} ${aging.pulse ? 'animate-pulse' : ''}`} title={aging.label} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{c.title}</p>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                                {c.due_date
-                                  ? `Due ${new Date(c.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                                  : timeAgo(c.created_at)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <button
-                                onClick={() => handleComplete(c.id)}
-                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-gray-400 hover:text-green-600 transition"
-                                aria-label="Mark complete"
-                                title="Mark complete"
-                              >
-                                <CheckCircle2 className="w-4 h-4" />
-                              </button>
-                              {c.source_url && (
-                                <a
-                                  href={c.source_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-400 hover:text-indigo-600 transition"
-                                  aria-label="View source"
-                                  title="View source"
-                                >
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
-                              )}
-                            </div>
-                          </li>
-                        )
-                      })}
+                      {group.commitments.map(c => (
+                        <CommitmentRow key={c.id} c={c} onComplete={handleComplete} showCompleteButton={true} />
+                      ))}
                     </ul>
                   </div>
                 ))}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl overflow-hidden">
+                <ul className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {sortByUrgency(outbound).map(c => (
+                    <CommitmentRow key={c.id} c={c} onComplete={handleComplete} showCompleteButton={true} />
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -335,12 +359,12 @@ export default function DependenciesPage() {
               </span>
             </div>
 
-            {inboundGroups.length === 0 ? (
+            {inbound.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl">
                 <CheckCircle2 className="w-8 h-8 text-green-400 mb-3" />
                 <p className="text-sm text-gray-500 dark:text-gray-400">You&apos;re not waiting on anyone right now.</p>
               </div>
-            ) : (
+            ) : hasStakeholderData ? (
               <div className="space-y-3">
                 {inboundGroups.map(group => (
                   <div
@@ -357,43 +381,26 @@ export default function DependenciesPage() {
                       </span>
                     </div>
                     <ul className="divide-y divide-gray-50 dark:divide-gray-800">
-                      {group.commitments.map(c => {
-                        const aging = getAgingStatus(c)
-                        return (
-                          <li key={c.id} className="px-4 py-3 flex items-start gap-3">
-                            <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${aging.color} ${aging.pulse ? 'animate-pulse' : ''}`} title={aging.label} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{c.title}</p>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                                {c.due_date
-                                  ? `Due ${new Date(c.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                                  : timeAgo(c.created_at)}
-                              </p>
-                            </div>
-                            {c.source_url && (
-                              <a
-                                href={c.source_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-400 hover:text-indigo-600 transition flex-shrink-0"
-                                aria-label="View source"
-                                title="View source"
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            )}
-                          </li>
-                        )
-                      })}
+                      {group.commitments.map(c => (
+                        <CommitmentRow key={c.id} c={c} onComplete={handleComplete} showCompleteButton={false} />
+                      ))}
                     </ul>
                   </div>
                 ))}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl overflow-hidden">
+                <ul className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {sortByUrgency(inbound).map(c => (
+                    <CommitmentRow key={c.id} c={c} onComplete={handleComplete} showCompleteButton={false} />
+                  ))}
+                </ul>
               </div>
             )}
           </div>
         </div>
 
-        {/* Chain callout */}
+        {/* Chain callout — only when grouped by person */}
         {chainedPeople.size > 0 && (
           <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 flex items-start gap-3">
             <Link2 aria-hidden="true" className="w-5 h-5 text-indigo-500 mt-0.5 flex-shrink-0" />
