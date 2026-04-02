@@ -123,9 +123,20 @@ export async function GET() {
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
 
+  // Get the most recent classification timestamp to show when data was last refreshed
+  const { data: latestRecord } = await supabase
+    .from('missed_emails')
+    .select('created_at')
+    .eq('team_id', profile.current_team_id)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return NextResponse.json({
     missedEmails: threadGroups,
     totalEvaluated: totalEvaluated || 0,
+    lastRefreshedAt: latestRecord?.created_at || null,
   })
 }
 

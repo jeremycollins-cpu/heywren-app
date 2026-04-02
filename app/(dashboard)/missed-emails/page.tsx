@@ -86,6 +86,7 @@ const categoryLabels: Record<string, string> = {
 export default function MissedEmailsPage() {
   const [emails, setEmails] = useState<MissedEmail[]>([])
   const [totalEvaluated, setTotalEvaluated] = useState<number>(0)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -149,6 +150,7 @@ export default function MissedEmailsPage() {
         }))
         setEmails(enriched)
         if (data.totalEvaluated !== undefined) setTotalEvaluated(data.totalEvaluated)
+        if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load missed emails'
@@ -361,12 +363,20 @@ export default function MissedEmailsPage() {
 
       {/* Evaluation context */}
       {totalEvaluated > 0 && (
-        <div className="flex items-center gap-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg px-4 py-2.5">
-          <Mail aria-hidden="true" className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            <span className="font-semibold text-gray-900 dark:text-white">{emails.length}</span> missed of{' '}
-            <span className="font-semibold text-gray-900 dark:text-white">{totalEvaluated.toLocaleString()}</span> emails evaluated
-          </p>
+        <div className="flex items-center justify-between gap-3 bg-gray-50 dark:bg-surface-dark border border-gray-200 dark:border-border-dark rounded-lg px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <Mail aria-hidden="true" className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              <span className="font-semibold text-gray-900 dark:text-white">{emails.length}</span> missed of{' '}
+              <span className="font-semibold text-gray-900 dark:text-white">{totalEvaluated.toLocaleString()}</span> emails evaluated
+            </p>
+          </div>
+          {lastRefreshedAt && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
+              Last scanned {new Date(lastRefreshedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at{' '}
+              {new Date(lastRefreshedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+            </p>
+          )}
         </div>
       )}
 
@@ -524,6 +534,12 @@ export default function MissedEmailsPage() {
                 : 'No emails are waiting for your response. HeyWren scans daily to make sure nothing slips through.'
               }
             </p>
+            {lastRefreshedAt && filter === 'all' && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
+                Last scanned {new Date(lastRefreshedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at{' '}
+                {new Date(lastRefreshedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+              </p>
+            )}
           </div>
         ) : (
           filteredEmails.map((email) => {
