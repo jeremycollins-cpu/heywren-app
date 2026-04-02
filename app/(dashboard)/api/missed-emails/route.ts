@@ -34,7 +34,7 @@ export async function GET() {
   // Fetch pending and snoozed missed emails — scoped to THIS user only
   const { data: missedEmails, error } = await supabase
     .from('missed_emails')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, urgency, reason, question_summary, category, confidence, expected_response_time, status, is_read, folder_name')
+    .select('*')
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
