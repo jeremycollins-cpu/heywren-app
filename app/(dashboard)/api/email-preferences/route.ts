@@ -42,6 +42,8 @@ export async function GET() {
         enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction'],
         auto_dismiss_days: 0,
         include_in_digest: true,
+        priority_folders: [],
+        excluded_folders: [],
       },
     })
   }
@@ -76,6 +78,8 @@ export async function PUT(req: Request) {
     enabled_categories,
     auto_dismiss_days,
     include_in_digest,
+    priority_folders,
+    excluded_folders,
   } = body
 
   const { error } = await supabase
@@ -90,6 +94,8 @@ export async function PUT(req: Request) {
       enabled_categories: enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
       auto_dismiss_days: auto_dismiss_days || 0,
       include_in_digest: include_in_digest ?? true,
+      priority_folders: priority_folders || [],
+      excluded_folders: excluded_folders || [],
     }, { onConflict: 'team_id,user_id' })
 
   if (error) {

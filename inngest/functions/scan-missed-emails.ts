@@ -297,9 +297,17 @@ async function scanTeamMissedEmails(
   // Fetch recent outlook_messages that haven't been classified for missed emails yet
   const scanWindowAgo = new Date(Date.now() - scanWindowDays * 24 * 60 * 60 * 1000).toISOString()
 
+  // Load excluded folders from preferences
+  const excludedFolders = new Set<string>(
+    (prefsRow?.excluded_folders || []).map((f: string) => f.toLowerCase())
+  )
+  const priorityFolders = new Set<string>(
+    (prefsRow?.priority_folders || []).map((f: string) => f.toLowerCase())
+  )
+
   const { data: emails, error: fetchErr } = await supabase
     .from('outlook_messages')
-    .select('id, message_id, from_name, from_email, to_recipients, cc_recipients, subject, body_preview, received_at, conversation_id')
+    .select('id, message_id, from_name, from_email, to_recipients, cc_recipients, subject, body_preview, received_at, conversation_id, is_read, folder_name')
     .eq('team_id', teamId)
     .or(`user_id.eq.${userId},user_id.is.null`)
     .gte('received_at', scanWindowAgo)
@@ -324,6 +332,8 @@ async function scanTeamMissedEmails(
     if (userEmail && e.from_email?.toLowerCase() === userEmail) return false
     // Exclude emails in conversations the user has already replied to
     if (e.conversation_id && repliedConversations.has(e.conversation_id)) return false
+    // Exclude emails from user-excluded folders
+    if (e.folder_name && excludedFolders.has(e.folder_name.toLowerCase())) return false
     return true
   })
 
@@ -384,6 +394,8 @@ async function scanTeamMissedEmails(
             confidence: classification.confidence,
             expected_response_time: classification.expectedResponseTime || null,
             status: 'pending',
+            is_read: email.is_read ?? true,
+            folder_name: email.folder_name || null,
           })
         }
       }

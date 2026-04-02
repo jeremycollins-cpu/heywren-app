@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
-  Trophy
+  Trophy, Folder, RefreshCw, Check
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -37,6 +37,8 @@ export default function SettingsPage() {
     enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction'] as string[],
     auto_dismiss_days: 0,
     include_in_digest: true,
+    priority_folders: [] as string[],
+    excluded_folders: [] as string[],
   })
   const [emailPrefsLoading, setEmailPrefsLoading] = useState(true)
   const [savingEmailPrefs, setSavingEmailPrefs] = useState(false)
@@ -47,6 +49,11 @@ export default function SettingsPage() {
   const [newBlockedEntry, setNewBlockedEntry] = useState('')
   const [showAddVip, setShowAddVip] = useState(false)
   const [showAddBlocked, setShowAddBlocked] = useState(false)
+  const [newPriorityFolder, setNewPriorityFolder] = useState('')
+  const [newExcludedFolder, setNewExcludedFolder] = useState('')
+  const [outlookFolders, setOutlookFolders] = useState<Array<{ id: string; name: string; totalCount: number; unreadCount: number }>>([])
+  const [foldersLoading, setFoldersLoading] = useState(false)
+  const [foldersLoaded, setFoldersLoaded] = useState(false)
   // Gamification notification preferences
   const [gamificationPrefs, setGamificationPrefs] = useState({
     achievement_notifications: true,
@@ -119,6 +126,21 @@ export default function SettingsPage() {
     }
     fetchDomains()
   }, [])
+
+  const loadOutlookFolders = async () => {
+    setFoldersLoading(true)
+    try {
+      const res = await fetch('/api/outlook-folders')
+      const data = await res.json()
+      if (data.folders) {
+        setOutlookFolders(data.folders)
+        setFoldersLoaded(true)
+      }
+    } catch {
+      toast.error('Failed to load email folders')
+    }
+    setFoldersLoading(false)
+  }
 
   const saveEmailPrefs = async () => {
     setSavingEmailPrefs(true)
@@ -869,6 +891,193 @@ export default function SettingsPage() {
                   <Plus aria-hidden="true" className="w-4 h-4" />
                   Block a sender or domain
                 </button>
+              )}
+            </div>
+
+            {/* Folder Configuration */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Email Folder Rules</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Choose which folders to prioritize or exclude from missed email scanning. These are your personal settings.</p>
+                </div>
+                <button
+                  onClick={loadOutlookFolders}
+                  disabled={foldersLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition disabled:opacity-50"
+                >
+                  <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 ${foldersLoading ? 'animate-spin' : ''}`} />
+                  {foldersLoading ? 'Loading...' : foldersLoaded ? 'Refresh Folders' : 'Load My Folders'}
+                </button>
+              </div>
+
+              {/* Current selections */}
+              {(emailPrefs.priority_folders.length > 0 || emailPrefs.excluded_folders.length > 0) && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {emailPrefs.priority_folders.map((folder, i) => (
+                    <span key={`p-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 rounded-full border border-indigo-200 dark:border-indigo-800/50">
+                      <Star aria-hidden="true" className="w-3 h-3" />
+                      {folder}
+                      <button
+                        onClick={() => setEmailPrefs({ ...emailPrefs, priority_folders: emailPrefs.priority_folders.filter((_, idx) => idx !== i) })}
+                        className="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300"
+                      >
+                        <X aria-hidden="true" className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {emailPrefs.excluded_folders.map((folder, i) => (
+                    <span key={`e-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-full border border-red-200 dark:border-red-800/50">
+                      <ShieldBan aria-hidden="true" className="w-3 h-3" />
+                      {folder}
+                      <button
+                        onClick={() => setEmailPrefs({ ...emailPrefs, excluded_folders: emailPrefs.excluded_folders.filter((_, idx) => idx !== i) })}
+                        className="text-red-400 hover:text-red-600 dark:hover:text-red-300"
+                      >
+                        <X aria-hidden="true" className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Folder list from Outlook */}
+              {foldersLoaded && outlookFolders.length > 0 && (
+                <div className="border border-gray-200 dark:border-border-dark rounded-lg overflow-hidden">
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-0 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide bg-gray-50 dark:bg-surface-dark px-4 py-2 border-b border-gray-200 dark:border-border-dark">
+                    <span>Folder</span>
+                    <span className="text-center w-20">Priority</span>
+                    <span className="text-center w-20">Exclude</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                    {outlookFolders.map((folder) => {
+                      const isPriority = emailPrefs.priority_folders.includes(folder.name)
+                      const isExcluded = emailPrefs.excluded_folders.includes(folder.name)
+                      return (
+                        <div key={folder.id} className="grid grid-cols-[1fr_auto_auto] gap-0 items-center px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 transition">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Folder aria-hidden="true" className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <span className="text-sm text-gray-900 dark:text-white truncate">{folder.name}</span>
+                            <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
+                              {folder.totalCount.toLocaleString()}
+                              {folder.unreadCount > 0 && (
+                                <span className="text-blue-500 ml-1">({folder.unreadCount} unread)</span>
+                              )}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (isPriority) {
+                                setEmailPrefs({ ...emailPrefs, priority_folders: emailPrefs.priority_folders.filter(f => f !== folder.name) })
+                              } else {
+                                // Remove from excluded if adding to priority
+                                const newExcluded = emailPrefs.excluded_folders.filter(f => f !== folder.name)
+                                setEmailPrefs({ ...emailPrefs, priority_folders: [...emailPrefs.priority_folders, folder.name], excluded_folders: newExcluded })
+                              }
+                            }}
+                            className={`w-20 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition ${
+                              isPriority
+                                ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700'
+                                : 'text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10'
+                            }`}
+                          >
+                            {isPriority ? <><Check aria-hidden="true" className="w-3 h-3" /> Priority</> : <><Star aria-hidden="true" className="w-3 h-3" /> Priority</>}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (isExcluded) {
+                                setEmailPrefs({ ...emailPrefs, excluded_folders: emailPrefs.excluded_folders.filter(f => f !== folder.name) })
+                              } else {
+                                // Remove from priority if adding to excluded
+                                const newPriority = emailPrefs.priority_folders.filter(f => f !== folder.name)
+                                setEmailPrefs({ ...emailPrefs, excluded_folders: [...emailPrefs.excluded_folders, folder.name], priority_folders: newPriority })
+                              }
+                            }}
+                            className={`w-20 flex items-center justify-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition ${
+                              isExcluded
+                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-700'
+                                : 'text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10'
+                            }`}
+                          >
+                            {isExcluded ? <><Check aria-hidden="true" className="w-3 h-3" /> Exclude</> : <><ShieldBan aria-hidden="true" className="w-3 h-3" /> Exclude</>}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback manual entry when folders haven't been loaded */}
+              {!foldersLoaded && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">Add priority folder manually</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newPriorityFolder}
+                        onChange={(e) => setNewPriorityFolder(e.target.value)}
+                        placeholder="Folder name (e.g. Inbox)"
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newPriorityFolder.trim()) {
+                            const name = newPriorityFolder.trim()
+                            if (!emailPrefs.priority_folders.includes(name)) {
+                              setEmailPrefs({ ...emailPrefs, priority_folders: [...emailPrefs.priority_folders, name] })
+                            }
+                            setNewPriorityFolder('')
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const name = newPriorityFolder.trim()
+                          if (name && !emailPrefs.priority_folders.includes(name)) {
+                            setEmailPrefs({ ...emailPrefs, priority_folders: [...emailPrefs.priority_folders, name] })
+                          }
+                          setNewPriorityFolder('')
+                        }}
+                        className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">Add excluded folder manually</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newExcludedFolder}
+                        onChange={(e) => setNewExcludedFolder(e.target.value)}
+                        placeholder="Folder name (e.g. Junk Email)"
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newExcludedFolder.trim()) {
+                            const name = newExcludedFolder.trim()
+                            if (!emailPrefs.excluded_folders.includes(name)) {
+                              setEmailPrefs({ ...emailPrefs, excluded_folders: [...emailPrefs.excluded_folders, name] })
+                            }
+                            setNewExcludedFolder('')
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const name = newExcludedFolder.trim()
+                          if (name && !emailPrefs.excluded_folders.includes(name)) {
+                            setEmailPrefs({ ...emailPrefs, excluded_folders: [...emailPrefs.excluded_folders, name] })
+                          }
+                          setNewExcludedFolder('')
+                        }}
+                        className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
 

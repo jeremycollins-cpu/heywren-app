@@ -385,12 +385,32 @@ export async function syncTeamOutlook(
     console.warn('Slack backlog cleanup skipped')
   }
 
+  // Folder name cache — resolves Graph folder IDs to display names
+  const folderNameCache = new Map<string, string>()
+  async function resolveFolderName(folderId: string | undefined | null): Promise<string | null> {
+    if (!folderId) return null
+    if (folderNameCache.has(folderId)) return folderNameCache.get(folderId) || null
+    try {
+      const { data: folderData, token: updatedToken } = await graphFetch(
+        `https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}?$select=displayName`,
+        msToken, supabase, integrationId, refreshToken
+      )
+      msToken = updatedToken
+      const name = folderData?.displayName || null
+      folderNameCache.set(folderId, name || '')
+      return name
+    } catch {
+      folderNameCache.set(folderId, '')
+      return null
+    }
+  }
+
   // Phase 2: Fetch new emails (default 1 day for daily sync, configurable for backfill)
   if (Date.now() - startTime < TIME_BUDGET_MS) {
     const syncDays = options?.daysBack || 1
     const oldestDate = new Date(Date.now() - syncDays * 24 * 60 * 60 * 1000).toISOString()
     const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
-    const selectFields = 'id,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,conversationId,isRead,webLink'
+    const selectFields = 'id,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,conversationId,isRead,webLink,parentFolderId'
     let nextLink: string | null =
       `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
 
@@ -445,6 +465,7 @@ export async function syncTeamOutlook(
         if (existing && !existing.processed) {
           dbId = existing.id
         } else {
+          const folderName = await resolveFolderName(email.parentFolderId)
           const { data: messageData, error: msgErr } = await supabase
             .from('outlook_messages')
             .insert({
@@ -460,6 +481,9 @@ export async function syncTeamOutlook(
               body_preview: preview,
               received_at: email.receivedDateTime,
               processed: false,
+              is_read: email.isRead ?? true,
+              folder_id: email.parentFolderId || null,
+              folder_name: folderName,
             })
             .select()
             .single()

@@ -34,7 +34,7 @@ export async function GET() {
   // Fetch pending and snoozed missed emails — scoped to THIS user only
   const { data: missedEmails, error } = await supabase
     .from('missed_emails')
-    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, urgency, reason, question_summary, category, confidence, expected_response_time, status')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, urgency, reason, question_summary, category, confidence, expected_response_time, status, is_read, folder_name')
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
@@ -102,6 +102,8 @@ export async function GET() {
         body_preview: e.body_preview,
         question_summary: e.question_summary,
         category: e.category,
+        is_read: e.is_read,
+        folder_name: e.folder_name,
       })),
     }
   })
@@ -121,9 +123,20 @@ export async function GET() {
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
 
+  // Get the most recent classification timestamp to show when data was last refreshed
+  const { data: latestRecord } = await supabase
+    .from('missed_emails')
+    .select('created_at')
+    .eq('team_id', profile.current_team_id)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return NextResponse.json({
     missedEmails: threadGroups,
     totalEvaluated: totalEvaluated || 0,
+    lastRefreshedAt: latestRecord?.created_at || null,
   })
 }
 
