@@ -13,6 +13,7 @@ import {
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
+  SlidersHorizontal, Star, GitBranch, TrendingUp,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -214,6 +215,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/', label: 'Dashboard', icon: BarChart3, tourId: 'nav-dashboard', badge: badges.overdue > 0 ? badges.overdue : 0, badgeColor: 'bg-red-500' },
         { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments', badge: badges.openCommitments, badgeColor: 'bg-indigo-500' },
+        { href: '/triage', label: 'Triage', icon: SlidersHorizontal, tourId: 'nav-triage', badge: 0, badgeColor: '' },
         { href: '/todos', label: 'To-Dos', icon: ListChecks, tourId: 'nav-todos', badge: 0, badgeColor: '' },
         { href: '/weekly', label: 'Weekly Review', icon: Calendar, tourId: 'nav-weekly', badge: 0, badgeColor: '' },
       ],
@@ -225,6 +227,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/relationships', label: 'Relationships', icon: Users, tourId: 'nav-relationships', badge: 0, badgeColor: '' },
         { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings', badge: 0, badgeColor: '' },
         { href: '/meetings', label: 'Meetings', icon: Mic, tourId: 'nav-meetings', badge: 0, badgeColor: '' },
+        { href: '/wren-score', label: 'Wren Score', icon: Star, tourId: 'nav-wren-score', badge: 0, badgeColor: '' },
+        { href: '/dependencies', label: 'Dependencies', icon: GitBranch, tourId: 'nav-dependencies', badge: 0, badgeColor: '' },
+        { href: '/insights', label: 'Insights', icon: TrendingUp, tourId: 'nav-insights', badge: 0, badgeColor: '' },
         { href: '/achievements', label: 'Achievements', icon: Trophy, tourId: 'nav-achievements', badge: 0, badgeColor: '' },
       ],
     },

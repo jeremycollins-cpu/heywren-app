@@ -67,6 +67,8 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   achievements:     def('achievements',     'Achievements',       'Track your milestones and streaks.',                             'basic', '/achievements'),
   integrations:     def('integrations',     'Integrations',       'Connect Slack, email, and other tools.',                         'basic', '/integrations'),
   ideas:            def('ideas',            'Ideas',              'Capture and organize ideas.',                                    'basic', '/ideas'),
+  triage:           def('triage',           'Triage',             'Keyboard-driven rapid commitment processing.',                   'basic', '/triage'),
+  wren_score:       def('wren_score',       'Wren Score',         'Your personal reliability index based on follow-through.',       'basic', '/wren-score'),
 
   // ── Pro ────────────────────────────────────────────────────────────
   draft_queue:      def('draft_queue',      'Draft Queue',        'AI-drafted follow-ups ready for your review.',                   'pro',  '/draft-queue'),
@@ -74,6 +76,9 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   ai_nudges:        def('ai_nudges',        'AI Nudges & Scoring','Smart nudges with priority scoring.',                            'pro'),
   calendar_sync:    def('calendar_sync',    'Calendar Sync',      'Sync your calendar for meeting-aware workflows.',                'pro'),
   meeting_transcripts: def('meeting_transcripts', 'Meeting Transcripts', 'Upload meeting transcripts to detect commitments. Say "Hey Wren" in meetings to flag action items.', 'pro', '/meetings'),
+
+  dependencies:     def('dependencies',     'Dependencies',       'See who is waiting on you and who you are waiting on.',          'pro',  '/dependencies'),
+  insights:         def('insights',         'Commitment Insights', 'Behavioral pattern analysis and actionable insights from your commitment history.', 'pro',  '/insights'),
 
   // ── Team ───────────────────────────────────────────────────────────
   playbooks:        def('playbooks',        'Playbooks',          'Automate workflows with trigger-based playbooks.',               'team', '/playbooks'),
@@ -127,6 +132,8 @@ export const PLAN_DISPLAY: Record<Exclude<PlanKey, 'trial'>, PlanDisplay> = {
     features: [
       'Slack & email monitoring',
       'Basic nudges',
+      'Rapid triage mode',
+      'Wren Score reliability index',
       'Up to 50 commitments',
       'Up to 5 team members',
       'Email support',
@@ -147,6 +154,8 @@ export const PLAN_DISPLAY: Record<Exclude<PlanKey, 'trial'>, PlanDisplay> = {
       'Calendar sync',
       'Meeting transcript analysis',
       '"Hey Wren" wake word triggers',
+      'Dependency tracking',
+      'Commitment insights & patterns',
       'Unlimited commitments',
       'Up to 25 team members',
       'Priority support',
