@@ -37,6 +37,8 @@ export default function SettingsPage() {
     enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction'] as string[],
     auto_dismiss_days: 0,
     include_in_digest: true,
+    priority_folders: [] as string[],
+    excluded_folders: [] as string[],
   })
   const [emailPrefsLoading, setEmailPrefsLoading] = useState(true)
   const [savingEmailPrefs, setSavingEmailPrefs] = useState(false)
@@ -47,6 +49,8 @@ export default function SettingsPage() {
   const [newBlockedEntry, setNewBlockedEntry] = useState('')
   const [showAddVip, setShowAddVip] = useState(false)
   const [showAddBlocked, setShowAddBlocked] = useState(false)
+  const [newPriorityFolder, setNewPriorityFolder] = useState('')
+  const [newExcludedFolder, setNewExcludedFolder] = useState('')
   // Gamification notification preferences
   const [gamificationPrefs, setGamificationPrefs] = useState({
     achievement_notifications: true,
@@ -870,6 +874,111 @@ export default function SettingsPage() {
                   Block a sender or domain
                 </button>
               )}
+            </div>
+
+            {/* Folder Configuration */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Priority Folders */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Priority Folders</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Emails from these folders get boosted priority. Enter exact folder names from your email (e.g. &quot;Inbox&quot;, &quot;VIP&quot;).</p>
+                {emailPrefs.priority_folders.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {emailPrefs.priority_folders.map((folder, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 rounded-full border border-indigo-200 dark:border-indigo-800/50">
+                        {folder}
+                        <button
+                          onClick={() => setEmailPrefs({ ...emailPrefs, priority_folders: emailPrefs.priority_folders.filter((_, idx) => idx !== i) })}
+                          className="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300"
+                        >
+                          <X aria-hidden="true" className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newPriorityFolder}
+                    onChange={(e) => setNewPriorityFolder(e.target.value)}
+                    placeholder="Folder name (e.g. Inbox)"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newPriorityFolder.trim()) {
+                        const name = newPriorityFolder.trim()
+                        if (!emailPrefs.priority_folders.includes(name)) {
+                          setEmailPrefs({ ...emailPrefs, priority_folders: [...emailPrefs.priority_folders, name] })
+                        }
+                        setNewPriorityFolder('')
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const name = newPriorityFolder.trim()
+                      if (name && !emailPrefs.priority_folders.includes(name)) {
+                        setEmailPrefs({ ...emailPrefs, priority_folders: [...emailPrefs.priority_folders, name] })
+                      }
+                      setNewPriorityFolder('')
+                    }}
+                    className="px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Excluded Folders */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Excluded Folders</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Emails from these folders will never appear in Missed Emails (e.g. &quot;Promotions&quot;, &quot;Junk Email&quot;, &quot;Newsletters&quot;).</p>
+                {emailPrefs.excluded_folders.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {emailPrefs.excluded_folders.map((folder, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-full border border-red-200 dark:border-red-800/50">
+                        {folder}
+                        <button
+                          onClick={() => setEmailPrefs({ ...emailPrefs, excluded_folders: emailPrefs.excluded_folders.filter((_, idx) => idx !== i) })}
+                          className="text-red-400 hover:text-red-600 dark:hover:text-red-300"
+                        >
+                          <X aria-hidden="true" className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newExcludedFolder}
+                    onChange={(e) => setNewExcludedFolder(e.target.value)}
+                    placeholder="Folder name (e.g. Junk Email)"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newExcludedFolder.trim()) {
+                        const name = newExcludedFolder.trim()
+                        if (!emailPrefs.excluded_folders.includes(name)) {
+                          setEmailPrefs({ ...emailPrefs, excluded_folders: [...emailPrefs.excluded_folders, name] })
+                        }
+                        setNewExcludedFolder('')
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const name = newExcludedFolder.trim()
+                      if (name && !emailPrefs.excluded_folders.includes(name)) {
+                        setEmailPrefs({ ...emailPrefs, excluded_folders: [...emailPrefs.excluded_folders, name] })
+                      }
+                      setNewExcludedFolder('')
+                    }}
+                    className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Scan Settings */}

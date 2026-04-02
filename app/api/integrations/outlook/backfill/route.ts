@@ -381,7 +381,7 @@ export async function POST(request: NextRequest) {
   const errors: string[] = []
 
   const baseFilter = encodeURIComponent(`receivedDateTime ge ${oldestDate} and isDraft eq false`)
-  const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead'
+  const selectFields = 'id,subject,bodyPreview,from,toRecipients,receivedDateTime,conversationId,isRead,parentFolderId'
   let nextLink: string | null =
     `https://graph.microsoft.com/v1.0/me/messages?$filter=${baseFilter}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=50`
 
@@ -458,6 +458,8 @@ export async function POST(request: NextRequest) {
               received_at: email.receivedDateTime,
               processed: true,
               commitments_found: 0,
+              is_read: email.isRead ?? true,
+              folder_id: email.parentFolderId || null,
             })
         }
         continue
@@ -491,6 +493,8 @@ export async function POST(request: NextRequest) {
             body_preview: preview,
             received_at: email.receivedDateTime,
             processed: false,
+            is_read: email.isRead ?? true,
+            folder_id: email.parentFolderId || null,
           })
           .select()
           .single()

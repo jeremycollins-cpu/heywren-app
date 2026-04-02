@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
-  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone, Forward
+  ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone, Forward,
+  MailOpen, Folder
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -38,6 +39,8 @@ interface MissedEmail {
   status: string
   waiting_days: number
   is_vip?: boolean
+  is_read?: boolean
+  folder_name?: string | null
   // Thread grouping fields from API
   threadCount?: number
   threadEmailIds?: string[]
@@ -88,6 +91,7 @@ export default function MissedEmailsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
+  const [unreadOnly, setUnreadOnly] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
   const [feedbackModal, setFeedbackModal] = useState<{ email: MissedEmail; show: boolean } | null>(null)
@@ -302,9 +306,13 @@ export default function MissedEmailsPage() {
     }
   }
 
-  const filteredEmails = filter === 'all'
-    ? emails
-    : emails.filter(e => e.urgency === filter)
+  const filteredEmails = emails.filter(e => {
+    if (filter !== 'all' && e.urgency !== filter) return false
+    if (unreadOnly && e.is_read !== false) return false
+    return true
+  })
+
+  const unreadCount = emails.filter(e => e.is_read === false).length
 
   const criticalCount = emails.filter(e => e.urgency === 'critical').length
   const highCount = emails.filter(e => e.urgency === 'high').length
@@ -414,20 +422,38 @@ export default function MissedEmailsPage() {
         </button>
       </div>
 
-      {/* Filter indicator */}
-      {filter !== 'all' && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Showing {filter} priority emails
-          </span>
+      {/* Filter controls */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {filter !== 'all' && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              Showing {filter} priority emails
+            </span>
+            <button
+              onClick={() => setFilter('all')}
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              Show all
+            </button>
+          </div>
+        )}
+        {unreadCount > 0 && (
           <button
-            onClick={() => setFilter('all')}
-            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+            onClick={() => setUnreadOnly(!unreadOnly)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition ${
+              unreadOnly
+                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+            }`}
           >
-            Show all
+            <MailOpen aria-hidden="true" className="w-4 h-4" />
+            Unread only
+            <span className={`ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${unreadOnly ? 'bg-blue-600' : 'bg-gray-400'} px-1`}>
+              {unreadCount}
+            </span>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Bulk action bar */}
       {filteredEmails.length > 0 && (
@@ -543,6 +569,18 @@ export default function MissedEmailsPage() {
                           <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                             <Star aria-hidden="true" className="w-3 h-3" />
                             VIP
+                          </span>
+                        )}
+                        {email.is_read === false && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                            <MailOpen aria-hidden="true" className="w-3 h-3" />
+                            Unread
+                          </span>
+                        )}
+                        {email.folder_name && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                            <Folder aria-hidden="true" className="w-3 h-3" />
+                            {email.folder_name}
                           </span>
                         )}
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
