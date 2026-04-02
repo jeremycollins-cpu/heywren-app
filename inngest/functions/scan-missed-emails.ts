@@ -362,33 +362,38 @@ async function scanTeamMissedEmails(
     try {
       const classifications = await classifyMissedEmailBatch(batchInput, userPrefs)
 
+      const toUpsert = []
       for (const email of chunk) {
         const classification = classifications.get(email.message_id)
         if (classification) {
-          const { error: insertErr } = await supabase
-            .from('missed_emails')
-            .upsert({
-              team_id: teamId,
-              user_id: userId,
-              outlook_message_id: email.id,
-              message_id: email.message_id,
-              from_name: email.from_name,
-              from_email: email.from_email,
-              to_recipients: email.to_recipients,
-              subject: email.subject,
-              body_preview: email.body_preview,
-              received_at: email.received_at,
-              urgency: classification.urgency,
-              reason: classification.reason,
-              question_summary: classification.questionSummary,
-              category: classification.category,
-              confidence: classification.confidence,
-              expected_response_time: classification.expectedResponseTime || null,
-              status: 'pending',
-            }, { onConflict: 'team_id,message_id' })
-
-          if (!insertErr) totalMissed++
+          toUpsert.push({
+            team_id: teamId,
+            user_id: userId,
+            outlook_message_id: email.id,
+            message_id: email.message_id,
+            from_name: email.from_name,
+            from_email: email.from_email,
+            to_recipients: email.to_recipients,
+            subject: email.subject,
+            body_preview: email.body_preview,
+            received_at: email.received_at,
+            urgency: classification.urgency,
+            reason: classification.reason,
+            question_summary: classification.questionSummary,
+            category: classification.category,
+            confidence: classification.confidence,
+            expected_response_time: classification.expectedResponseTime || null,
+            status: 'pending',
+          })
         }
+      }
+
+      if (toUpsert.length > 0) {
+        const { error: insertErr } = await supabase
+          .from('missed_emails')
+          .upsert(toUpsert, { onConflict: 'team_id,message_id' })
+
+        if (!insertErr) totalMissed += toUpsert.length
       }
     } catch (err) {
       console.error('Batch classification error:', (err as Error).message)

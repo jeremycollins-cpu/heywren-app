@@ -16,46 +16,49 @@ export const learnResponsePatterns = inngest.createFunction(
   async () => {
     const supabase = getAdminClient()
 
-    const { data: users } = await supabase
-      .from('team_members')
-      .select('user_id, team_id')
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
 
-    if (!users) return { success: false }
+    // Fetch all resolved emails in one query instead of per-user
+    const { data: allResolved } = await supabase
+      .from('missed_emails')
+      .select('user_id, team_id, urgency, received_at, updated_at')
+      .eq('status', 'replied')
+      .gte('updated_at', thirtyDaysAgo)
+
+    if (!allResolved || allResolved.length === 0) return { success: true, usersUpdated: 0 }
+
+    // Group by user_id+team_id in memory
+    const grouped = new Map<string, typeof allResolved>()
+    for (const row of allResolved) {
+      const key = `${row.user_id}:${row.team_id}`
+      if (!grouped.has(key)) grouped.set(key, [])
+      grouped.get(key)!.push(row)
+    }
 
     let updated = 0
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null
 
-    for (const { user_id, team_id } of users) {
-      // Get resolved missed emails from the last 30 days
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
+    const upsertBatch = []
 
-      const { data: resolved } = await supabase
-        .from('missed_emails')
-        .select('urgency, received_at, updated_at')
-        .eq('user_id', user_id)
-        .eq('team_id', team_id)
-        .eq('status', 'replied')
-        .gte('updated_at', thirtyDaysAgo)
+    for (const [key, resolved] of grouped) {
+      if (resolved.length < 3) continue // Need enough data
 
-      if (!resolved || resolved.length < 3) continue // Need enough data
+      const [user_id, team_id] = key.split(':')
 
       // Calculate average response hours by urgency
       const byUrgency: Record<string, number[]> = { critical: [], high: [], medium: [], low: [] }
-      const responseHours: number[] = []
 
       for (const item of resolved) {
         const received = new Date(item.received_at).getTime()
         const responded = new Date(item.updated_at).getTime()
         const hours = Math.max(0, (responded - received) / 3600000)
 
-        if (hours > 0 && hours < 720) { // Filter out unreasonable values (>30 days)
+        if (hours > 0 && hours < 720) {
           if (byUrgency[item.urgency]) byUrgency[item.urgency].push(hours)
-          responseHours.push(hours)
         }
       }
 
-      const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null
-
-      // Detect peak response hours (hours of day when user most frequently responds)
+      // Detect peak response hours
       const hourCounts = new Array(24).fill(0)
       for (const item of resolved) {
         const hour = new Date(item.updated_at).getHours()
@@ -68,20 +71,25 @@ export const learnResponsePatterns = inngest.createFunction(
         .map(h => h.hour)
         .sort((a, b) => a - b)
 
-      await supabase
-        .from('user_response_patterns')
-        .upsert({
-          user_id,
-          team_id,
-          avg_response_hours_critical: avg(byUrgency.critical),
-          avg_response_hours_high: avg(byUrgency.high),
-          avg_response_hours_medium: avg(byUrgency.medium),
-          avg_response_hours_low: avg(byUrgency.low),
-          peak_response_hours: peakHours,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,team_id' })
+      upsertBatch.push({
+        user_id,
+        team_id,
+        avg_response_hours_critical: avg(byUrgency.critical),
+        avg_response_hours_high: avg(byUrgency.high),
+        avg_response_hours_medium: avg(byUrgency.medium),
+        avg_response_hours_low: avg(byUrgency.low),
+        peak_response_hours: peakHours,
+        updated_at: new Date().toISOString(),
+      })
 
       updated++
+    }
+
+    // Batch upsert all patterns at once
+    if (upsertBatch.length > 0) {
+      await supabase
+        .from('user_response_patterns')
+        .upsert(upsertBatch, { onConflict: 'user_id,team_id' })
     }
 
     return { success: true, usersUpdated: updated }
