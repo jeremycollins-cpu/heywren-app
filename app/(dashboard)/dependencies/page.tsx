@@ -147,7 +147,6 @@ export default function DependenciesPage() {
           .eq('team_id', profile.current_team_id)
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .in('status', ['open', 'in_progress', 'overdue'])
-          .is('deleted_at', null)
           .order('due_date', { ascending: true, nullsFirst: false })
 
         if (fetchError) throw fetchError
