@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   CheckCircle2, Clock, X, ArrowRight, SkipForward, AlertTriangle,
@@ -84,6 +84,8 @@ export default function TriagePage() {
   const [transitioning, setTransitioning] = useState(false)
   const [sessionLog, setSessionLog] = useState<TriageAction[]>([])
   const [userId, setUserId] = useState<string | null>(null)
+  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -228,6 +230,34 @@ export default function TriagePage() {
     return () => window.removeEventListener('keydown', handler)
   }, [showSnooze, handleSnooze])
 
+  // Swipe gesture handlers for mobile
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    setSwipeDirection(null)
+  }, [])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+    touchStartRef.current = null
+    setSwipeDirection(null)
+
+    // Only register horizontal swipes (ignore vertical scrolling)
+    if (Math.abs(dx) < 80 || Math.abs(dy) > Math.abs(dx)) return
+
+    if (dx > 0) handleKeep()    // Swipe right = Keep
+    else handleDrop()            // Swipe left = Drop
+  }, [handleKeep, handleDrop])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return
+    const dx = e.touches[0].clientX - touchStartRef.current.x
+    if (dx > 40) setSwipeDirection('right')
+    else if (dx < -40) setSwipeDirection('left')
+    else setSwipeDirection(null)
+  }, [])
+
   if (loading) return <LoadingSkeleton variant="card" />
 
   const isComplete = currentIndex >= commitments.length
@@ -322,8 +352,25 @@ export default function TriagePage() {
 
         {/* Current commitment card */}
         {current && !isComplete && (
-          <div className={`max-w-2xl mx-auto transition-all duration-200 ${transitioning ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'}`}>
-            <div className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl shadow-sm overflow-hidden border-l-4 ${getUrgencyColor(current)}`}>
+          <div
+            className={`max-w-2xl mx-auto transition-all duration-200 relative ${transitioning ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'}`}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            {/* Swipe indicator overlay */}
+            {swipeDirection && (
+              <div className={`absolute inset-0 z-10 flex items-center justify-center pointer-events-none ${
+                swipeDirection === 'right' ? 'text-green-500' : 'text-red-500'
+              }`}>
+                <span className="text-lg font-bold bg-white/90 dark:bg-gray-900/90 px-4 py-2 rounded-full shadow-lg">
+                  {swipeDirection === 'right' ? 'Keep' : 'Drop'}
+                </span>
+              </div>
+            )}
+            <div className={`bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl shadow-sm overflow-hidden border-l-4 ${getUrgencyColor(current)} ${
+              swipeDirection === 'right' ? 'ring-2 ring-green-400' : swipeDirection === 'left' ? 'ring-2 ring-red-400' : ''
+            }`}>
               <div className="p-6 space-y-4">
                 {/* Header badges */}
                 <div className="flex items-center gap-2 flex-wrap">
@@ -377,7 +424,7 @@ export default function TriagePage() {
                 )}
 
                 {/* Meta row */}
-                <div className="flex items-center gap-4 text-xs text-gray-400 dark:text-gray-500 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex items-center gap-2 sm:gap-4 flex-wrap text-xs text-gray-400 dark:text-gray-500 pt-2 border-t border-gray-100 dark:border-gray-700">
                   {current.due_date && (
                     <span className="flex items-center gap-1">
                       <Clock aria-hidden="true" className="w-3.5 h-3.5" />
@@ -427,40 +474,40 @@ export default function TriagePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-2">
                     <button
                       onClick={handleKeep}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                      aria-label="Keep commitment (K)"
+                      className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 sm:py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 active:bg-green-800 transition text-sm font-medium"
+                      aria-label="Keep commitment"
                     >
                       <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
-                      Keep
-                      <kbd className="ml-1 text-[10px] px-1.5 py-0.5 bg-green-700 rounded font-mono">K</kbd>
+                      <span>Keep</span>
+                      <kbd className="hidden sm:inline ml-1 text-[10px] px-1.5 py-0.5 bg-green-700 rounded font-mono">K</kbd>
                     </button>
                     <button
                       onClick={() => setShowSnooze(true)}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition text-sm font-medium"
-                      aria-label="Snooze commitment (S)"
+                      className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 sm:py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 active:bg-amber-700 transition text-sm font-medium"
+                      aria-label="Snooze commitment"
                     >
                       <Clock aria-hidden="true" className="w-4 h-4" />
-                      Snooze
-                      <kbd className="ml-1 text-[10px] px-1.5 py-0.5 bg-amber-600 rounded font-mono">S</kbd>
+                      <span>Snooze</span>
+                      <kbd className="hidden sm:inline ml-1 text-[10px] px-1.5 py-0.5 bg-amber-600 rounded font-mono">S</kbd>
                     </button>
                     <button
                       onClick={handleDrop}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm font-medium"
-                      aria-label="Drop commitment (X)"
+                      className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 sm:py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 active:bg-red-700 transition text-sm font-medium"
+                      aria-label="Drop commitment"
                     >
                       <X aria-hidden="true" className="w-4 h-4" />
-                      Drop
-                      <kbd className="ml-1 text-[10px] px-1.5 py-0.5 bg-red-600 rounded font-mono">X</kbd>
+                      <span>Drop</span>
+                      <kbd className="hidden sm:inline ml-1 text-[10px] px-1.5 py-0.5 bg-red-600 rounded font-mono">X</kbd>
                     </button>
                     <button
                       onClick={handleSkip}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition text-sm font-medium ml-auto"
+                      className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 sm:py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-gray-400 transition text-sm font-medium"
                       aria-label="Skip to next"
                     >
-                      Skip
+                      <span>Skip</span>
                       <ArrowRight aria-hidden="true" className="w-4 h-4" />
                     </button>
                   </div>
@@ -468,12 +515,16 @@ export default function TriagePage() {
               </div>
             </div>
 
-            {/* Keyboard hint */}
-            <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-3">
-              Use keyboard shortcuts: <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono">K</kbd> Keep &middot;
+            {/* Desktop: keyboard hints */}
+            <p className="hidden sm:block text-center text-xs text-gray-400 dark:text-gray-500 mt-3">
+              Keyboard shortcuts: <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono">K</kbd> Keep &middot;
               <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono ml-1">S</kbd> Snooze &middot;
               <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono ml-1">X</kbd> Drop &middot;
               <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono ml-1">&rarr;</kbd> Skip
+            </p>
+            {/* Mobile: swipe hint */}
+            <p className="sm:hidden text-center text-xs text-gray-400 dark:text-gray-500 mt-3">
+              Swipe right to keep &middot; Swipe left to drop
             </p>
           </div>
         )}
