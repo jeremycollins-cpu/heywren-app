@@ -34,7 +34,7 @@ export async function GET() {
   // Fetch pending and snoozed missed emails — scoped to THIS user only
   const { data: missedEmails, error } = await supabase
     .from('missed_emails')
-    .select('*')
+    .select('id, message_id, from_name, from_email, to_recipients, subject, body_preview, received_at, urgency, reason, question_summary, category, confidence, expected_response_time, status')
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
@@ -113,23 +113,17 @@ export async function GET() {
     return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
   })
 
-  // Get total email count for context (how many were evaluated) — scoped to emails where this user is a recipient
-  const adminDb = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-  const userEmail = user.email?.toLowerCase() || ''
-  const { count: totalEmails } = await adminDb
-    .from('outlook_messages')
+  // Get total evaluated count from missed_emails (already classified) instead of
+  // scanning outlook_messages with expensive ILIKE pattern matching
+  const { count: totalEvaluated } = await supabase
+    .from('missed_emails')
     .select('id', { count: 'exact', head: true })
     .eq('team_id', profile.current_team_id)
-    .or(`user_id.eq.${user.id},user_id.is.null`)
-    .neq('from_email', userEmail)
-    .ilike('to_recipients', `%${userEmail}%`)
+    .eq('user_id', user.id)
 
   return NextResponse.json({
     missedEmails: threadGroups,
-    totalEvaluated: totalEmails || 0,
+    totalEvaluated: totalEvaluated || 0,
   })
 }
 

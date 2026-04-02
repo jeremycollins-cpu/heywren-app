@@ -82,7 +82,6 @@ export async function GET(request: NextRequest) {
       achievementsRes,
       memberAchievementsRes,
       challengesRes,
-      _achievementDefsRes,
       profilesRes,
       orgRes,
     ] = await Promise.all([
@@ -116,11 +115,6 @@ export async function GET(request: NextRequest) {
         .in('status', ['active', 'completed'])
         .order('starts_at', { ascending: false })
         .limit(10),
-
-      // Achievement definitions (for display)
-      admin.from('achievements')
-        .select('id, slug, name, description, category, tier, icon, threshold, sort_order')
-        .order('sort_order'),
 
       // Profiles for display names
       admin.from('organization_members')
