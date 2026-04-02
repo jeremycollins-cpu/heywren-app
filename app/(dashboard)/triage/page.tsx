@@ -110,7 +110,6 @@ export default function TriagePage() {
           .eq('team_id', profile.current_team_id)
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .in('status', ['open', 'overdue'])
-          .is('deleted_at', null)
           .order('status', { ascending: true })
           .order('priority_score', { ascending: false })
           .order('created_at', { ascending: true })

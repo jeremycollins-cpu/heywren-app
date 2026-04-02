@@ -244,10 +244,9 @@ export default function WrenScorePage() {
 
         const { data, error: fetchError } = await supabase
           .from('commitments')
-          .select('id, status, due_date, created_at, completed_at, priority_score, creator_id, assignee_id')
+          .select('*')
           .eq('team_id', profile.current_team_id)
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
-          .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .limit(1000)
 
