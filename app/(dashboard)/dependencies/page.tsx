@@ -274,7 +274,7 @@ export default function DependenciesPage() {
                     <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
                       <span className="font-semibold text-sm text-gray-900 dark:text-white">{group.name}</span>
                       {chainedPeople.has(group.name) && (
-                        <Link2 aria-hidden="true" className="w-3.5 h-3.5 text-indigo-500" title="Mutual dependency" />
+                        <span title="Mutual dependency"><Link2 aria-hidden="true" className="w-3.5 h-3.5 text-indigo-500" /></span>
                       )}
                       <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
                         {group.commitments.length} item{group.commitments.length !== 1 ? 's' : ''}
@@ -351,7 +351,7 @@ export default function DependenciesPage() {
                     <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
                       <span className="font-semibold text-sm text-gray-900 dark:text-white">{group.name}</span>
                       {chainedPeople.has(group.name) && (
-                        <Link2 aria-hidden="true" className="w-3.5 h-3.5 text-indigo-500" title="Mutual dependency" />
+                        <span title="Mutual dependency"><Link2 aria-hidden="true" className="w-3.5 h-3.5 text-indigo-500" /></span>
                       )}
                       <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
                         {group.commitments.length} item{group.commitments.length !== 1 ? 's' : ''}
