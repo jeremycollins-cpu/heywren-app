@@ -247,6 +247,11 @@ async function resolveDigestChannel(
   slack: WebClient,
   config: Record<string, any> | null
 ): Promise<string | null> {
+  // 0. If digest is explicitly disabled, skip
+  if (config?.digest_enabled === false) {
+    return null
+  }
+
   // 1. Check integration config for an explicit channel
   if (config?.digest_channel) {
     return config.digest_channel

@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor } from 'lucide-react'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor, Hash, BellOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -211,6 +211,142 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
               <strong>What permissions does HeyWren need?</strong> Read-only access to your messages, email, and calendar so we can detect commitments and follow-ups. We never send messages, emails, or modify your calendar on your behalf. <a href="https://heywren.ai/security" target="_blank" rel="noopener noreferrer" className="underline font-medium">Learn more about our security practices →</a>
             </p>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface SlackChannel {
+  id: string
+  name: string
+  num_members: number
+  is_member: boolean
+}
+
+function SlackDigestPicker() {
+  const [channels, setChannels] = useState<SlackChannel[]>([])
+  const [loadingChannels, setLoadingChannels] = useState(false)
+  const [digestChannel, setDigestChannel] = useState<string | null>(null)
+  const [digestChannelName, setDigestChannelName] = useState<string | null>(null)
+  const [digestEnabled, setDigestEnabled] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    // Load current digest config
+    fetch('/api/slack-digest-config')
+      .then(res => res.json())
+      .then(data => {
+        setDigestChannel(data.digest_channel || null)
+        setDigestChannelName(data.digest_channel_name || null)
+        setDigestEnabled(data.digest_enabled !== false)
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const loadChannels = async () => {
+    setLoadingChannels(true)
+    try {
+      const res = await fetch('/api/integrations/slack/channels')
+      const data = await res.json()
+      setChannels(data.channels || [])
+    } catch {
+      toast.error('Failed to load Slack channels')
+    } finally {
+      setLoadingChannels(false)
+    }
+  }
+
+  const saveDigestConfig = async (channelId: string | null, channelName: string | null, enabled: boolean) => {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/slack-digest-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          digest_channel: channelId,
+          digest_channel_name: channelName,
+          digest_enabled: enabled,
+        }),
+      })
+      if (res.ok) {
+        setDigestChannel(channelId)
+        setDigestChannelName(channelName)
+        setDigestEnabled(enabled)
+        toast.success(enabled ? `Digest will post to #${channelName}` : 'Daily digest disabled')
+      } else {
+        toast.error('Failed to save digest settings')
+      }
+    } catch {
+      toast.error('Failed to save digest settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="mt-3 pt-3 border-t border-green-200">
+      <p className="text-xs font-medium text-gray-700 mb-2">Daily Digest Channel</p>
+      {channels.length === 0 ? (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 text-xs text-gray-500">
+            {digestEnabled ? (
+              digestChannelName ? (
+                <span className="inline-flex items-center gap-1">
+                  <Hash className="w-3 h-3" />
+                  {digestChannelName}
+                </span>
+              ) : (
+                'Defaults to #general'
+              )
+            ) : (
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <BellOff className="w-3 h-3" />
+                Disabled
+              </span>
+            )}
+          </div>
+          <button
+            onClick={loadChannels}
+            disabled={loadingChannels}
+            className="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition disabled:opacity-50"
+          >
+            {loadingChannels ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              'Configure'
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <select
+            value={digestEnabled ? (digestChannel || '') : '__disabled__'}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val === '__disabled__') {
+                saveDigestConfig(digestChannel, digestChannelName, false)
+              } else {
+                const ch = channels.find(c => c.id === val)
+                saveDigestConfig(val, ch?.name || null, true)
+              }
+            }}
+            disabled={saving}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"
+          >
+            <option value="">Default (#general)</option>
+            {channels.map(ch => (
+              <option key={ch.id} value={ch.id}>
+                #{ch.name} {ch.is_member ? '' : '(bot not in channel)'}
+              </option>
+            ))}
+            <option value="__disabled__">Disable daily digest</option>
+          </select>
+          {saving && <p className="text-xs text-gray-400">Saving...</p>}
         </div>
       )}
     </div>
@@ -460,15 +596,18 @@ function IntegrationsContent() {
                 <p className="text-xs text-gray-500 mt-1 mb-4">{integration.description}</p>
 
                 {connected ? (
-                  <button
-                    onClick={() => {
-                      const integ = integrations.find((i) => i.provider === integration.id)
-                      if (integ) handleDisconnect(integ.id)
-                    }}
-                    className="w-full px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition font-medium text-sm"
-                  >
-                    Disconnect
-                  </button>
+                  <div>
+                    <button
+                      onClick={() => {
+                        const integ = integrations.find((i) => i.provider === integration.id)
+                        if (integ) handleDisconnect(integ.id)
+                      }}
+                      className="w-full px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition font-medium text-sm"
+                    >
+                      Disconnect
+                    </button>
+                    {integration.id === 'slack' && <SlackDigestPicker />}
+                  </div>
                 ) : (
                   <button
                     onClick={() => handleConnect(integration.id, (integration as any).pageUrl)}
