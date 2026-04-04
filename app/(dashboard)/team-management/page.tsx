@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, Building2, Layers,
   ChevronDown, ChevronRight, Star, Eye, EyeOff,
   Ghost, Moon, Clock, TrendingDown, AlertCircle,
-  X, MessageSquare,
+  X, MessageSquare, Settings, Save,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -499,6 +499,7 @@ export default function TeamManagementPage() {
                                 isExpanded={expandedMember === member.user_id}
                                 onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
                                 memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
+                                isManager={isManager}
                               />
                             ))}
                           </div>
@@ -530,6 +531,7 @@ export default function TeamManagementPage() {
                   isExpanded={expandedMember === member.user_id}
                   onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
                   memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
+                  isManager={isManager}
                 />
               ))
             )}
@@ -622,13 +624,73 @@ function AnomalyRow({ anomaly, onDismiss }: { anomaly: Anomaly; onDismiss: (a: A
   )
 }
 
-function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies }: {
+const DAY_LABELS = [
+  { day: 0, label: 'S' },
+  { day: 1, label: 'M' },
+  { day: 2, label: 'T' },
+  { day: 3, label: 'W' },
+  { day: 4, label: 'T' },
+  { day: 5, label: 'F' },
+  { day: 6, label: 'S' },
+]
+
+function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies, isManager }: {
   member: OrgMember
   anomalyCount: number
   isExpanded: boolean
   onToggle: () => void
   memberAnomalies: Anomaly[]
+  isManager: boolean
 }) {
+  const [showScheduleEditor, setShowScheduleEditor] = useState(false)
+  const [schedule, setSchedule] = useState({
+    work_days: [1, 2, 3, 4, 5] as number[],
+    start_time: '08:00',
+    end_time: '17:00',
+    timezone: null as string | null,
+    idle_threshold_minutes: 60,
+    after_hours_alert: true,
+  })
+  const [scheduleLoaded, setScheduleLoaded] = useState(false)
+  const [savingSchedule, setSavingSchedule] = useState(false)
+
+  const loadSchedule = async () => {
+    if (scheduleLoaded) { setShowScheduleEditor(true); return }
+    try {
+      const res = await fetch(`/api/work-schedule?targetUserId=${member.user_id}`)
+      const data = await res.json()
+      if (data.schedule) setSchedule(data.schedule)
+      setScheduleLoaded(true)
+      setShowScheduleEditor(true)
+    } catch {
+      toast.error('Failed to load schedule')
+    }
+  }
+
+  const saveSchedule = async () => {
+    setSavingSchedule(true)
+    try {
+      const res = await fetch('/api/work-schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...schedule, targetUserId: member.user_id }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(`Schedule updated for ${member.full_name}`)
+      setShowScheduleEditor(false)
+    } catch {
+      toast.error('Failed to save schedule')
+    }
+    setSavingSchedule(false)
+  }
+
+  const toggleDay = (day: number) => {
+    const updated = schedule.work_days.includes(day)
+      ? schedule.work_days.filter(d => d !== day)
+      : [...schedule.work_days, day].sort()
+    setSchedule({ ...schedule, work_days: updated })
+  }
+
   const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.member
   const RoleIcon = roleConfig.icon
   const bgColor = AVATAR_COLORS[member.full_name.charCodeAt(0) % AVATAR_COLORS.length]
@@ -757,6 +819,80 @@ function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies
             <div className="flex items-center gap-2 text-xs text-gray-400">
               <CheckCircle2 className="w-3 h-3 text-green-500" />
               No concerns detected
+            </div>
+          )}
+
+          {/* Manager: Edit Schedule */}
+          {isManager && (
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+              {!showScheduleEditor ? (
+                <button
+                  onClick={loadSchedule}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
+                >
+                  <Settings className="w-3 h-3" />
+                  Edit Work Schedule
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Work Schedule</p>
+
+                  {/* Day toggles */}
+                  <div className="flex gap-1">
+                    {DAY_LABELS.map(({ day, label }) => {
+                      const isActive = schedule.work_days.includes(day)
+                      return (
+                        <button
+                          key={day}
+                          onClick={() => toggleDay(day)}
+                          className={`w-7 h-7 rounded-md text-[11px] font-semibold transition ${
+                            isActive
+                              ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Time inputs */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={schedule.start_time}
+                      onChange={e => setSchedule({ ...schedule, start_time: e.target.value })}
+                      className="px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                    />
+                    <span className="text-xs text-gray-400">to</span>
+                    <input
+                      type="time"
+                      value={schedule.end_time}
+                      onChange={e => setSchedule({ ...schedule, end_time: e.target.value })}
+                      className="px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={saveSchedule}
+                      disabled={savingSchedule}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 transition"
+                    >
+                      <Save className="w-3 h-3" />
+                      {savingSchedule ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setShowScheduleEditor(false)}
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

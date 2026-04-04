@@ -9,44 +9,71 @@ function getAdminClient() {
   )
 }
 
+const MANAGER_ROLES = ['org_admin', 'dept_manager']
+
 /**
  * GET /api/work-schedule
- * Returns the current user's work schedule, or defaults if none set.
+ * Returns a user's work schedule, or defaults if none set.
+ * Query params:
+ *   - targetUserId: (optional) view another user's schedule (managers only)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    let userId: string | null = null
+    let callerId: string | null = null
 
     try {
       const supabase = await createSessionClient()
       const { data: userData } = await supabase.auth.getUser()
-      userId = userData?.user?.id || null
+      callerId = userData?.user?.id || null
     } catch { /* session failed */ }
 
-    if (!userId) {
+    if (!callerId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const admin = getAdminClient()
+    const { searchParams } = new URL(request.url)
+    const targetUserId = searchParams.get('targetUserId')
 
-    // Get user's org
-    const { data: membership } = await admin
+    // Get caller's org membership
+    const { data: callerMembership } = await admin
       .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', userId)
+      .select('organization_id, department_id, team_id, role')
+      .eq('user_id', callerId)
       .limit(1)
       .single()
 
-    if (!membership) {
+    if (!callerMembership) {
       return NextResponse.json({ error: 'No organization' }, { status: 404 })
+    }
+
+    // Determine whose schedule to fetch
+    let scheduleUserId = callerId
+    if (targetUserId && targetUserId !== callerId) {
+      // Verify caller is a manager
+      if (!MANAGER_ROLES.includes(callerMembership.role)) {
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
+      // Verify target is in same org
+      const { data: targetMembership } = await admin
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', targetUserId)
+        .eq('organization_id', callerMembership.organization_id)
+        .limit(1)
+        .single()
+      if (!targetMembership) {
+        return NextResponse.json({ error: 'User not in your organization' }, { status: 404 })
+      }
+      scheduleUserId = targetUserId
     }
 
     // Get existing schedule
     const { data: schedule } = await admin
       .from('work_schedules')
       .select('work_days, start_time, end_time, timezone, idle_threshold_minutes, after_hours_alert')
-      .eq('organization_id', membership.organization_id)
-      .eq('user_id', userId)
+      .eq('organization_id', callerMembership.organization_id)
+      .eq('user_id', scheduleUserId)
       .limit(1)
       .single()
 
@@ -54,7 +81,7 @@ export async function GET() {
     const { data: org } = await admin
       .from('organizations')
       .select('timezone')
-      .eq('id', membership.organization_id)
+      .eq('id', callerMembership.organization_id)
       .single()
 
     const defaults = {
@@ -79,35 +106,60 @@ export async function GET() {
 
 /**
  * PUT /api/work-schedule
- * Create or update the current user's work schedule.
+ * Create or update a user's work schedule.
+ * Body params:
+ *   - targetUserId: (optional) edit another user's schedule (managers only)
+ *   - work_days, start_time, end_time, timezone, idle_threshold_minutes, after_hours_alert
  */
 export async function PUT(request: NextRequest) {
   try {
-    let userId: string | null = null
+    let callerId: string | null = null
 
     try {
       const supabase = await createSessionClient()
       const { data: userData } = await supabase.auth.getUser()
-      userId = userData?.user?.id || null
+      callerId = userData?.user?.id || null
     } catch { /* session failed */ }
 
-    if (!userId) {
+    if (!callerId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const admin = getAdminClient()
     const body = await request.json()
 
-    // Get user's org
-    const { data: membership } = await admin
+    // Get caller's org membership
+    const { data: callerMembership } = await admin
       .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', userId)
+      .select('organization_id, department_id, team_id, role')
+      .eq('user_id', callerId)
       .limit(1)
       .single()
 
-    if (!membership) {
+    if (!callerMembership) {
       return NextResponse.json({ error: 'No organization' }, { status: 404 })
+    }
+
+    // Determine whose schedule to update
+    let scheduleUserId = callerId
+    const targetUserId: string | undefined = body.targetUserId
+    if (targetUserId && targetUserId !== callerId) {
+      // Verify caller is a manager
+      if (!MANAGER_ROLES.includes(callerMembership.role)) {
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
+      // Verify target is in same org
+      const { data: targetMembership } = await admin
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', targetUserId)
+        .eq('organization_id', callerMembership.organization_id)
+        .limit(1)
+        .single()
+      if (!targetMembership) {
+        return NextResponse.json({ error: 'User not in your organization' }, { status: 404 })
+      }
+      scheduleUserId = targetUserId
     }
 
     // Validate
@@ -125,8 +177,8 @@ export async function PUT(request: NextRequest) {
     const { error } = await admin
       .from('work_schedules')
       .upsert({
-        organization_id: membership.organization_id,
-        user_id: userId,
+        organization_id: callerMembership.organization_id,
+        user_id: scheduleUserId,
         work_days: workDays,
         start_time: startTime,
         end_time: endTime,

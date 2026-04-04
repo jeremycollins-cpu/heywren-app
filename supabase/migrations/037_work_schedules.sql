@@ -40,3 +40,90 @@ CREATE TABLE activity_anomaly_overrides (
 
 CREATE INDEX idx_anomaly_overrides_org_date ON activity_anomaly_overrides(organization_id, anomaly_date);
 CREATE INDEX idx_anomaly_overrides_user ON activity_anomaly_overrides(user_id);
+
+-- ── Row Level Security ──────────────────────────────────────────────────────
+
+ALTER TABLE work_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_anomaly_overrides ENABLE ROW LEVEL SECURITY;
+
+-- Work schedules: users can view and edit their own
+CREATE POLICY "Users can view their own work schedule"
+  ON work_schedules FOR SELECT
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert their own work schedule"
+  ON work_schedules FOR INSERT
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update their own work schedule"
+  ON work_schedules FOR UPDATE
+  USING (user_id = auth.uid());
+
+-- Work schedules: managers can view schedules in their scope
+CREATE POLICY "Managers can view team work schedules"
+  ON work_schedules FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = work_schedules.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager', 'team_lead')
+    )
+  );
+
+-- Work schedules: org_admin and dept_manager can update any schedule in their scope
+CREATE POLICY "Managers can update team work schedules"
+  ON work_schedules FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = work_schedules.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager')
+    )
+  );
+
+CREATE POLICY "Managers can insert team work schedules"
+  ON work_schedules FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = work_schedules.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager')
+    )
+  );
+
+-- Anomaly overrides: managers can view and create overrides in their org
+CREATE POLICY "Managers can view anomaly overrides"
+  ON activity_anomaly_overrides FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = activity_anomaly_overrides.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager', 'team_lead')
+    )
+  );
+
+CREATE POLICY "Managers can create anomaly overrides"
+  ON activity_anomaly_overrides FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = activity_anomaly_overrides.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager', 'team_lead')
+    )
+  );
+
+CREATE POLICY "Managers can update anomaly overrides"
+  ON activity_anomaly_overrides FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = activity_anomaly_overrides.organization_id
+      AND om.user_id = auth.uid()
+      AND om.role IN ('org_admin', 'dept_manager', 'team_lead')
+    )
+  );
