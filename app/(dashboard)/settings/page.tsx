@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
-  Trophy, Folder, RefreshCw, Check
+  Trophy, Folder, RefreshCw, Check, Clock
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -64,6 +64,18 @@ export default function SettingsPage() {
     celebration_posts: true,
   })
   const [gamificationPrefsLoading, setGamificationPrefsLoading] = useState(true)
+  // Work schedule
+  const [workSchedule, setWorkSchedule] = useState({
+    work_days: [1, 2, 3, 4, 5] as number[],
+    start_time: '08:00',
+    end_time: '17:00',
+    timezone: null as string | null,
+    idle_threshold_minutes: 60,
+    after_hours_alert: true,
+  })
+  const [orgTimezone, setOrgTimezone] = useState('America/New_York')
+  const [workScheduleLoading, setWorkScheduleLoading] = useState(true)
+  const [savingWorkSchedule, setSavingWorkSchedule] = useState(false)
   // Company domains
   const [companyDomains, setCompanyDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
@@ -125,6 +137,19 @@ export default function SettingsPage() {
       setDomainsLoading(false)
     }
     fetchDomains()
+
+    const fetchWorkSchedule = async () => {
+      try {
+        const res = await fetch('/api/work-schedule')
+        const data = await res.json()
+        if (data.schedule) setWorkSchedule(data.schedule)
+        if (data.orgTimezone) setOrgTimezone(data.orgTimezone)
+      } catch (err) {
+        console.error('Error fetching work schedule:', err)
+      }
+      setWorkScheduleLoading(false)
+    }
+    fetchWorkSchedule()
   }, [])
 
   const loadOutlookFolders = async () => {
@@ -281,6 +306,34 @@ export default function SettingsPage() {
       setGamificationPrefs(gamificationPrefs) // revert
       toast.error('Failed to update notification preference')
     }
+  }
+
+  const saveWorkSchedule = async () => {
+    setSavingWorkSchedule(true)
+    try {
+      const res = await fetch('/api/work-schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workSchedule),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Work schedule saved')
+      }
+    } catch {
+      toast.error('Failed to save work schedule')
+    }
+    setSavingWorkSchedule(false)
+  }
+
+  const toggleWorkDay = (day: number) => {
+    const current = workSchedule.work_days
+    const updated = current.includes(day)
+      ? current.filter(d => d !== day)
+      : [...current, day].sort()
+    setWorkSchedule({ ...workSchedule, work_days: updated })
   }
 
   useEffect(() => {
@@ -631,6 +684,168 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Work Schedule */}
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+          <Clock aria-hidden="true" className="w-5 h-5" />
+          Work Schedule
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Set your working hours for activity monitoring. Your manager sees anomalies based on this schedule.
+        </p>
+
+        {workScheduleLoading ? (
+          <div className="animate-pulse space-y-4">
+            <div className="h-10 bg-gray-100 dark:bg-gray-800 rounded" />
+            <div className="h-10 bg-gray-100 dark:bg-gray-800 rounded" />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* Work Days */}
+            <div>
+              <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Work Days</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { day: 0, label: 'Sun' },
+                  { day: 1, label: 'Mon' },
+                  { day: 2, label: 'Tue' },
+                  { day: 3, label: 'Wed' },
+                  { day: 4, label: 'Thu' },
+                  { day: 5, label: 'Fri' },
+                  { day: 6, label: 'Sat' },
+                ].map(({ day, label }) => {
+                  const isActive = workSchedule.work_days.includes(day)
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => toggleWorkDay(day)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                        isActive
+                          ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
+                          : 'bg-gray-50 dark:bg-gray-800 text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Work Hours */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="settings-start-time" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Start Time</label>
+                <input
+                  id="settings-start-time"
+                  type="time"
+                  value={workSchedule.start_time}
+                  onChange={e => setWorkSchedule({ ...workSchedule, start_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-end-time" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">End Time</label>
+                <input
+                  id="settings-end-time"
+                  type="time"
+                  value={workSchedule.end_time}
+                  onChange={e => setWorkSchedule({ ...workSchedule, end_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* Timezone Override */}
+            <div>
+              <label htmlFor="settings-timezone" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+                Timezone
+                <span className="text-xs text-gray-400 font-normal ml-2">
+                  Organization default: {orgTimezone}
+                </span>
+              </label>
+              <select
+                id="settings-timezone"
+                value={workSchedule.timezone || ''}
+                onChange={e => setWorkSchedule({ ...workSchedule, timezone: e.target.value || null })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+              >
+                <option value="">Use organization default ({orgTimezone})</option>
+                <option value="America/New_York">Eastern (America/New_York)</option>
+                <option value="America/Chicago">Central (America/Chicago)</option>
+                <option value="America/Denver">Mountain (America/Denver)</option>
+                <option value="America/Los_Angeles">Pacific (America/Los_Angeles)</option>
+                <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+                <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+                <option value="Europe/London">London (Europe/London)</option>
+                <option value="Europe/Paris">Central Europe (Europe/Paris)</option>
+                <option value="Europe/Berlin">Berlin (Europe/Berlin)</option>
+                <option value="Asia/Tokyo">Tokyo (Asia/Tokyo)</option>
+                <option value="Asia/Shanghai">Shanghai (Asia/Shanghai)</option>
+                <option value="Asia/Kolkata">India (Asia/Kolkata)</option>
+                <option value="Australia/Sydney">Sydney (Australia/Sydney)</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </div>
+
+            {/* Monitoring Preferences */}
+            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Monitoring Preferences</p>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">After-hours work alerts</p>
+                  <p className="text-xs text-gray-500">Flag activity outside your work schedule</p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={workSchedule.after_hours_alert}
+                  onClick={() => setWorkSchedule({ ...workSchedule, after_hours_alert: !workSchedule.after_hours_alert })}
+                  className={`relative w-11 h-6 rounded-full transition ${
+                    workSchedule.after_hours_alert ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                    workSchedule.after_hours_alert ? 'translate-x-6' : 'translate-x-1'
+                  } mt-1`} />
+                </button>
+              </div>
+
+              <div>
+                <label htmlFor="settings-idle-threshold" className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                  Idle alert threshold
+                  <span className="text-xs text-gray-400 ml-2">Minutes of inactivity before flagging</span>
+                </label>
+                <select
+                  id="settings-idle-threshold"
+                  value={workSchedule.idle_threshold_minutes}
+                  onChange={e => setWorkSchedule({ ...workSchedule, idle_threshold_minutes: parseInt(e.target.value) })}
+                  className="w-full sm:w-48 px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white text-sm"
+                >
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 hour</option>
+                  <option value={90}>1.5 hours</option>
+                  <option value={120}>2 hours</option>
+                  <option value={180}>3 hours</option>
+                  <option value={240}>4 hours</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Save */}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={saveWorkSchedule}
+                disabled={savingWorkSchedule}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+              >
+                {savingWorkSchedule ? 'Saving...' : 'Save Schedule'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Team Settings */}
