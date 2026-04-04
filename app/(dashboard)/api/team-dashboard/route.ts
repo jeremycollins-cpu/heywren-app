@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     // ── Fetch data in parallel ────────────────────────────────────────────
     const currentWeek = getWeekStart()
-    const previousWeek = getPreviousWeekStart()
+    const previousWeek = getPreviousWeekStart(currentWeek)
     const weeksAgo = new Date(currentWeek)
     weeksAgo.setUTCDate(weeksAgo.getUTCDate() - (weeksParam * 7))
     const weeksAgoStr = weeksAgo.toISOString().split('T')[0]
