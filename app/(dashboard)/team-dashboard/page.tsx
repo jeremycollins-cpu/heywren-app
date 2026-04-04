@@ -8,6 +8,7 @@ import {
   CheckCircle2, BarChart3, Heart, Target,
   ChevronUp, ChevronDown, Award, Zap, Timer,
   Clock, Inbox, Rocket, MailCheck, Download, Plus, X,
+  AlertTriangle, Sparkles, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -19,14 +20,19 @@ interface LeaderboardEntry {
   userId: string
   displayName: string
   avatarUrl: string | null
+  jobTitle: string | null
   role: string
   totalPoints: number
   totalCompleted: number
+  totalOnTime: number
+  totalMissedResolved: number
+  weeksActive: number
   currentStreak: number
   longestStreak: number
   rank: number
   prevRank: number
   rankDelta: number
+  achievementCount: number
 }
 
 interface WeekTrend {
@@ -37,6 +43,24 @@ interface WeekTrend {
   avgResponseRate: number
   avgOnTimeRate: number
   memberCount: number
+  totalMissedResolved: number
+  meetingsAttended: number
+}
+
+interface Spotlight {
+  type: string
+  label: string
+  userId: string
+  displayName: string
+  avatarUrl: string | null
+  value: string
+  detail: string
+}
+
+interface Theme {
+  icon: string
+  text: string
+  sentiment: 'positive' | 'neutral' | 'negative'
 }
 
 interface Achievement {
@@ -75,17 +99,28 @@ interface Challenge {
   status: string
 }
 
+interface Pulse {
+  totalMembers: number
+  activeThisWeek: number
+  activeStreaks: number
+  totalPointsThisWeek: number
+  completionsThisWeek: number
+  avgResponseRate: number
+  avgOnTimeRate: number
+}
+
 interface DashboardData {
   organization: { id: string; name: string }
   callerRole: string
   scope: string
+  pulse: Pulse
   leaderboard: LeaderboardEntry[]
+  spotlights: Spotlight[]
+  themes: Theme[]
   trends: WeekTrend[]
   achievements: Achievement[]
   myAchievements: MyAchievement[]
   challenges: Challenge[]
-  healthScore: number
-  healthScoreDelta: number | null
   currentWeek: string
 }
 
@@ -102,10 +137,18 @@ const ICON_MAP: Record<string, typeof Trophy> = {
   trophy: Trophy, flame: Flame, award: Award, zap: Zap, timer: Timer,
   clock: Clock, inbox: Inbox, rocket: Rocket, 'check-circle': CheckCircle2,
   'mail-check': MailCheck, mail: Inbox, 'trending-up': TrendingUp,
-  users: Users, star: Star,
+  'trending-down': TrendingDown, users: Users, star: Star,
+  'alert-triangle': AlertTriangle,
 }
 
 const AVATAR_COLORS = ['bg-indigo-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-cyan-500', 'bg-pink-500', 'bg-teal-500']
+
+const SPOTLIGHT_STYLES: Record<string, { gradient: string; iconBg: string; icon: typeof Trophy }> = {
+  top_performer: { gradient: 'from-amber-500/10 to-orange-500/10 dark:from-amber-900/20 dark:to-orange-900/20', iconBg: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600', icon: Crown },
+  streak_leader: { gradient: 'from-orange-500/10 to-red-500/10 dark:from-orange-900/20 dark:to-red-900/20', iconBg: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600', icon: Flame },
+  most_improved: { gradient: 'from-green-500/10 to-emerald-500/10 dark:from-green-900/20 dark:to-emerald-900/20', iconBg: 'bg-green-100 dark:bg-green-900/30 text-green-600', icon: TrendingUp },
+  most_responsive: { gradient: 'from-blue-500/10 to-indigo-500/10 dark:from-blue-900/20 dark:to-indigo-900/20', iconBg: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600', icon: MailCheck },
+}
 
 function getInitials(name: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -116,17 +159,22 @@ function formatWeekLabel(weekStart: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+const METRIC_LABELS: Record<string, string> = {
+  commitments_completed: 'Commitments Completed',
+  points_earned: 'Points Earned',
+  response_rate: 'Response Rate (%)',
+  on_time_rate: 'On-Time Rate (%)',
+  streak_members: 'Members on Streaks',
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function TeamDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'achievements' | 'challenges'>('leaderboard')
+  const [expandedMember, setExpandedMember] = useState<string | null>(null)
   const [showCreateChallenge, setShowCreateChallenge] = useState(false)
-  const [evalMetrics, setEvalMetrics] = useState<{
-    emailsEvaluated: number; emailsMissed: number;
-    chatsEvaluated: number; chatsMissed: number;
-  } | null>(null)
+  const [secondaryTab, setSecondaryTab] = useState<'achievements' | 'challenges'>('achievements')
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -146,22 +194,6 @@ export default function TeamDashboardPage() {
 
   useEffect(() => {
     loadDashboard()
-    // Fetch evaluation metrics
-    async function fetchEvalMetrics() {
-      try {
-        const [emailRes, chatRes] = await Promise.all([
-          fetch('/api/missed-emails').then(r => r.ok ? r.json() : null),
-          fetch('/api/missed-chats').then(r => r.ok ? r.json() : null),
-        ])
-        setEvalMetrics({
-          emailsEvaluated: emailRes?.totalEvaluated || 0,
-          emailsMissed: emailRes?.missedEmails?.length || 0,
-          chatsEvaluated: chatRes?.totalEvaluated || 0,
-          chatsMissed: chatRes?.missedChats?.length || 0,
-        })
-      } catch { /* ignore */ }
-    }
-    fetchEvalMetrics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -184,17 +216,17 @@ export default function TeamDashboardPage() {
   if (loading) return <LoadingSkeleton variant="dashboard" />
   if (!data) return <EmptyState />
 
-  const { leaderboard, trends, achievements, myAchievements, challenges, healthScore, healthScoreDelta } = data
+  const { pulse, leaderboard, spotlights, themes, trends, achievements, myAchievements, challenges } = data
 
   return (
     <UpgradeGate featureKey="team_management">
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Team Dashboard</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            {data.organization?.name} · Weekly performance, leaderboards, and achievements
+            {data.organization?.name} · People, performance, and momentum
           </p>
         </div>
         <button
@@ -206,162 +238,285 @@ export default function TeamDashboardPage() {
         </button>
       </div>
 
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Team Health Score */}
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Heart className="w-4 h-4 text-rose-500" />
-            <p className="text-xs font-medium text-gray-500">Team Health</p>
-          </div>
-          <div className="flex items-end gap-2">
-            <p className={`text-3xl font-bold ${
-              healthScore >= 70 ? 'text-green-600' : healthScore >= 40 ? 'text-amber-600' : 'text-red-600'
-            }`}>
-              {healthScore}
-            </p>
-            <span className="text-sm text-gray-400 mb-1">/100</span>
-            {healthScoreDelta !== null && (
-              <span className={`text-xs font-medium mb-1 ${
-                healthScoreDelta > 0 ? 'text-green-600' : healthScoreDelta < 0 ? 'text-red-600' : 'text-gray-400'
-              }`}>
-                {healthScoreDelta > 0 ? '+' : ''}{healthScoreDelta}
-              </span>
-            )}
-          </div>
-          <HealthBar score={healthScore} />
-        </div>
-
-        {/* Total Points This Period */}
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="w-4 h-4 text-violet-500" />
-            <p className="text-xs font-medium text-gray-500">Points This Week</p>
-          </div>
-          <p className="text-3xl font-bold text-gray-900 dark:text-white">
-            {trends.length > 0 ? trends[trends.length - 1].totalPoints.toLocaleString() : '0'}
-          </p>
-          <WeekDelta trends={trends} field="totalPoints" />
-        </div>
-
-        {/* Completions This Week */}
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <p className="text-xs font-medium text-gray-500">Completed This Week</p>
-          </div>
-          <p className="text-3xl font-bold text-green-600">
-            {trends.length > 0 ? trends[trends.length - 1].completions : 0}
-          </p>
-          <WeekDelta trends={trends} field="completions" />
-        </div>
-
-        {/* Active Streaks */}
-        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Flame className="w-4 h-4 text-orange-500" />
-            <p className="text-xs font-medium text-gray-500">Active Streaks</p>
-          </div>
-          <p className="text-3xl font-bold text-orange-600">
-            {leaderboard.filter(m => m.currentStreak >= 2).length}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            of {leaderboard.length} members on 2+ week streaks
-          </p>
-        </div>
-      </div>
-
-      {/* Trend Sparkline Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TrendChart
-          title="Weekly Output"
-          subtitle="Total points earned per week"
-          data={trends}
-          field="totalPoints"
-          color="indigo"
+      {/* ── Company Pulse ───────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <PulseStat
+          icon={<Users className="w-4 h-4 text-indigo-500" />}
+          label="Team Members"
+          value={pulse.totalMembers}
+          detail={`${pulse.activeThisWeek} active this week`}
         />
-        <TrendChart
-          title="Completion Rate"
-          subtitle="Commitments completed per week"
-          data={trends}
-          field="completions"
-          color="green"
+        <PulseStat
+          icon={<Zap className="w-4 h-4 text-violet-500" />}
+          label="Points This Week"
+          value={pulse.totalPointsThisWeek.toLocaleString()}
+          detail={<WeekDeltaInline trends={trends} field="totalPoints" />}
+        />
+        <PulseStat
+          icon={<CheckCircle2 className="w-4 h-4 text-green-500" />}
+          label="Completed"
+          value={pulse.completionsThisWeek}
+          detail={<WeekDeltaInline trends={trends} field="completions" />}
+        />
+        <PulseStat
+          icon={<Flame className="w-4 h-4 text-orange-500" />}
+          label="Active Streaks"
+          value={pulse.activeStreaks}
+          detail={`of ${pulse.totalMembers} on 2+ week streaks`}
         />
       </div>
 
-      {/* Communication Coverage */}
-      {evalMetrics && (evalMetrics.emailsEvaluated > 0 || evalMetrics.chatsEvaluated > 0) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {evalMetrics.emailsEvaluated > 0 && (
-            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <Inbox className="w-4 h-4 text-indigo-500" />
-                <p className="text-xs font-medium text-gray-500">Emails Evaluated</p>
+      {/* ── Spotlights ──────────────────────────────────────────────────── */}
+      {spotlights.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {spotlights.map(s => {
+            const style = SPOTLIGHT_STYLES[s.type] || SPOTLIGHT_STYLES.top_performer
+            const Icon = style.icon
+            const bgColor = AVATAR_COLORS[s.displayName.charCodeAt(0) % AVATAR_COLORS.length]
+            return (
+              <div
+                key={s.type}
+                className={`relative overflow-hidden rounded-xl border border-gray-200 dark:border-border-dark bg-gradient-to-br ${style.gradient} p-4`}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={`w-6 h-6 rounded-md flex items-center justify-center ${style.iconBg}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  {s.avatarUrl ? (
+                    <img src={s.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" />
+                  ) : (
+                    <div className={`w-9 h-9 ${bgColor} rounded-full flex items-center justify-center text-white font-bold text-xs`}>
+                      {getInitials(s.displayName)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{s.displayName}</p>
+                    <p className="text-xs text-gray-500">{s.value}</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-2">{s.detail}</p>
               </div>
-              <div className="flex items-end gap-2">
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{evalMetrics.emailsEvaluated.toLocaleString()}</p>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {evalMetrics.emailsMissed} need{evalMetrics.emailsMissed === 1 ? 's' : ''} response ({evalMetrics.emailsEvaluated > 0 ? Math.round((evalMetrics.emailsMissed / evalMetrics.emailsEvaluated) * 100) : 0}% missed rate)
-              </p>
-            </div>
-          )}
-          {evalMetrics.chatsEvaluated > 0 && (
-            <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <Inbox className="w-4 h-4 text-purple-500" />
-                <p className="text-xs font-medium text-gray-500">Slack Messages Evaluated</p>
-              </div>
-              <div className="flex items-end gap-2">
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{evalMetrics.chatsEvaluated.toLocaleString()}</p>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {evalMetrics.chatsMissed} need{evalMetrics.chatsMissed === 1 ? 's' : ''} response ({evalMetrics.chatsEvaluated > 0 ? Math.round((evalMetrics.chatsMissed / evalMetrics.chatsEvaluated) * 100) : 0}% missed rate)
-              </p>
-            </div>
-          )}
+            )
+          })}
         </div>
       )}
 
-      {/* Tabs: Leaderboard / Achievements / Challenges */}
+      {/* ── Company Themes ──────────────────────────────────────────────── */}
+      {themes.length > 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">This Week&apos;s Themes</h2>
+          </div>
+          <div className="space-y-2.5">
+            {themes.map((theme, i) => {
+              const Icon = ICON_MAP[theme.icon] || Sparkles
+              const sentimentColor = theme.sentiment === 'positive'
+                ? 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400'
+                : theme.sentiment === 'negative'
+                ? 'text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400'
+                : 'text-gray-500 bg-gray-50 dark:bg-gray-800 dark:text-gray-400'
+              return (
+                <div key={i} className="flex items-start gap-3">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${sentimentColor}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 pt-1">{theme.text}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── People Leaderboard (primary content) ────────────────────────── */}
       <div>
-        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-          {(['leaderboard', 'achievements', 'challenges'] as const).map(tab => (
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Rankings</h2>
+          </div>
+          <span className="text-xs text-gray-400">{leaderboard.length} member{leaderboard.length !== 1 ? 's' : ''}</span>
+        </div>
+
+        {leaderboard.length === 0 ? (
+          <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
+            <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">No scores recorded yet</p>
+            <p className="text-sm text-gray-400 mt-1">Rankings will populate after the first weekly score calculation</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {leaderboard.map((entry, i) => {
+              const bgColor = AVATAR_COLORS[entry.displayName.charCodeAt(0) % AVATAR_COLORS.length]
+              const isTop3 = i < 3
+              const isExpanded = expandedMember === entry.userId
+
+              return (
+                <div key={entry.userId}>
+                  <button
+                    onClick={() => setExpandedMember(isExpanded ? null : entry.userId)}
+                    className={`w-full flex items-center gap-4 p-4 rounded-xl border transition text-left ${
+                      isTop3
+                        ? 'bg-gradient-to-r from-white to-amber-50/50 dark:from-surface-dark-secondary dark:to-amber-900/10 border-amber-200/50 dark:border-amber-800/30'
+                        : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    {/* Rank */}
+                    <div className="w-8 text-center flex-shrink-0">
+                      {i === 0 ? (
+                        <span className="text-xl">&#129351;</span>
+                      ) : i === 1 ? (
+                        <span className="text-xl">&#129352;</span>
+                      ) : i === 2 ? (
+                        <span className="text-xl">&#129353;</span>
+                      ) : (
+                        <span className="text-sm font-bold text-gray-400">#{i + 1}</span>
+                      )}
+                    </div>
+
+                    {/* Avatar */}
+                    {entry.avatarUrl ? (
+                      <img src={entry.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+                        {getInitials(entry.displayName)}
+                      </div>
+                    )}
+
+                    {/* Name + Meta */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate">{entry.displayName}</h3>
+                        {entry.currentStreak >= 2 && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600">
+                            <Flame className="w-3 h-3" />
+                            {entry.currentStreak}w
+                          </span>
+                        )}
+                        {entry.achievementCount > 0 && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600">
+                            <Award className="w-3 h-3" />
+                            {entry.achievementCount}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">
+                        {entry.jobTitle || entry.role.replace('_', ' ')}
+                        {entry.weeksActive > 0 && ` · ${entry.weeksActive}w active`}
+                      </p>
+                    </div>
+
+                    {/* Rank Delta */}
+                    <div className="flex-shrink-0 w-10 text-center">
+                      {entry.rankDelta > 0 ? (
+                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-600">
+                          <ArrowUp className="w-3 h-3" />
+                          {entry.rankDelta}
+                        </span>
+                      ) : entry.rankDelta < 0 ? (
+                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-red-600">
+                          <ArrowDown className="w-3 h-3" />
+                          {Math.abs(entry.rankDelta)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </div>
+
+                    {/* Points */}
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-lg font-bold text-gray-900 dark:text-white">{entry.totalPoints.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">points</p>
+                    </div>
+                  </button>
+
+                  {/* Expanded stats */}
+                  {isExpanded && (
+                    <div className="mx-4 -mt-1 mb-1 p-4 bg-gray-50 dark:bg-gray-800/50 border border-t-0 border-gray-200 dark:border-border-dark rounded-b-xl">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                        <div>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">{entry.totalCompleted}</p>
+                          <p className="text-[11px] text-gray-500">Completed</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">
+                            {entry.totalCompleted > 0 ? Math.round((entry.totalOnTime / entry.totalCompleted) * 100) : 0}%
+                          </p>
+                          <p className="text-[11px] text-gray-500">On Time</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">{entry.totalMissedResolved}</p>
+                          <p className="text-[11px] text-gray-500">Msgs Addressed</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">{entry.longestStreak}w</p>
+                          <p className="text-[11px] text-gray-500">Best Streak</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Momentum Trends ─────────────────────────────────────────────── */}
+      {trends.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <TrendChart
+            title="Team Output"
+            subtitle="Total points earned per week"
+            data={trends}
+            field="totalPoints"
+            color="indigo"
+          />
+          <TrendChart
+            title="Completion Trend"
+            subtitle="Items completed per week"
+            data={trends}
+            field="completions"
+            color="green"
+          />
+        </div>
+      )}
+
+      {/* ── Achievements & Challenges (secondary) ──────────────────────── */}
+      <div>
+        <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit mb-4">
+          {(['achievements', 'challenges'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setSecondaryTab(tab)}
               className={`px-4 py-2 rounded-md text-sm font-medium transition ${
-                activeTab === tab
+                secondaryTab === tab
                   ? 'bg-white dark:bg-surface-dark-secondary text-gray-900 dark:text-white shadow-sm'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
-              {tab === 'leaderboard' ? 'Leaderboard' : tab === 'achievements' ? 'Achievements' : 'Challenges'}
+              {tab === 'achievements' ? 'Achievements' : 'Challenges'}
             </button>
           ))}
         </div>
 
-        <div className="mt-4">
-          {activeTab === 'leaderboard' && (
-            <LeaderboardSection leaderboard={leaderboard} />
-          )}
-          {activeTab === 'achievements' && (
-            <AchievementsSection
-              achievements={achievements}
-              myAchievements={myAchievements}
-            />
-          )}
-          {activeTab === 'challenges' && (
-            <ChallengesSection
-              challenges={challenges}
-              callerRole={data.callerRole}
-              showCreate={showCreateChallenge}
-              onToggleCreate={() => setShowCreateChallenge(!showCreateChallenge)}
-              organizationId={data.organization?.id}
-              onChallengeCreated={loadDashboard}
-            />
-          )}
-        </div>
+        {secondaryTab === 'achievements' && (
+          <AchievementsSection achievements={achievements} myAchievements={myAchievements} />
+        )}
+        {secondaryTab === 'challenges' && (
+          <ChallengesSection
+            challenges={challenges}
+            callerRole={data.callerRole}
+            showCreate={showCreateChallenge}
+            onToggleCreate={() => setShowCreateChallenge(!showCreateChallenge)}
+            organizationId={data.organization?.id}
+            onChallengeCreated={loadDashboard}
+          />
+        )}
       </div>
     </div>
     </UpgradeGate>
@@ -370,29 +525,38 @@ export default function TeamDashboardPage() {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function HealthBar({ score }: { score: number }) {
-  const color = score >= 70 ? 'bg-green-500' : score >= 40 ? 'bg-amber-500' : 'bg-red-500'
+function PulseStat({ icon, label, value, detail }: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+  detail: React.ReactNode
+}) {
   return (
-    <div className="w-full h-2 bg-gray-100 dark:bg-gray-700 rounded-full mt-2 overflow-hidden">
-      <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${score}%` }} />
+    <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {icon}
+        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      </div>
+      <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
+      <div className="text-xs text-gray-400 mt-1">{detail}</div>
     </div>
   )
 }
 
-function WeekDelta({ trends, field }: { trends: WeekTrend[]; field: keyof WeekTrend }) {
-  if (trends.length < 2) return <p className="text-xs text-gray-400 mt-1">No prior week data</p>
+function WeekDeltaInline({ trends, field }: { trends: WeekTrend[]; field: keyof WeekTrend }) {
+  if (trends.length < 2) return <span>No prior week data</span>
   const current = trends[trends.length - 1][field] as number
   const prev = trends[trends.length - 2][field] as number
   const delta = current - prev
   const pct = prev > 0 ? Math.round(delta / prev * 100) : 0
 
   return (
-    <p className={`text-xs font-medium mt-1 flex items-center gap-1 ${
-      delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-400'
+    <span className={`inline-flex items-center gap-0.5 ${
+      delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-500' : 'text-gray-400'
     }`}>
       {delta > 0 ? <TrendingUp className="w-3 h-3" /> : delta < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
       {delta > 0 ? '+' : ''}{delta} ({pct > 0 ? '+' : ''}{pct}%) vs last week
-    </p>
+    </span>
   )
 }
 
@@ -434,95 +598,6 @@ function TrendChart({ title, subtitle, data, field, color }: {
   )
 }
 
-function LeaderboardSection({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
-  if (leaderboard.length === 0) {
-    return (
-      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
-        <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <p className="text-gray-500">No scores recorded yet</p>
-        <p className="text-sm text-gray-400 mt-1">Leaderboard will populate after the first weekly score calculation</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      {leaderboard.map((entry, i) => {
-        const bgColor = AVATAR_COLORS[entry.displayName.charCodeAt(0) % AVATAR_COLORS.length]
-        const isTop3 = i < 3
-
-        return (
-          <div
-            key={entry.userId}
-            className={`flex items-center gap-4 p-4 rounded-xl border transition ${
-              isTop3
-                ? 'bg-gradient-to-r from-white to-amber-50/50 dark:from-surface-dark-secondary dark:to-amber-900/10 border-amber-200/50 dark:border-amber-800/30'
-                : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark'
-            }`}
-          >
-            {/* Rank */}
-            <div className="w-10 text-center flex-shrink-0">
-              {i === 0 ? (
-                <span className="text-2xl">&#129351;</span>
-              ) : i === 1 ? (
-                <span className="text-2xl">&#129352;</span>
-              ) : i === 2 ? (
-                <span className="text-2xl">&#129353;</span>
-              ) : (
-                <span className="text-lg font-bold text-gray-400">#{i + 1}</span>
-              )}
-            </div>
-
-            {/* Avatar */}
-            <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-              {getInitials(entry.displayName)}
-            </div>
-
-            {/* Name + Streak */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-gray-900 dark:text-white truncate">{entry.displayName}</h3>
-                {entry.currentStreak >= 2 && (
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600">
-                    <Flame className="w-3 h-3" />
-                    {entry.currentStreak}w
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-500">
-                {entry.totalCompleted} completed · {entry.longestStreak}w best streak
-              </p>
-            </div>
-
-            {/* Rank Delta */}
-            <div className="flex-shrink-0 w-12 text-center">
-              {entry.rankDelta > 0 ? (
-                <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-600">
-                  <ChevronUp className="w-3 h-3" />
-                  {entry.rankDelta}
-                </span>
-              ) : entry.rankDelta < 0 ? (
-                <span className="inline-flex items-center gap-0.5 text-xs font-medium text-red-600">
-                  <ChevronDown className="w-3 h-3" />
-                  {Math.abs(entry.rankDelta)}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400">-</span>
-              )}
-            </div>
-
-            {/* Points */}
-            <div className="flex-shrink-0 text-right">
-              <p className="text-lg font-bold text-gray-900 dark:text-white">{entry.totalPoints.toLocaleString()}</p>
-              <p className="text-[10px] text-gray-400 font-medium">points</p>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 function AchievementsSection({ achievements, myAchievements }: {
   achievements: Achievement[]
   myAchievements: MyAchievement[]
@@ -539,7 +614,6 @@ function AchievementsSection({ achievements, myAchievements }: {
 
   return (
     <div className="space-y-6">
-      {/* My Recent Achievements */}
       {myAchievements.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">My Achievements</h3>
@@ -561,7 +635,6 @@ function AchievementsSection({ achievements, myAchievements }: {
         </div>
       )}
 
-      {/* All Achievements by Category */}
       {categories.map(cat => {
         const catAchievements = achievements.filter(a => a.category === cat)
         if (catAchievements.length === 0) return null
@@ -619,14 +692,6 @@ function AchievementsSection({ achievements, myAchievements }: {
   )
 }
 
-const METRIC_LABELS: Record<string, string> = {
-  commitments_completed: 'Commitments Completed',
-  points_earned: 'Points Earned',
-  response_rate: 'Response Rate (%)',
-  on_time_rate: 'On-Time Rate (%)',
-  streak_members: 'Members on Streaks',
-}
-
 function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate, organizationId, onChallengeCreated }: {
   challenges: Challenge[]
   callerRole: string
@@ -641,7 +706,7 @@ function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate,
     scopeType: 'organization' as string,
     targetMetric: 'commitments_completed' as string,
     targetValue: 50,
-    duration: '7', // days
+    duration: '7',
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -681,7 +746,6 @@ function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate,
 
   return (
     <div className="space-y-4">
-      {/* Create Challenge Button (org_admin only) */}
       {callerRole === 'org_admin' && (
         <div className="flex justify-end">
           <button
@@ -695,7 +759,6 @@ function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate,
         </div>
       )}
 
-      {/* Create Challenge Form */}
       {showCreate && (
         <div className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-5 space-y-4">
           <h3 className="font-semibold text-gray-900 dark:text-white">New Team Challenge</h3>
@@ -780,7 +843,6 @@ function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate,
         </div>
       )}
 
-      {/* Challenge list */}
       {challenges.length === 0 && !showCreate ? (
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-12 text-center">
           <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -849,10 +911,10 @@ function EmptyState() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center max-w-md">
-        <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+        <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Team Dashboard</h2>
         <p className="text-gray-500">
-          Join an organization to see team leaderboards, achievements, and performance trends.
+          Join an organization to see team rankings, achievements, and company-wide trends.
         </p>
       </div>
     </div>
