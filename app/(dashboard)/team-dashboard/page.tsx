@@ -9,6 +9,7 @@ import {
   ChevronUp, ChevronDown, Award, Zap, Timer,
   Clock, Inbox, Rocket, MailCheck, Download, Plus, X,
   AlertTriangle, Sparkles, ArrowUp, ArrowDown,
+  Smile, Frown, Meh, MessageCircle, ThermometerSun,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -109,6 +110,40 @@ interface Pulse {
   avgOnTimeRate: number
 }
 
+interface CultureInsights {
+  currentToneIndex: number
+  currentLabel: 'positive' | 'neutral' | 'negative'
+  sampleCount: number
+  distribution: { positive: number; neutral: number; negative: number }
+  topThemes: Array<{ theme: string; count: number; percentage: number }>
+  weeklyTrend: Array<{
+    week: string
+    toneIndex: number
+    sampleCount: number
+    themes: Record<string, number>
+    distribution: { positive: number; neutral: number; negative: number }
+  }>
+  individuals: Array<{
+    userId: string
+    name: string
+    avatar: string | null
+    avgSentiment: number
+    messageCount: number
+    label: 'positive' | 'neutral' | 'negative'
+    topThemes: string[]
+    trend: Array<{ week: string; avg: number }>
+  }>
+  notableShifts: Array<{
+    userId: string
+    name: string
+    avatar: string | null
+    previousAvg: number
+    currentAvg: number
+    delta: number
+    direction: 'improving' | 'declining'
+  }>
+}
+
 interface DashboardData {
   organization: { id: string; name: string }
   callerRole: string
@@ -175,6 +210,7 @@ export default function TeamDashboardPage() {
   const [expandedMember, setExpandedMember] = useState<string | null>(null)
   const [showCreateChallenge, setShowCreateChallenge] = useState(false)
   const [secondaryTab, setSecondaryTab] = useState<'achievements' | 'challenges'>('achievements')
+  const [cultureInsights, setCultureInsights] = useState<CultureInsights | null>(null)
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -202,10 +238,18 @@ export default function TeamDashboardPage() {
       const { data: user } = await supabase.auth.getUser()
       if (!user?.user) return
 
-      const res = await fetch(`/api/team-dashboard?userId=${user.user.id}`, { cache: 'no-store' })
+      const [res, cultureRes] = await Promise.all([
+        fetch(`/api/team-dashboard?userId=${user.user.id}`, { cache: 'no-store' }),
+        fetch('/api/culture-insights', { cache: 'no-store' }),
+      ])
       if (!res.ok) { setLoading(false); return }
       const dashData = await res.json()
       setData(dashData)
+
+      if (cultureRes.ok) {
+        const cultureData = await cultureRes.json()
+        if (!cultureData.error) setCultureInsights(cultureData)
+      }
     } catch (err) {
       console.error('Error loading team dashboard:', err)
     } finally {
@@ -484,6 +528,11 @@ export default function TeamDashboardPage() {
             color="green"
           />
         </div>
+      )}
+
+      {/* ── Culture & Tone Insights ─────────────────────────────────────── */}
+      {cultureInsights && cultureInsights.sampleCount > 0 && (
+        <CultureInsightsSection insights={cultureInsights} />
       )}
 
       {/* ── Achievements & Challenges (secondary) ──────────────────────── */}
@@ -902,6 +951,221 @@ function ChallengesSection({ challenges, callerRole, showCreate, onToggleCreate,
             </div>
           )
         })
+      )}
+    </div>
+  )
+}
+
+// ── Culture & Tone Insights ──────────────────────────────────────────────────
+
+const TONE_THEME_STYLES: Record<string, { bg: string; text: string; icon: string }> = {
+  gratitude:     { bg: 'bg-green-50 dark:bg-green-900/20',   text: 'text-green-700 dark:text-green-400',     icon: '🙏' },
+  urgency:       { bg: 'bg-amber-50 dark:bg-amber-900/20',   text: 'text-amber-700 dark:text-amber-400',     icon: '⚡' },
+  frustration:   { bg: 'bg-red-50 dark:bg-red-900/20',       text: 'text-red-700 dark:text-red-400',         icon: '😤' },
+  collaboration: { bg: 'bg-blue-50 dark:bg-blue-900/20',     text: 'text-blue-700 dark:text-blue-400',       icon: '🤝' },
+  confusion:     { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-700 dark:text-purple-400',   icon: '❓' },
+  celebration:   { bg: 'bg-pink-50 dark:bg-pink-900/20',     text: 'text-pink-700 dark:text-pink-400',       icon: '🎉' },
+  concern:       { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-700 dark:text-orange-400',   icon: '⚠️' },
+  encouragement: { bg: 'bg-teal-50 dark:bg-teal-900/20',     text: 'text-teal-700 dark:text-teal-400',       icon: '💪' },
+  formality:     { bg: 'bg-gray-50 dark:bg-gray-800',        text: 'text-gray-700 dark:text-gray-300',       icon: '📋' },
+  casual:        { bg: 'bg-cyan-50 dark:bg-cyan-900/20',     text: 'text-cyan-700 dark:text-cyan-400',       icon: '😊' },
+}
+
+function CultureInsightsSection({ insights }: { insights: CultureInsights }) {
+  const { currentToneIndex, currentLabel, sampleCount, distribution, topThemes, weeklyTrend, individuals, notableShifts } = insights
+
+  const toneColor = currentLabel === 'positive'
+    ? 'text-green-600 dark:text-green-400'
+    : currentLabel === 'negative'
+      ? 'text-red-600 dark:text-red-400'
+      : 'text-gray-600 dark:text-gray-400'
+
+  const ToneIcon = currentLabel === 'positive' ? Smile : currentLabel === 'negative' ? Frown : Meh
+
+  const total = distribution.positive + distribution.neutral + distribution.negative
+  const positivePct = total > 0 ? Math.round((distribution.positive / total) * 100) : 0
+  const neutralPct = total > 0 ? Math.round((distribution.neutral / total) * 100) : 0
+  const negativePct = total > 0 ? Math.round((distribution.negative / total) * 100) : 0
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <ThermometerSun className="w-5 h-5 text-indigo-500" />
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Culture & Tone</h2>
+        <span className="text-xs text-gray-400 ml-auto">{sampleCount} messages analyzed</span>
+      </div>
+
+      {/* Tone Index + Distribution */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Company Tone Index */}
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <ToneIcon className={`w-6 h-6 ${toneColor}`} />
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company Tone</span>
+          </div>
+          <p className={`text-3xl font-bold ${toneColor}`}>
+            {currentToneIndex > 0 ? '+' : ''}{currentToneIndex.toFixed(2)}
+          </p>
+          <p className="text-xs text-gray-400 mt-1 capitalize">{currentLabel} overall sentiment</p>
+        </div>
+
+        {/* Sentiment Distribution */}
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Sentiment Mix</p>
+          <div className="flex h-4 rounded-full overflow-hidden mb-2">
+            {positivePct > 0 && <div className="bg-green-500" style={{ width: `${positivePct}%` }} />}
+            {neutralPct > 0 && <div className="bg-gray-300 dark:bg-gray-600" style={{ width: `${neutralPct}%` }} />}
+            {negativePct > 0 && <div className="bg-red-500" style={{ width: `${negativePct}%` }} />}
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-green-600">{positivePct}% positive</span>
+            <span className="text-gray-400">{neutralPct}% neutral</span>
+            <span className="text-red-500">{negativePct}% negative</span>
+          </div>
+        </div>
+
+        {/* Notable Shifts */}
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Notable Shifts</p>
+          {notableShifts.length === 0 ? (
+            <p className="text-sm text-gray-400">No significant sentiment changes this period</p>
+          ) : (
+            <div className="space-y-2">
+              {notableShifts.slice(0, 3).map(shift => (
+                <div key={shift.userId} className="flex items-center gap-2 text-sm">
+                  {shift.direction === 'improving' ? (
+                    <ArrowUp className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <ArrowDown className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                  )}
+                  <span className="text-gray-700 dark:text-gray-300 truncate">{shift.name}</span>
+                  <span className={`text-xs font-medium ml-auto ${
+                    shift.direction === 'improving' ? 'text-green-600' : 'text-red-500'
+                  }`}>
+                    {shift.delta > 0 ? '+' : ''}{shift.delta.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Top Themes */}
+      {topThemes.length > 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Culture Themes</p>
+          <div className="flex flex-wrap gap-2">
+            {topThemes.map(t => {
+              const style = TONE_THEME_STYLES[t.theme] || TONE_THEME_STYLES.formality
+              return (
+                <span
+                  key={t.theme}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${style.bg} ${style.text}`}
+                >
+                  <span>{style.icon}</span>
+                  <span className="capitalize">{t.theme}</span>
+                  <span className="opacity-60">{t.percentage}%</span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Tone Trend Chart */}
+      {weeklyTrend.length > 1 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Tone Trend</h3>
+            <p className="text-xs text-gray-400">Company sentiment over time</p>
+          </div>
+          <div className="flex items-end gap-1 h-24">
+            {weeklyTrend.map((w, i) => {
+              // Normalize -1..1 to 0..100 for bar height
+              const normalized = ((w.toneIndex + 1) / 2) * 100
+              const barHeight = Math.max(4, normalized)
+              const isPositive = w.toneIndex >= 0
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div className="w-full relative flex flex-col justify-end h-24">
+                    <div
+                      className={`w-full rounded-t transition-all ${
+                        isPositive
+                          ? 'bg-green-400 dark:bg-green-500'
+                          : 'bg-red-400 dark:bg-red-500'
+                      } group-hover:opacity-80`}
+                      style={{ height: `${barHeight}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-gray-400 leading-none">
+                    {formatWeekLabel(w.week)}
+                  </span>
+                  {/* Tooltip */}
+                  <div className="absolute bottom-full mb-2 hidden group-hover:block z-10">
+                    <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
+                      <p className="font-medium">{w.toneIndex > 0 ? '+' : ''}{w.toneIndex.toFixed(2)}</p>
+                      <p className="text-gray-300">{w.sampleCount} messages</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Individual Sentiment */}
+      {individuals.length > 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Individual Sentiment</p>
+          <div className="space-y-2">
+            {individuals.slice(0, 8).map(person => {
+              const sentColor = person.label === 'positive'
+                ? 'text-green-600 dark:text-green-400'
+                : person.label === 'negative'
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-gray-500'
+              const barWidth = Math.round(((person.avgSentiment + 1) / 2) * 100)
+              const barColor = person.label === 'positive'
+                ? 'bg-green-400'
+                : person.label === 'negative'
+                  ? 'bg-red-400'
+                  : 'bg-gray-300 dark:bg-gray-600'
+
+              return (
+                <div key={person.userId} className="flex items-center gap-3">
+                  {person.avatar ? (
+                    <img src={person.avatar} alt="" className="w-7 h-7 rounded-full" />
+                  ) : (
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+                      AVATAR_COLORS[person.name.charCodeAt(0) % AVATAR_COLORS.length]
+                    }`}>
+                      {getInitials(person.name)}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white truncate">{person.name}</span>
+                      {person.topThemes.slice(0, 2).map(theme => (
+                        <span key={theme} className="text-[10px] text-gray-400 capitalize">{theme}</span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barWidth}%` }} />
+                      </div>
+                      <span className={`text-xs font-medium ${sentColor} w-10 text-right`}>
+                        {person.avgSentiment > 0 ? '+' : ''}{person.avgSentiment.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-gray-400">{person.messageCount} msgs</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
     </div>
   )
