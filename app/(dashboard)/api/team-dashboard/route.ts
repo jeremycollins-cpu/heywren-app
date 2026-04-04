@@ -3,6 +3,43 @@ import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { getWeekStart, getPreviousWeekStart } from '@/lib/team/calculate-scores'
 
+interface LeaderboardMember {
+  userId: string
+  displayName: string
+  avatarUrl: string | null
+  jobTitle: string | null
+  role: string
+  totalPoints: number
+  totalCompleted: number
+  totalOnTime: number
+  totalMissedResolved: number
+  weeksActive: number
+  currentStreak: number
+  longestStreak: number
+  rank: number
+  prevRank: number
+  rankDelta: number
+  achievementCount: number
+}
+
+interface WeeklyScoreRow {
+  user_id: string
+  week_start: string
+  total_points: number | null
+  commitments_completed: number | null
+  commitments_overdue: number | null
+  response_rate: number | null
+  on_time_rate: number | null
+  points_earned: number | null
+  bonus_points: number | null
+  commitments_created: number | null
+  missed_emails_resolved: number | null
+  missed_chats_resolved: number | null
+  meetings_attended: number | null
+  on_time_completions: number | null
+  avg_days_to_close: number | null
+}
+
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -140,7 +177,7 @@ export async function GET(request: NextRequest) {
     const memberOrgMap = new Map((profilesRes.data || []).map((m: any) => [m.user_id, m]))
 
     // ── Build leaderboard ─────────────────────────────────────────────────
-    const leaderboard = (memberScoresRes.data || [])
+    const leaderboard: LeaderboardMember[] = (memberScoresRes.data || [])
       .filter((ms: any) => {
         const member = memberOrgMap.get(ms.user_id)
         if (!member) return false
@@ -228,16 +265,17 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
 
     // ── Build per-user weekly points for spotlights ─────────────────────
-    const currentWeekScores = weeklyData.filter(ws => ws.week_start === currentWeek)
-    const prevWeekScores = weeklyData.filter(ws => ws.week_start === previousWeek)
-    const prevWeekPointsMap = new Map(prevWeekScores.map(ws => [ws.user_id, ws.total_points || 0]))
+    const typedWeeklyData = weeklyData as WeeklyScoreRow[]
+    const currentWeekScores = typedWeeklyData.filter((ws: WeeklyScoreRow) => ws.week_start === currentWeek)
+    const prevWeekScores = typedWeeklyData.filter((ws: WeeklyScoreRow) => ws.week_start === previousWeek)
+    const prevWeekPointsMap = new Map<string, number>(prevWeekScores.map((ws: WeeklyScoreRow) => [ws.user_id, ws.total_points || 0]))
 
     // ── Spotlights: auto-generated highlights ─────────────────────────
     const spotlights: Array<{ type: string; label: string; userId: string; displayName: string; avatarUrl: string | null; value: string; detail: string }> = []
 
     // Top Performer — highest points this week
     if (currentWeekScores.length > 0) {
-      const topThisWeek = currentWeekScores.reduce((best, ws) =>
+      const topThisWeek = currentWeekScores.reduce((best: WeeklyScoreRow, ws: WeeklyScoreRow) =>
         (ws.total_points || 0) > (best.total_points || 0) ? ws : best
       )
       if ((topThisWeek.total_points || 0) > 0) {
@@ -256,8 +294,8 @@ export async function GET(request: NextRequest) {
 
     // Longest Active Streak
     const streakLeader = leaderboard.reduce(
-      (best, m) => m.currentStreak > (best?.currentStreak || 0) ? m : best,
-      null as (typeof leaderboard[0] | null)
+      (best: LeaderboardMember | null, m: LeaderboardMember) => m.currentStreak > (best?.currentStreak || 0) ? m : best,
+      null as LeaderboardMember | null
     )
     if (streakLeader && streakLeader.currentStreak >= 2) {
       spotlights.push({
@@ -274,9 +312,9 @@ export async function GET(request: NextRequest) {
     // Most Improved — biggest week-over-week points increase
     if (currentWeekScores.length > 0 && prevWeekScores.length > 0) {
       let bestImprovement = 0
-      let mostImprovedUser: any = null
+      let mostImprovedUser: WeeklyScoreRow | null = null
       for (const ws of currentWeekScores) {
-        const prevPoints = prevWeekPointsMap.get(ws.user_id) || 0
+        const prevPoints: number = prevWeekPointsMap.get(ws.user_id) || 0
         const improvement = (ws.total_points || 0) - prevPoints
         if (improvement > bestImprovement) {
           bestImprovement = improvement
@@ -298,11 +336,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Most Responsive — highest response rate this week (with meaningful activity)
-    const responsiveScores = currentWeekScores.filter(ws =>
+    const responsiveScores = currentWeekScores.filter((ws: WeeklyScoreRow) =>
       (ws.missed_emails_resolved || 0) + (ws.missed_chats_resolved || 0) > 0 && (ws.response_rate || 0) > 0
     )
     if (responsiveScores.length > 0) {
-      const mostResponsive = responsiveScores.reduce((best, ws) =>
+      const mostResponsive = responsiveScores.reduce((best: WeeklyScoreRow, ws: WeeklyScoreRow) =>
         (ws.response_rate || 0) > (best.response_rate || 0) ? ws : best
       )
       const profile = profileMap.get(mostResponsive.user_id)
@@ -322,7 +360,7 @@ export async function GET(request: NextRequest) {
 
     const totalMembers = allUserIds.length
     const activeThisWeek = currentWeekScores.length
-    const activeStreakMembers = leaderboard.filter(m => m.currentStreak >= 2).length
+    const activeStreakMembers = leaderboard.filter((m: LeaderboardMember) => m.currentStreak >= 2).length
 
     // Participation rate
     if (totalMembers > 0) {
