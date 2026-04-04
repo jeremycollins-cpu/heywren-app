@@ -115,9 +115,10 @@ interface CultureInsights {
   currentLabel: 'positive' | 'neutral' | 'negative'
   sampleCount: number
   distribution: { positive: number; neutral: number; negative: number }
+  currentMonth: string
   topThemes: Array<{ theme: string; count: number; percentage: number }>
-  weeklyTrend: Array<{
-    week: string
+  monthlyTrend: Array<{
+    month: string
     toneIndex: number
     sampleCount: number
     themes: Record<string, number>
@@ -131,7 +132,7 @@ interface CultureInsights {
     messageCount: number
     label: 'positive' | 'neutral' | 'negative'
     topThemes: string[]
-    trend: Array<{ week: string; avg: number }>
+    trend: Array<{ month: string; avg: number }>
   }>
   notableShifts: Array<{
     userId: string
@@ -971,8 +972,13 @@ const TONE_THEME_STYLES: Record<string, { bg: string; text: string; icon: string
   casual:        { bg: 'bg-cyan-50 dark:bg-cyan-900/20',     text: 'text-cyan-700 dark:text-cyan-400',       icon: '😊' },
 }
 
+function formatMonthLabel(monthStart: string): string {
+  const d = new Date(monthStart + 'T00:00:00Z')
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+}
+
 function CultureInsightsSection({ insights }: { insights: CultureInsights }) {
-  const { currentToneIndex, currentLabel, sampleCount, distribution, topThemes, weeklyTrend, individuals, notableShifts } = insights
+  const { currentToneIndex, currentLabel, sampleCount, distribution, topThemes, monthlyTrend, individuals, notableShifts } = insights
 
   const toneColor = currentLabel === 'positive'
     ? 'text-green-600 dark:text-green-400'
@@ -992,7 +998,7 @@ function CultureInsightsSection({ insights }: { insights: CultureInsights }) {
       <div className="flex items-center gap-2">
         <ThermometerSun className="w-5 h-5 text-indigo-500" />
         <h2 className="text-lg font-bold text-gray-900 dark:text-white">Culture & Tone</h2>
-        <span className="text-xs text-gray-400 ml-auto">{sampleCount} messages analyzed</span>
+        <span className="text-xs text-gray-400 ml-auto">{sampleCount} messages this month</span>
       </div>
 
       {/* Tone Index + Distribution */}
@@ -1073,19 +1079,19 @@ function CultureInsightsSection({ insights }: { insights: CultureInsights }) {
         </div>
       )}
 
-      {/* Tone Trend Chart */}
-      {weeklyTrend.length > 1 && (
+      {/* Monthly Tone Trend Chart */}
+      {monthlyTrend.length > 1 && (
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
           <div className="mb-4">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Tone Trend</h3>
-            <p className="text-xs text-gray-400">Company sentiment over time</p>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Monthly Tone Trend</h3>
+            <p className="text-xs text-gray-400">Company sentiment month over month</p>
           </div>
-          <div className="flex items-end gap-1 h-24">
-            {weeklyTrend.map((w, i) => {
+          <div className="flex items-end gap-2 h-24">
+            {monthlyTrend.map((m, i) => {
               // Normalize -1..1 to 0..100 for bar height
-              const normalized = ((w.toneIndex + 1) / 2) * 100
+              const normalized = ((m.toneIndex + 1) / 2) * 100
               const barHeight = Math.max(4, normalized)
-              const isPositive = w.toneIndex >= 0
+              const isPositive = m.toneIndex >= 0
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
                   <div className="w-full relative flex flex-col justify-end h-24">
@@ -1098,14 +1104,14 @@ function CultureInsightsSection({ insights }: { insights: CultureInsights }) {
                       style={{ height: `${barHeight}%` }}
                     />
                   </div>
-                  <span className="text-[9px] text-gray-400 leading-none">
-                    {formatWeekLabel(w.week)}
+                  <span className="text-[10px] text-gray-400 leading-none">
+                    {formatMonthLabel(m.month)}
                   </span>
                   {/* Tooltip */}
                   <div className="absolute bottom-full mb-2 hidden group-hover:block z-10">
                     <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
-                      <p className="font-medium">{w.toneIndex > 0 ? '+' : ''}{w.toneIndex.toFixed(2)}</p>
-                      <p className="text-gray-300">{w.sampleCount} messages</p>
+                      <p className="font-medium">{m.toneIndex > 0 ? '+' : ''}{m.toneIndex.toFixed(2)}</p>
+                      <p className="text-gray-300">{m.sampleCount} messages</p>
                     </div>
                   </div>
                 </div>

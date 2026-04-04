@@ -11,7 +11,6 @@ function getAdminClient() {
 
 const MANAGER_ROLES = ['org_admin', 'dept_manager', 'team_lead']
 
-// Valid tone themes for filtering
 const TONE_THEMES = [
   'gratitude', 'urgency', 'frustration', 'collaboration',
   'confusion', 'celebration', 'concern', 'encouragement',
@@ -29,7 +28,7 @@ interface SentimentRow {
 
 interface UserSentimentRow {
   user_id: string
-  week_start: string
+  month_start: string
   avg_sentiment: number
   message_count: number
   top_themes: string[]
@@ -37,7 +36,7 @@ interface UserSentimentRow {
 }
 
 interface CultureSnapshotRow {
-  week_start: string
+  month_start: string
   tone_index: number
   sample_count: number
   theme_counts: Record<string, number>
@@ -56,10 +55,11 @@ interface MemberInfo {
 /**
  * GET /api/culture-insights
  * Returns aggregated sentiment and culture tone data for the org.
+ * Aggregated monthly — sentiment is a slow-moving, big-picture stat.
  * Privacy: only numeric scores, never message content.
  *
  * Query params:
- *   - weeks: number of weeks of history (default 8)
+ *   - months: number of months of history (default 6, max 12)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     const admin = getAdminClient()
     const { searchParams } = new URL(request.url)
-    const weeks = Math.min(52, Math.max(1, parseInt(searchParams.get('weeks') || '8', 10)))
+    const months = Math.min(12, Math.max(1, parseInt(searchParams.get('months') || '6', 10)))
 
     // Get caller's org membership
     const { data: callerMembership } = await admin
@@ -91,22 +91,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No organization' }, { status: 404 })
     }
 
-    // Only managers can see org-wide culture data
     if (!MANAGER_ROLES.includes(callerMembership.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
     const orgId = callerMembership.organization_id
 
-    // Calculate date range
+    // Calculate date range — first of current month back N months
     const now = new Date()
-    const weekStart = new Date(now)
-    weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay() + 1) // Monday
-    weekStart.setUTCHours(0, 0, 0, 0)
-
-    const rangeStart = new Date(weekStart)
-    rangeStart.setUTCDate(rangeStart.getUTCDate() - (weeks * 7))
+    const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const rangeStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1))
     const rangeStartISO = rangeStart.toISOString()
+    const rangeStartDate = rangeStart.toISOString().split('T')[0]
 
     // Get org members for mapping
     const { data: members } = await admin
@@ -124,102 +120,92 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Parallel queries for live sentiment data
     const memberIds = Array.from(memberMap.keys())
 
+    // Parallel queries: pre-computed snapshots + live data for current month
     const [emailsResult, chatsResult, snapshotsResult, userSentimentResult] = await Promise.all([
-      // Recent emails with sentiment
+      // Current month's live emails (not yet aggregated)
       admin
         .from('missed_emails')
         .select('sentiment_score, sentiment_label, tone_themes, user_id, received_at')
         .in('user_id', memberIds)
-        .gte('received_at', rangeStartISO)
+        .gte('received_at', currentMonthStart.toISOString())
         .not('sentiment_score', 'is', null)
         .order('received_at', { ascending: false })
         .limit(500),
 
-      // Recent chats with sentiment
+      // Current month's live chats
       admin
         .from('missed_chats')
         .select('sentiment_score, sentiment_label, tone_themes, user_id, sent_at')
         .in('user_id', memberIds)
-        .gte('sent_at', rangeStartISO)
+        .gte('sent_at', currentMonthStart.toISOString())
         .not('sentiment_score', 'is', null)
         .order('sent_at', { ascending: false })
         .limit(500),
 
-      // Pre-computed weekly snapshots
+      // Pre-computed monthly snapshots
       admin
         .from('culture_snapshots')
         .select('*')
         .eq('organization_id', orgId)
-        .gte('week_start', rangeStart.toISOString().split('T')[0])
-        .order('week_start', { ascending: true }),
+        .gte('month_start', rangeStartDate)
+        .order('month_start', { ascending: true }),
 
-      // Per-user sentiment trends
+      // Per-user monthly sentiment
       admin
         .from('user_sentiment_scores')
         .select('*')
         .eq('organization_id', orgId)
-        .gte('week_start', rangeStart.toISOString().split('T')[0])
-        .order('week_start', { ascending: true }),
+        .gte('month_start', rangeStartDate)
+        .order('month_start', { ascending: true }),
     ])
 
-    const emails: SentimentRow[] = (emailsResult.data || []) as SentimentRow[]
-    const chats: SentimentRow[] = (chatsResult.data || []) as SentimentRow[]
+    const liveEmails: SentimentRow[] = (emailsResult.data || []) as SentimentRow[]
+    const liveChats: SentimentRow[] = (chatsResult.data || []) as SentimentRow[]
     const snapshots: CultureSnapshotRow[] = (snapshotsResult.data || []) as CultureSnapshotRow[]
     const userSentiments: UserSentimentRow[] = (userSentimentResult.data || []) as UserSentimentRow[]
 
-    // Compute live tone index from recent messages (supplements snapshots)
-    const allMessages = [...emails, ...chats]
-    const liveStats = computeLiveStats(allMessages)
+    // Current month live stats (supplements the most recent snapshot)
+    const liveMessages = [...liveEmails, ...liveChats]
+    const liveStats = computeLiveStats(liveMessages)
 
-    // Build weekly trend from snapshots (or live data if no snapshots yet)
-    const weeklyTrend = snapshots.length > 0
-      ? snapshots.map((s: CultureSnapshotRow) => ({
-          week: s.week_start,
-          toneIndex: s.tone_index,
-          sampleCount: s.sample_count,
-          themes: s.theme_counts,
-          distribution: {
-            positive: s.positive_count,
-            neutral: s.neutral_count,
-            negative: s.negative_count,
-          },
-        }))
-      : buildWeeklyTrendFromLive(allMessages, weeks, weekStart)
+    // Build monthly trend from snapshots + current month live
+    const monthlyTrend = buildMonthlyTrend(snapshots, liveStats, liveMessages, currentMonthStart)
 
-    // Top themes across all time
-    const themeRanking = computeThemeRanking(allMessages)
+    // Top themes from current month live data
+    const themeRanking = computeThemeRanking(liveMessages)
 
-    // Individual sentiment highlights
-    const individualScores = computeIndividualScores(allMessages, memberMap, userSentiments)
+    // Individual sentiment from current month
+    const individualScores = computeIndividualScores(liveMessages, memberMap, userSentiments)
 
-    // Department heatmap (if snapshots have dept data, otherwise compute live)
-    const departmentHeatmap = snapshots.length > 0 && snapshots[snapshots.length - 1]
-      ? snapshots[snapshots.length - 1].department_scores
-      : computeDepartmentScores(allMessages, memberMap)
+    // Department heatmap
+    const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+    const departmentHeatmap = latestSnapshot
+      ? latestSnapshot.department_scores
+      : computeDepartmentScores(liveMessages, memberMap)
 
     return NextResponse.json({
-      // Current state
+      // Current month state
       currentToneIndex: liveStats.avgSentiment,
       currentLabel: liveStats.avgSentiment > 0.2 ? 'positive' : liveStats.avgSentiment < -0.2 ? 'negative' : 'neutral',
       sampleCount: liveStats.totalCount,
       distribution: liveStats.distribution,
+      currentMonth: currentMonthStart.toISOString().split('T')[0],
 
-      // Top themes this period
+      // Top themes this month
       topThemes: themeRanking.slice(0, 6),
 
-      // Weekly trend
-      weeklyTrend,
+      // Monthly trend (past N months + current)
+      monthlyTrend,
 
-      // People insights (sorted by sentiment, extremes first)
+      // People insights
       individuals: individualScores,
 
       // Department heatmap
       departmentHeatmap,
 
-      // Notable shifts (people whose sentiment changed significantly)
+      // Notable month-over-month shifts
       notableShifts: findNotableShifts(userSentiments, memberMap),
     })
   } catch (err) {
@@ -283,7 +269,6 @@ function computeIndividualScores(
   memberMap: Map<string, { name: string; avatar: string | null; department: string | null }>,
   userSentiments: UserSentimentRow[]
 ) {
-  // Group by user
   const userScores: Record<string, { scores: number[]; themes: string[] }> = {}
   for (const msg of messages) {
     if (msg.sentiment_score == null) continue
@@ -296,18 +281,17 @@ function computeIndividualScores(
     }
   }
 
-  // Build per-user weekly trend from user_sentiment_scores
-  const userTrends: Record<string, Array<{ week: string; avg: number }>> = {}
+  // Per-user monthly trend from pre-computed scores
+  const userTrends: Record<string, Array<{ month: string; avg: number }>> = {}
   for (const row of userSentiments) {
     if (!userTrends[row.user_id]) userTrends[row.user_id] = []
-    userTrends[row.user_id].push({ week: row.week_start, avg: row.avg_sentiment })
+    userTrends[row.user_id].push({ month: row.month_start, avg: row.avg_sentiment })
   }
 
   return Object.entries(userScores)
     .map(([userId, data]) => {
       const avg = data.scores.reduce((s: number, v: number) => s + v, 0) / data.scores.length
       const member = memberMap.get(userId)
-      // Top themes for this person
       const themeCounts: Record<string, number> = {}
       for (const t of data.themes) {
         themeCounts[t] = (themeCounts[t] || 0) + 1
@@ -356,46 +340,54 @@ function computeDepartmentScores(
   return result
 }
 
-function buildWeeklyTrendFromLive(
-  messages: SentimentRow[],
-  weeks: number,
-  currentWeekStart: Date
+function buildMonthlyTrend(
+  snapshots: CultureSnapshotRow[],
+  liveStats: { avgSentiment: number; totalCount: number; distribution: { positive: number; neutral: number; negative: number } },
+  liveMessages: SentimentRow[],
+  currentMonthStart: Date
 ) {
   const trend: Array<{
-    week: string
+    month: string
     toneIndex: number
     sampleCount: number
     themes: Record<string, number>
     distribution: { positive: number; neutral: number; negative: number }
   }> = []
 
-  for (let w = weeks - 1; w >= 0; w--) {
-    const wStart = new Date(currentWeekStart)
-    wStart.setUTCDate(wStart.getUTCDate() - (w * 7))
-    const wEnd = new Date(wStart)
-    wEnd.setUTCDate(wEnd.getUTCDate() + 7)
-
-    const weekMsgs = messages.filter((m: SentimentRow) => {
-      const d = new Date(m.received_at || m.sent_at || '')
-      return d >= wStart && d < wEnd
+  // Add pre-computed past months
+  for (const s of snapshots) {
+    trend.push({
+      month: s.month_start,
+      toneIndex: s.tone_index,
+      sampleCount: s.sample_count,
+      themes: s.theme_counts,
+      distribution: {
+        positive: s.positive_count,
+        neutral: s.neutral_count,
+        negative: s.negative_count,
+      },
     })
+  }
 
-    const stats = computeLiveStats(weekMsgs)
+  // Add current month from live data (if not already in snapshots)
+  const currentMonthStr = currentMonthStart.toISOString().split('T')[0]
+  const alreadyHasCurrent = snapshots.some((s: CultureSnapshotRow) => s.month_start === currentMonthStr)
+
+  if (!alreadyHasCurrent && liveStats.totalCount > 0) {
     const themes: Record<string, number> = {}
-    for (const msg of weekMsgs) {
+    for (const msg of liveMessages) {
       if (msg.tone_themes) {
         for (const t of msg.tone_themes) {
           themes[t] = (themes[t] || 0) + 1
         }
       }
     }
-
     trend.push({
-      week: wStart.toISOString().split('T')[0],
-      toneIndex: stats.avgSentiment,
-      sampleCount: stats.totalCount,
+      month: currentMonthStr,
+      toneIndex: liveStats.avgSentiment,
+      sampleCount: liveStats.totalCount,
       themes,
-      distribution: stats.distribution,
+      distribution: liveStats.distribution,
     })
   }
 
@@ -406,7 +398,6 @@ function findNotableShifts(
   userSentiments: UserSentimentRow[],
   memberMap: Map<string, { name: string; avatar: string | null; department: string | null }>
 ) {
-  // Find users whose sentiment shifted significantly week-over-week
   const byUser: Record<string, UserSentimentRow[]> = {}
   for (const row of userSentiments) {
     if (!byUser[row.user_id]) byUser[row.user_id] = []
@@ -425,11 +416,12 @@ function findNotableShifts(
 
   for (const [userId, rows] of Object.entries(byUser)) {
     if (rows.length < 2) continue
-    const sorted = rows.sort((a, b) => a.week_start.localeCompare(b.week_start))
+    const sorted = rows.sort((a, b) => a.month_start.localeCompare(b.month_start))
     const current = sorted[sorted.length - 1]
     const previous = sorted[sorted.length - 2]
     const delta = current.avg_sentiment - previous.avg_sentiment
 
+    // 0.3 shift month-over-month is significant
     if (Math.abs(delta) >= 0.3) {
       const member = memberMap.get(userId)
       shifts.push({
