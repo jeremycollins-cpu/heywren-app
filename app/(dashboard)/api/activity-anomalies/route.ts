@@ -263,9 +263,9 @@ export async function GET(request: NextRequest) {
       // Iterate each day in the lookback window
       for (let d = 0; d < daysParam; d++) {
         const dayDate = new Date(now)
-        dayDate.setDate(dayDate.getDate() - d)
+        dayDate.setUTCDate(dayDate.getUTCDate() - d)
         const dateStr = dayDate.toISOString().split('T')[0]
-        const dayOfWeek = dayDate.getDay() // 0=Sun
+        const dayOfWeek = dayDate.getUTCDay() // 0=Sun
 
         // Skip non-work days
         if (!schedule.work_days.includes(dayOfWeek)) continue
@@ -296,8 +296,8 @@ export async function GET(request: NextRequest) {
         if (schedule.after_hours_alert) {
           const afterHoursEvents = dayActivities.filter(a => {
             const eventDate = new Date(a.timestamp)
-            const hours = eventDate.getHours()
-            const minutes = eventDate.getMinutes()
+            const hours = eventDate.getUTCHours()
+            const minutes = eventDate.getUTCMinutes()
             const timeMinutes = hours * 60 + minutes
             const [startH, startM] = schedule.start_time.split(':').map(Number)
             const [endH, endM] = schedule.end_time.split(':').map(Number)
@@ -324,8 +324,8 @@ export async function GET(request: NextRequest) {
         // ── Idle Periods: gaps during work hours ──────────────────────
         const workHourActivities = dayActivities.filter(a => {
           const eventDate = new Date(a.timestamp)
-          const hours = eventDate.getHours()
-          const minutes = eventDate.getMinutes()
+          const hours = eventDate.getUTCHours()
+          const minutes = eventDate.getUTCMinutes()
           const timeMinutes = hours * 60 + minutes
           const [startH, startM] = schedule.start_time.split(':').map(Number)
           const [endH, endM] = schedule.end_time.split(':').map(Number)
