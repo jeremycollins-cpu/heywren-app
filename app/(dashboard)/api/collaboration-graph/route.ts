@@ -150,9 +150,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function computeLiveEdges(
-  admin: any,
+  admin: any, // eslint-disable-line
   memberIds: string[],
   _orgId: string
 ): Promise<CollabEdge[]> {

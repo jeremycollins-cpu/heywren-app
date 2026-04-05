@@ -25,8 +25,7 @@ interface SentimentRow {
 
 interface MemberProfile {
   user_id: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  profiles: any
+  profiles: any // eslint-disable-line
 }
 
 /**
