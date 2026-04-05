@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { getOooUserIdsForDate } from '@/lib/team/ooo'
 
 function getAdminClient() {
   return createClient(
@@ -83,11 +84,16 @@ export async function GET(request: NextRequest) {
       lookbackDays: days,
     })
 
-    const targetIds = filterUserId && isManager
+    // Exclude OOO users from disconnect tracking
+    const today = new Date().toISOString().split('T')[0]
+    const oooUserIds = await getOooUserIdsForDate(orgId, today)
+
+    const targetIds = (filterUserId && isManager
       ? [filterUserId]
       : isManager
         ? members.map((m: MemberProfile) => m.user_id)
         : [callerId]
+    ).filter((id: string) => !oooUserIds.has(id))
 
     const rangeStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 

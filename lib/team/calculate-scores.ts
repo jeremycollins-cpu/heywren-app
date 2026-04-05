@@ -3,6 +3,7 @@
 // Only produces numeric metrics — never exposes message content or titles.
 
 import { createClient } from '@supabase/supabase-js'
+import { getOooUserIds } from '@/lib/team/ooo'
 
 // ── Points configuration ──────────────────────────────────────────────────────
 
@@ -96,8 +97,16 @@ export async function calculateWeeklyScores(
 
   if (!members || members.length === 0) return []
 
-  const userIds = members.map((m: any) => m.user_id)
-  const memberMap = new Map(members.map((m: any) => [m.user_id, m]))
+  // Exclude users who are OOO for the entire scoring week
+  const weekEndDate = new Date(week)
+  weekEndDate.setUTCDate(weekEndDate.getUTCDate() + 6)
+  const oooUserIds = await getOooUserIds(organizationId, week, weekEndDate.toISOString().split('T')[0])
+  const activeMembers = members.filter((m: any) => !oooUserIds.has(m.user_id))
+
+  if (activeMembers.length === 0) return []
+
+  const userIds = activeMembers.map((m: any) => m.user_id)
+  const memberMap = new Map(activeMembers.map((m: any) => [m.user_id, m]))
 
   // ── Fetch activity counts in parallel (all team-scoped, no content) ────────
 
@@ -186,7 +195,7 @@ export async function calculateWeeklyScores(
 
   const streakMap = new Map((currentScores || []).map((s: any) => [s.user_id, s.current_streak || 0]))
 
-  const scores: WeeklyMemberScore[] = members.map((member: any) => {
+  const scores: WeeklyMemberScore[] = activeMembers.map((member: any) => {
     const uid = member.user_id
 
     // Commitments created this week
@@ -288,7 +297,7 @@ export async function calculateWeeklyScores(
 /**
  * Persists weekly scores to the database and updates cumulative member_scores.
  */
-export async function persistWeeklyScores(scores: WeeklyMemberScore[]): Promise<void> {
+export async function persistWeeklyScores(scores: WeeklyMemberScore[], oooUserIds?: Set<string>): Promise<void> {
   if (scores.length === 0) return
 
   const supabase = getAdminClient()
@@ -338,7 +347,9 @@ export async function persistWeeklyScores(scores: WeeklyMemberScore[]): Promise<
 
     const currentStreak = existing?.current_streak || 0
     const longestStreak = existing?.longest_streak || 0
-    const newStreak = weekAboveThreshold ? currentStreak + 1 : 0
+    // OOO users: freeze streak (don't increment or reset)
+    const isOoo = oooUserIds?.has(score.userId) ?? false
+    const newStreak = isOoo ? currentStreak : (weekAboveThreshold ? currentStreak + 1 : 0)
     const newLongest = Math.max(longestStreak, newStreak)
 
     const { error: scoreError } = await supabase

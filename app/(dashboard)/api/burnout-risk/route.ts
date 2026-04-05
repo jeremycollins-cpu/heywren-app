@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { getOooUserIdsForDate } from '@/lib/team/ooo'
 
 function getAdminClient() {
   return createClient(
@@ -79,9 +80,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const targetMembers = selfOnly
+    // Exclude OOO users from burnout risk analysis
+    const today = new Date().toISOString().split('T')[0]
+    const oooUserIds = await getOooUserIdsForDate(orgId, today)
+
+    const targetMembers = (selfOnly
       ? members.filter((m: MemberProfile) => m.user_id === callerId)
       : members
+    ).filter((m: MemberProfile) => !oooUserIds.has(m.user_id))
     const memberIds = targetMembers.map((m: MemberProfile) => m.user_id)
 
     // Parallel queries for all burnout signals

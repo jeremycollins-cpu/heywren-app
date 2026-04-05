@@ -1,5 +1,6 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { getOooUserIdsForDate } from '@/lib/team/ooo'
 
 function getAdminClient() {
   return createClient(
@@ -104,6 +105,14 @@ export const generateManagerAlerts = inngest.createFunction(
 
       if (!orgData) continue
 
+      // Skip OOO users — don't generate alerts about them
+      const oooUsers = await step.run(`ooo-check-${orgId}`, async () => {
+        const today = new Date().toISOString().split('T')[0]
+        const oooSet = await getOooUserIdsForDate(orgId, today)
+        return [...oooSet]
+      })
+      const oooSet = new Set(oooUsers)
+
       const alerts = await step.run(`generate-alerts-${orgId}`, async () => {
         const newAlerts: Array<{
           organization_id: string
@@ -126,6 +135,7 @@ export const generateManagerAlerts = inngest.createFunction(
 
         for (const member of orgData.members) {
           const userId = member.user_id
+          if (oooSet.has(userId)) continue // Skip OOO users
           const name = nameMap.get(userId) || 'Unknown'
 
           // 1. Response rate drop
