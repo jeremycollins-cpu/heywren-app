@@ -50,7 +50,7 @@ export default function WrenChat() {
     if (open && messages.length === 0 && !greeting && !loading) {
       generateGreeting()
     }
-  }, [open])
+  }, [open, greeting, loading, messages.length])
 
   const generateGreeting = async () => {
     setLoading(true)

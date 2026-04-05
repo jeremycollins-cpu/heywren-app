@@ -161,6 +161,12 @@ export async function GET(request: NextRequest) {
         .order('month_start', { ascending: true }),
     ])
 
+    // Check for errors on each parallel query and fall back to empty arrays
+    if (emailsResult.error) console.error('culture-insights: emails query failed', emailsResult.error)
+    if (chatsResult.error) console.error('culture-insights: chats query failed', chatsResult.error)
+    if (snapshotsResult.error) console.error('culture-insights: snapshots query failed', snapshotsResult.error)
+    if (userSentimentResult.error) console.error('culture-insights: userSentiment query failed', userSentimentResult.error)
+
     const liveEmails: SentimentRow[] = (emailsResult.data || []) as SentimentRow[]
     const liveChats: SentimentRow[] = (chatsResult.data || []) as SentimentRow[]
     const snapshots: CultureSnapshotRow[] = (snapshotsResult.data || []) as CultureSnapshotRow[]
@@ -207,6 +213,8 @@ export async function GET(request: NextRequest) {
 
       // Notable month-over-month shifts
       notableShifts: findNotableShifts(userSentiments, memberMap),
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
     })
   } catch (err) {
     console.error('Culture insights GET error:', err)

@@ -170,7 +170,9 @@ export async function GET(request: NextRequest) {
       })),
     })
 
-    return NextResponse.json(themes)
+    return NextResponse.json(themes, {
+      headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
+    })
   } catch (err: any) {
     console.error('Themes generation error:', err?.message || err)
     // Return insufficient instead of 500 so the UI shows a helpful message rather than "Something went wrong"

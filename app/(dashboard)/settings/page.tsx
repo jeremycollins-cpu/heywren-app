@@ -187,9 +187,15 @@ export default function SettingsPage() {
 
     const fetchOooPeriods = async () => {
       try {
-        const res = await fetch('/api/ooo?active=true')
+        const res = await fetch('/api/ooo')
         const data = await res.json()
-        if (data.periods) setOooPeriods(data.periods)
+        if (data.periods) {
+          // Filter to active/upcoming only (not cancelled)
+          const activePeriods = data.periods.filter(
+            (p: OooPeriod) => p.status === 'active'
+          )
+          setOooPeriods(activePeriods)
+        }
       } catch (err) {
         console.error('Error fetching OOO periods:', err)
       }
@@ -202,6 +208,7 @@ export default function SettingsPage() {
         const res = await fetch('/api/company-holidays')
         const data = await res.json()
         if (data.holidays) setCompanyHolidays(data.holidays)
+        if (data.isAdmin) setIsOrgAdmin(true)
       } catch (err) {
         console.error('Error fetching company holidays:', err)
       }
@@ -569,11 +576,18 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      // Save profile metadata
+      // Save profile metadata (auth + profiles table)
       const { error } = await supabase.auth.updateUser({
         data: { full_name: fullName, role },
       })
       if (error) throw error
+
+      // Also update role in profiles table so it's readable by other queries
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ display_name: fullName, role })
+        .eq('id', user.id)
+      if (profileError) console.error('Error updating profile:', profileError)
 
       // Save team name if user has a team
       const { data: profile } = await supabase

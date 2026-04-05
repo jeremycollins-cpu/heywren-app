@@ -29,6 +29,7 @@ export async function GET() {
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
     .order('sent_at', { ascending: false })
+    .limit(200)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

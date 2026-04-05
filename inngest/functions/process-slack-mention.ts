@@ -144,6 +144,15 @@ export const processSlackMention = inngest.createFunction(
 
     const { token, teamId, connectedBy } = integration
 
+    // ── Touch integration updated_at so sync health doesn't show as stale ──
+    await step.run('touch-integration', async () => {
+      await supabase
+        .from('integrations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('team_id', teamId)
+        .eq('provider', 'slack')
+    })
+
     // ── Step 2: Gather context ──
     // If in a thread, fetch the full thread for context
     // If standalone, just use the mention message itself

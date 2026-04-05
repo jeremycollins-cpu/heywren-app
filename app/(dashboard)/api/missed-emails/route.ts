@@ -13,131 +13,137 @@ const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, 
 const urgencyLabels = ['critical', 'high', 'medium', 'low'] as const
 
 export async function GET() {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  }
-
-  // Get user's team
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('current_team_id')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile?.current_team_id) {
-    return NextResponse.json({ error: 'No team found' }, { status: 400 })
-  }
-
-  // Fetch pending and snoozed missed emails — scoped to THIS user only
-  const { data: missedEmails, error } = await supabase
-    .from('missed_emails')
-    .select('*')
-    .eq('team_id', profile.current_team_id)
-    .eq('user_id', user.id)
-    .in('status', ['pending', 'snoozed'])
-    .order('received_at', { ascending: false })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  // Group emails by normalized subject line
-  const threadMap = new Map<string, Array<typeof missedEmails[number]>>()
-
-  for (const email of missedEmails || []) {
-    const key = normalizeSubject(email.subject)
-    const group = threadMap.get(key)
-    if (group) {
-      group.push(email)
-    } else {
-      threadMap.set(key, [email])
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
-  }
 
-  // Build thread groups
-  const threadGroups = Array.from(threadMap.values()).map((emails) => {
-    // Sort by urgency then recency within the group
-    emails.sort((a, b) => {
-      const urgDiff = (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4)
+    // Get user's team
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile?.current_team_id) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
+
+    // Fetch pending and snoozed missed emails — scoped to THIS user only
+    const { data: missedEmails, error } = await supabase
+      .from('missed_emails')
+      .select('*')
+      .eq('team_id', profile.current_team_id)
+      .eq('user_id', user.id)
+      .in('status', ['pending', 'snoozed'])
+      .order('received_at', { ascending: false })
+      .limit(200)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Group emails by normalized subject line
+    const threadMap = new Map<string, Array<typeof missedEmails[number]>>()
+
+    for (const email of missedEmails || []) {
+      const key = normalizeSubject(email.subject)
+      const group = threadMap.get(key)
+      if (group) {
+        group.push(email)
+      } else {
+        threadMap.set(key, [email])
+      }
+    }
+
+    // Build thread groups
+    const threadGroups = Array.from(threadMap.values()).map((emails) => {
+      // Sort by urgency then recency within the group
+      emails.sort((a, b) => {
+        const urgDiff = (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4)
+        if (urgDiff !== 0) return urgDiff
+        return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+      })
+
+      const primary = emails[0]
+
+      // Find highest urgency in thread
+      let highestUrgencyIdx = 4
+      for (const e of emails) {
+        const idx = urgencyOrder[e.urgency] ?? 4
+        if (idx < highestUrgencyIdx) highestUrgencyIdx = idx
+      }
+      const threadHighestUrgency = urgencyLabels[highestUrgencyIdx] || primary.urgency
+
+      // Combine unique question summaries
+      const summaries = emails
+        .map(e => e.question_summary)
+        .filter((s): s is string => !!s)
+      const uniqueSummaries = [...new Set(summaries)]
+      const combinedQuestionSummary = uniqueSummaries.join(' | ')
+
+      return {
+        ...primary,
+        // Override urgency with highest in thread for display
+        urgency: threadHighestUrgency,
+        question_summary: combinedQuestionSummary || primary.question_summary,
+        // Thread metadata
+        threadCount: emails.length,
+        threadEmailIds: emails.map(e => e.id),
+        threadHighestUrgency,
+        threadEmails: emails.map(e => ({
+          id: e.id,
+          from_name: e.from_name,
+          from_email: e.from_email,
+          subject: e.subject,
+          received_at: e.received_at,
+          urgency: e.urgency,
+          body_preview: e.body_preview,
+          question_summary: e.question_summary,
+          category: e.category,
+          is_read: e.is_read,
+          folder_name: e.folder_name,
+        })),
+      }
+    })
+
+    // Sort thread groups by highest urgency then most recent email
+    threadGroups.sort((a, b) => {
+      const urgDiff = (urgencyOrder[a.threadHighestUrgency] ?? 4) - (urgencyOrder[b.threadHighestUrgency] ?? 4)
       if (urgDiff !== 0) return urgDiff
       return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
     })
 
-    const primary = emails[0]
+    // Get total evaluated count from missed_emails (already classified) instead of
+    // scanning outlook_messages with expensive ILIKE pattern matching
+    const { count: totalEvaluated } = await supabase
+      .from('missed_emails')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', profile.current_team_id)
+      .eq('user_id', user.id)
 
-    // Find highest urgency in thread
-    let highestUrgencyIdx = 4
-    for (const e of emails) {
-      const idx = urgencyOrder[e.urgency] ?? 4
-      if (idx < highestUrgencyIdx) highestUrgencyIdx = idx
-    }
-    const threadHighestUrgency = urgencyLabels[highestUrgencyIdx] || primary.urgency
+    // Get the most recent classification timestamp to show when data was last refreshed
+    const { data: latestRecord } = await supabase
+      .from('missed_emails')
+      .select('created_at')
+      .eq('team_id', profile.current_team_id)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-    // Combine unique question summaries
-    const summaries = emails
-      .map(e => e.question_summary)
-      .filter((s): s is string => !!s)
-    const uniqueSummaries = [...new Set(summaries)]
-    const combinedQuestionSummary = uniqueSummaries.join(' | ')
-
-    return {
-      ...primary,
-      // Override urgency with highest in thread for display
-      urgency: threadHighestUrgency,
-      question_summary: combinedQuestionSummary || primary.question_summary,
-      // Thread metadata
-      threadCount: emails.length,
-      threadEmailIds: emails.map(e => e.id),
-      threadHighestUrgency,
-      threadEmails: emails.map(e => ({
-        id: e.id,
-        from_name: e.from_name,
-        from_email: e.from_email,
-        subject: e.subject,
-        received_at: e.received_at,
-        urgency: e.urgency,
-        body_preview: e.body_preview,
-        question_summary: e.question_summary,
-        category: e.category,
-        is_read: e.is_read,
-        folder_name: e.folder_name,
-      })),
-    }
-  })
-
-  // Sort thread groups by highest urgency then most recent email
-  threadGroups.sort((a, b) => {
-    const urgDiff = (urgencyOrder[a.threadHighestUrgency] ?? 4) - (urgencyOrder[b.threadHighestUrgency] ?? 4)
-    if (urgDiff !== 0) return urgDiff
-    return new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
-  })
-
-  // Get total evaluated count from missed_emails (already classified) instead of
-  // scanning outlook_messages with expensive ILIKE pattern matching
-  const { count: totalEvaluated } = await supabase
-    .from('missed_emails')
-    .select('id', { count: 'exact', head: true })
-    .eq('team_id', profile.current_team_id)
-    .eq('user_id', user.id)
-
-  // Get the most recent classification timestamp to show when data was last refreshed
-  const { data: latestRecord } = await supabase
-    .from('missed_emails')
-    .select('created_at')
-    .eq('team_id', profile.current_team_id)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  return NextResponse.json({
-    missedEmails: threadGroups,
-    totalEvaluated: totalEvaluated || 0,
-    lastRefreshedAt: latestRecord?.created_at || null,
-  })
+    return NextResponse.json({
+      missedEmails: threadGroups,
+      totalEvaluated: totalEvaluated || 0,
+      lastRefreshedAt: latestRecord?.created_at || null,
+    })
+  } catch (err) {
+    console.error('GET /api/missed-emails error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }
 
 export async function POST() {

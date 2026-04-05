@@ -452,38 +452,47 @@ async function scanTeamMissedEmails(
 export const scanMissedEmails = inngest.createFunction(
   { id: 'scan-missed-emails' },
   { cron: 'TZ=America/Los_Angeles 30 6,10,14,18 * * *' },
-  async () => {
-    const supabase = getAdminClient()
+  async ({ step }) => {
+    const integrations = await step.run('fetch-integrations', async () => {
+      const supabase = getAdminClient()
 
-    // Get all users with Outlook integrations
-    const { data: integrations, error } = await supabase
-      .from('integrations')
-      .select('team_id, user_id')
-      .eq('provider', 'outlook')
+      const { data, error } = await supabase
+        .from('integrations')
+        .select('team_id, user_id')
+        .eq('provider', 'outlook')
 
-    if (error || !integrations) {
-      console.error('Failed to fetch Outlook integrations:', error)
-      return { success: false, error: error?.message }
-    }
-
-    console.log(`Missed email scan: ${integrations.length} user integration(s) to scan`)
-
-    const results = []
-
-    for (const integration of integrations) {
-      try {
-        const result = await scanTeamMissedEmails(
-          supabase,
-          integration.team_id,
-          integration.user_id
-        )
-        results.push(result)
-        console.log(`Team ${integration.team_id} missed email scan:`, result)
-      } catch (err) {
-        console.error(`Team ${integration.team_id} scan failed:`, (err as Error).message)
-        results.push({ success: false, teamId: integration.team_id, error: (err as Error).message })
+      if (error || !data) {
+        console.error('Failed to fetch Outlook integrations:', error)
+        return []
       }
+
+      console.log(`Missed email scan: ${data.length} user integration(s) to scan`)
+      return data
+    })
+
+    if (integrations.length === 0) {
+      return { success: false, error: 'No integrations found' }
     }
+
+    const results = await Promise.all(
+      integrations.map((integration) =>
+        step.run(`scan-team-${integration.team_id}-${integration.user_id}`, async () => {
+          const supabase = getAdminClient()
+          try {
+            const result = await scanTeamMissedEmails(
+              supabase,
+              integration.team_id,
+              integration.user_id
+            )
+            console.log(`Team ${integration.team_id} missed email scan:`, result)
+            return result
+          } catch (err) {
+            console.error(`Team ${integration.team_id} scan failed:`, (err as Error).message)
+            return { success: false, teamId: integration.team_id, error: (err as Error).message }
+          }
+        })
+      )
+    )
 
     return { success: true, teamsScanned: results.length, results }
   }

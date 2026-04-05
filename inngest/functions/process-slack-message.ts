@@ -79,6 +79,15 @@ export const processSlackMessage = inngest.createFunction(
       return { success: false, error: 'Failed to store message' }
     }
 
+    // ── Touch integration updated_at so sync health doesn't show as stale ──
+    await step.run('touch-integration', async () => {
+      await supabase
+        .from('integrations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('team_id', teamId)
+        .eq('provider', 'slack')
+    })
+
     // ── Skip empty/short messages ──
     if (!event.data.text || event.data.text.trim().length < 15) {
       await step.run('mark-skipped', async () => {

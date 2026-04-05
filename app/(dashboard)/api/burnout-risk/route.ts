@@ -150,6 +150,15 @@ export async function GET(request: NextRequest) {
     type CommitmentRow = { assignee_id: string; status: string; due_date: string | null }
     type SentimentRow = { user_id: string; month_start: string; avg_sentiment: number }
 
+    // Check for errors on each parallel query and fall back to empty arrays
+    if (weeklyScoresResult.error) console.error('burnout-risk: weeklyScores query failed', weeklyScoresResult.error)
+    if (memberScoresResult.error) console.error('burnout-risk: memberScores query failed', memberScoresResult.error)
+    if (calendarResult.error) console.error('burnout-risk: calendar query failed', calendarResult.error)
+    if (commitmentsResult.error) console.error('burnout-risk: commitments query failed', commitmentsResult.error)
+    if (scheduleResult.error) console.error('burnout-risk: schedule query failed', scheduleResult.error)
+    if (sentimentResult.error) console.error('burnout-risk: sentiment query failed', sentimentResult.error)
+    if (disconnectResult.error) console.error('burnout-risk: disconnect query failed', disconnectResult.error)
+
     const weeklyScores = (weeklyScoresResult.data || []) as WeeklyScoreRow[]
     const memberScores = (memberScoresResult.data || []) as MemberScoreRow[]
     const calendarEvents = (calendarResult.data || []) as CalendarRow[]
