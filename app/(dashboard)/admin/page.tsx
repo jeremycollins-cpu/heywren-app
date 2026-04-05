@@ -577,17 +577,26 @@ function AdminContent() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${int.hasToken ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                             {int.hasToken ? 'Token Active' : 'No Token'}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${int.hasRefreshToken ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {int.hasRefreshToken ? 'Refresh OK' : 'No Refresh'}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            int.hasRefreshToken ? 'bg-green-100 text-green-700'
+                              : int.provider === 'slack' ? 'bg-gray-100 text-gray-500'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {int.hasRefreshToken ? 'Refresh OK' : int.provider === 'slack' ? 'Bot Token' : 'No Refresh'}
                           </span>
                         </div>
                         <button
                           onClick={() => runAction('refresh_token', { userId: profile.id, provider: int.provider })}
-                          disabled={actionLoading === 'refresh_token'}
-                          className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 disabled:opacity-50"
+                          disabled={actionLoading === 'refresh_token' || int.provider === 'slack'}
+                          className={`flex items-center gap-1 px-2 py-1 text-xs border rounded disabled:opacity-50 ${
+                            int.provider === 'slack'
+                              ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                          title={int.provider === 'slack' ? 'Slack bot tokens are permanent and do not need refreshing' : 'Refresh OAuth token'}
                         >
                           <Key className="w-3 h-3" />
-                          {actionLoading === 'refresh_token' ? 'Refreshing...' : 'Refresh Token'}
+                          {int.provider === 'slack' ? 'No Refresh Needed' : actionLoading === 'refresh_token' ? 'Refreshing...' : 'Refresh Token'}
                         </button>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-500">
