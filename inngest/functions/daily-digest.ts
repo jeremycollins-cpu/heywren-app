@@ -194,48 +194,48 @@ async function calculateTeamStats(
     await Promise.all([
       supabase
         .from('commitments')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .in('status', ['pending', 'in_progress'])
         .is('deleted_at', null),
       supabase
         .from('commitments')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .eq('status', 'completed')
         .gte('completed_at', weekStartIso),
       supabase
         .from('commitments')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .eq('status', 'overdue')
         .is('deleted_at', null),
       supabase
         .from('commitments')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .gte('created_at', weekStartIso)
         .is('deleted_at', null),
       supabase
         .from('missed_emails')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .gte('created_at', weekStartIso),
       supabase
         .from('missed_emails')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('team_id', teamId)
         .in('status', ['replied', 'dismissed'])
         .gte('updated_at', weekStartIso),
     ])
 
   return {
-    totalActive: allActiveRes.data?.length ?? 0,
-    completedThisWeek: completedRes.data?.length ?? 0,
-    overdue: overdueRes.data?.length ?? 0,
-    newThisWeek: newRes.data?.length ?? 0,
-    totalMissed: totalMissedRes.data?.length ?? 0,
-    resolvedMissed: resolvedMissedRes.data?.length ?? 0,
+    totalActive: allActiveRes.count ?? 0,
+    completedThisWeek: completedRes.count ?? 0,
+    overdue: overdueRes.count ?? 0,
+    newThisWeek: newRes.count ?? 0,
+    totalMissed: totalMissedRes.count ?? 0,
+    resolvedMissed: resolvedMissedRes.count ?? 0,
   }
 }
 

@@ -193,6 +193,7 @@ export default function CommitmentsPage() {
         .eq('team_id', teamId)
         .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
         .order('created_at', { ascending: false })
+        .limit(200)
 
       if (data) setCommitments(data)
       if (isRefresh) toast.success('Commitments refreshed')
@@ -268,7 +269,7 @@ export default function CommitmentsPage() {
             const data = await res.json()
             setCommitments(prev => [...prev, { ...commitments.find(c => c.id === cId)!, id: data.commitment.id, status: 'open', due_date: data.commitment.due_date, created_at: now, updated_at: now }])
           }
-        } catch { /* non-fatal */ }
+        } catch (err) { console.error('Failed to create recurring commitment:', err) }
       }
     } catch {
       toast.error('Failed to update commitments')

@@ -380,13 +380,15 @@ export async function scanTeamAwaitingReplies(
     .eq('status', 'waiting')
     .not('conversation_id', 'is', null)
 
-  for (const item of waitingItems || []) {
-    if (item.conversation_id && repliedConversations.has(item.conversation_id)) {
-      await supabase
-        .from('awaiting_replies')
-        .update({ status: 'replied', replied_at: new Date().toISOString() })
-        .eq('id', item.id)
-    }
+  const idsToMarkReplied = (waitingItems || [])
+    .filter((item) => item.conversation_id && repliedConversations.has(item.conversation_id))
+    .map((item) => item.id)
+
+  if (idsToMarkReplied.length > 0) {
+    await supabase
+      .from('awaiting_replies')
+      .update({ status: 'replied', replied_at: new Date().toISOString() })
+      .in('id', idsToMarkReplied)
   }
 
   // Clean up old dismissed/replied items (>30 days)
@@ -826,33 +828,37 @@ export const scanAwaitingReplies = inngest.createFunction(
   { id: 'scan-awaiting-replies', name: 'Scan for awaiting replies' },
   { cron: '0 14 * * *' }, // 7 AM PT (14:00 UTC)
   async ({ step }) => {
-    const results = await step.run('scan-all-teams', async () => {
+    const integrations = await step.run('fetch-integrations', async () => {
       const supabase = getAdminClient()
 
       // Get all users with Outlook integrations
-      const { data: integrations } = await supabase
+      const { data } = await supabase
         .from('integrations')
         .select('team_id, user_id')
         .eq('provider', 'outlook')
 
-      if (!integrations || integrations.length === 0) {
-        return { teamsProcessed: 0 }
-      }
-
-      const teamResults: any[] = []
-
-      for (const int of integrations) {
-        try {
-          const result = await scanTeamAwaitingReplies(supabase, int.team_id, int.user_id)
-          teamResults.push(result)
-        } catch (err) {
-          console.error(`Team ${int.team_id}: Scan failed:`, (err as Error).message)
-          teamResults.push({ success: false, teamId: int.team_id, error: (err as Error).message })
-        }
-      }
-
-      return { teamsProcessed: teamResults.length, results: teamResults }
+      return data || []
     })
+
+    if (integrations.length === 0) {
+      return { teamsProcessed: 0 }
+    }
+
+    const teamResults = await Promise.all(
+      integrations.map((int) =>
+        step.run(`scan-team-${int.team_id}-${int.user_id}`, async () => {
+          const supabase = getAdminClient()
+          try {
+            return await scanTeamAwaitingReplies(supabase, int.team_id, int.user_id)
+          } catch (err) {
+            console.error(`Team ${int.team_id}: Scan failed:`, (err as Error).message)
+            return { success: false, teamId: int.team_id, error: (err as Error).message }
+          }
+        })
+      )
+    )
+
+    const results = { teamsProcessed: teamResults.length, results: teamResults }
 
     return results
   }

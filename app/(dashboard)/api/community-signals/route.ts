@@ -87,6 +87,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     signals: enriched,
     patternCount: patternCount || 0,
+  }, {
+    headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
   })
 }
 
@@ -175,19 +177,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Increment vote count
-    const { data: current } = await admin
-      .from('community_signals')
-      .select('vote_count')
-      .eq('id', signalId)
-      .single()
-
-    if (current) {
-      await admin
-        .from('community_signals')
-        .update({ vote_count: (current.vote_count || 0) + 1 })
-        .eq('id', signalId)
-    }
+    // Atomically increment vote count using RPC to avoid race condition
+    await admin.rpc('increment_vote_count', { signal_id: signalId, delta: 1 })
   } else {
     await admin
       .from('community_signal_votes')
@@ -195,19 +186,8 @@ export async function PATCH(request: NextRequest) {
       .eq('signal_id', signalId)
       .eq('user_id', user.id)
 
-    // Decrement vote count (floor at 0)
-    const { data: signal } = await admin
-      .from('community_signals')
-      .select('vote_count')
-      .eq('id', signalId)
-      .single()
-
-    if (signal) {
-      await admin
-        .from('community_signals')
-        .update({ vote_count: Math.max(0, (signal.vote_count || 0) - 1) })
-        .eq('id', signalId)
-    }
+    // Atomically decrement vote count (floored at 0 by the RPC function)
+    await admin.rpc('increment_vote_count', { signal_id: signalId, delta: -1 })
   }
 
   return NextResponse.json({ success: true })
