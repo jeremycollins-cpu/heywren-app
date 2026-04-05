@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
-  Trophy, Folder, RefreshCw, Check, Clock, Palmtree, Plane, Stethoscope
+  Trophy, Folder, RefreshCw, Check, Clock, Palmtree, Plane, Stethoscope,
+  CalendarDays, Trash2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -96,6 +97,19 @@ export default function SettingsPage() {
     note: '',
   })
 
+  // Company holidays
+  interface CompanyHoliday {
+    id: string
+    name: string
+    date: string
+    recurring: boolean
+  }
+  const [companyHolidays, setCompanyHolidays] = useState<CompanyHoliday[]>([])
+  const [holidaysLoading, setHolidaysLoading] = useState(true)
+  const [showAddHoliday, setShowAddHoliday] = useState(false)
+  const [newHoliday, setNewHoliday] = useState({ name: '', date: '', recurring: false })
+  const [savingHoliday, setSavingHoliday] = useState(false)
+
   // Company domains
   const [companyDomains, setCompanyDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
@@ -182,7 +196,63 @@ export default function SettingsPage() {
       setOooLoading(false)
     }
     fetchOooPeriods()
+
+    const fetchCompanyHolidays = async () => {
+      try {
+        const res = await fetch('/api/company-holidays')
+        const data = await res.json()
+        if (data.holidays) setCompanyHolidays(data.holidays)
+      } catch (err) {
+        console.error('Error fetching company holidays:', err)
+      }
+      setHolidaysLoading(false)
+    }
+    fetchCompanyHolidays()
   }, [])
+
+  const addCompanyHoliday = async () => {
+    if (!newHoliday.name.trim() || !newHoliday.date) {
+      toast.error('Please enter a name and date')
+      return
+    }
+    setSavingHoliday(true)
+    try {
+      const res = await fetch('/api/company-holidays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newHoliday),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Holiday added')
+        setCompanyHolidays(prev => [...prev, data.holiday].sort(
+          (a: CompanyHoliday, b: CompanyHoliday) => a.date.localeCompare(b.date)
+        ))
+        setShowAddHoliday(false)
+        setNewHoliday({ name: '', date: '', recurring: false })
+      }
+    } catch {
+      toast.error('Failed to add holiday')
+    }
+    setSavingHoliday(false)
+  }
+
+  const removeCompanyHoliday = async (id: string) => {
+    try {
+      const res = await fetch(`/api/company-holidays?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Holiday removed')
+        setCompanyHolidays(prev => prev.filter(h => h.id !== id))
+      }
+    } catch {
+      toast.error('Failed to remove holiday')
+    }
+  }
 
   const createOooPeriod = async () => {
     if (!newOoo.start_date || !newOoo.end_date) {
@@ -1084,6 +1154,128 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Company Holidays (admin only) */}
+      {isOrgAdmin && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <CalendarDays aria-hidden="true" className="w-5 h-5" />
+              Company Holidays
+            </h2>
+            {!showAddHoliday && (
+              <button
+                onClick={() => setShowAddHoliday(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
+              >
+                <Plus className="w-4 h-4" />
+                Add Holiday
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            On company holidays, all team members are automatically treated as out of office. Scores, streaks, and alerts are paused for everyone.
+          </p>
+
+          {showAddHoliday && (
+            <div className="mb-6 p-4 bg-gray-50 dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-border-dark space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="holiday-name" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Holiday Name</label>
+                  <input
+                    id="holiday-name"
+                    type="text"
+                    value={newHoliday.name}
+                    onChange={e => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                    placeholder="e.g. Christmas Day"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="holiday-date" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Date</label>
+                  <input
+                    id="holiday-date"
+                    type="date"
+                    value={newHoliday.date}
+                    onChange={e => setNewHoliday({ ...newHoliday, date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  role="switch"
+                  aria-checked={newHoliday.recurring}
+                  onClick={() => setNewHoliday({ ...newHoliday, recurring: !newHoliday.recurring })}
+                  className={`relative w-11 h-6 rounded-full transition ${
+                    newHoliday.recurring ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                    newHoliday.recurring ? 'translate-x-6' : 'translate-x-1'
+                  } mt-1`} />
+                </button>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Recurring every year</span>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowAddHoliday(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addCompanyHoliday}
+                  disabled={savingHoliday}
+                  className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+                >
+                  {savingHoliday ? 'Saving...' : 'Add Holiday'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {holidaysLoading ? (
+            <div className="animate-pulse space-y-3">
+              <div className="h-14 bg-gray-100 dark:bg-gray-800 rounded-lg" />
+            </div>
+          ) : companyHolidays.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+              No company holidays configured. Add holidays like Christmas, New Year&apos;s, etc.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {companyHolidays.map(holiday => (
+                <div key={holiday.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-border-dark">
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="w-4 h-4 text-indigo-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {holiday.name}
+                        {holiday.recurring && (
+                          <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600">
+                            Yearly
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500">{holiday.date}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeCompanyHoliday(holiday.id)}
+                    className="text-gray-400 hover:text-red-500 transition"
+                    aria-label={`Remove ${holiday.name}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Team Settings */}
       <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
