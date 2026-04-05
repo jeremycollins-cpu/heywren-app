@@ -13,7 +13,7 @@ import {
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
-  SlidersHorizontal, Star, TrendingUp,
+  SlidersHorizontal, Star, TrendingUp, Network,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -263,6 +263,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     { href: '/billing', label: 'Billing', icon: CreditCard },
     { href: '/team-dashboard', label: 'Team Dashboard', icon: Trophy },
     { href: '/team-management', label: 'Team Management', icon: Users },
+    { href: '/people-insights', label: 'People Insights', icon: Network },
     { href: '/settings', label: 'Settings', icon: Settings },
   ]
 

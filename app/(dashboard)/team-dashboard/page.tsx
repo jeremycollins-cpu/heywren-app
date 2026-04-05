@@ -10,6 +10,7 @@ import {
   Clock, Inbox, Rocket, MailCheck, Download, Plus, X,
   AlertTriangle, Sparkles, ArrowUp, ArrowDown,
   Smile, Frown, Meh, MessageCircle, ThermometerSun,
+  Bell, Check, XCircle, Eye, Battery, Brain,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -145,6 +146,47 @@ interface CultureInsights {
   }>
 }
 
+interface ManagerAlert {
+  id: string
+  target_user_id: string | null
+  alert_type: string
+  title: string
+  body: string
+  severity: 'info' | 'warning' | 'critical'
+  data: Record<string, unknown>
+  status: string
+  created_at: string
+  targetName: string | null
+  targetAvatar: string | null
+}
+
+interface AlertsData {
+  alerts: ManagerAlert[]
+  summary: { total: number; critical: number; warning: number; info: number }
+}
+
+interface PulseData {
+  hasRespondedThisWeek: boolean
+  currentWeek: string
+  teamAggregate: {
+    weeklyStats: Array<{
+      week: string
+      respondents: number
+      avgEnergy: number | null
+      avgFocus: number | null
+      blockerCount: number
+      winCount: number
+    }>
+    currentWeek: {
+      respondents: number
+      totalMembers: number
+      participationRate: number
+      avgEnergy: number | null
+      avgFocus: number | null
+    }
+  } | null
+}
+
 interface DashboardData {
   organization: { id: string; name: string }
   callerRole: string
@@ -212,6 +254,8 @@ export default function TeamDashboardPage() {
   const [showCreateChallenge, setShowCreateChallenge] = useState(false)
   const [secondaryTab, setSecondaryTab] = useState<'achievements' | 'challenges'>('achievements')
   const [cultureInsights, setCultureInsights] = useState<CultureInsights | null>(null)
+  const [alertsData, setAlertsData] = useState<AlertsData | null>(null)
+  const [pulseData, setPulseData] = useState<PulseData | null>(null)
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -239,9 +283,11 @@ export default function TeamDashboardPage() {
       const { data: user } = await supabase.auth.getUser()
       if (!user?.user) return
 
-      const [res, cultureRes] = await Promise.all([
+      const [res, cultureRes, alertsRes, pulseRes] = await Promise.all([
         fetch(`/api/team-dashboard?userId=${user.user.id}`, { cache: 'no-store' }),
         fetch('/api/culture-insights', { cache: 'no-store' }),
+        fetch('/api/manager-alerts', { cache: 'no-store' }),
+        fetch('/api/pulse-check', { cache: 'no-store' }),
       ])
       if (!res.ok) { setLoading(false); return }
       const dashData = await res.json()
@@ -250,6 +296,14 @@ export default function TeamDashboardPage() {
       if (cultureRes.ok) {
         const cultureData = await cultureRes.json()
         if (!cultureData.error) setCultureInsights(cultureData)
+      }
+      if (alertsRes.ok) {
+        const ad = await alertsRes.json()
+        if (!ad.error) setAlertsData(ad)
+      }
+      if (pulseRes.ok) {
+        const pd = await pulseRes.json()
+        if (!pd.error) setPulseData(pd)
       }
     } catch (err) {
       console.error('Error loading team dashboard:', err)
@@ -282,6 +336,16 @@ export default function TeamDashboardPage() {
           Export Report
         </button>
       </div>
+
+      {/* ── Manager Alerts ────────────────────────────────────────────── */}
+      {alertsData && alertsData.alerts.length > 0 && (
+        <ManagerAlertsPanel alerts={alertsData.alerts} summary={alertsData.summary} onUpdate={loadDashboard} />
+      )}
+
+      {/* ── Pulse Check-in ─────────────────────────────────────────────── */}
+      {pulseData && (
+        <PulseCheckInPanel pulse={pulseData} onSubmit={loadDashboard} />
+      )}
 
       {/* ── Company Pulse ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -970,6 +1034,225 @@ const TONE_THEME_STYLES: Record<string, { bg: string; text: string; icon: string
   encouragement: { bg: 'bg-teal-50 dark:bg-teal-900/20',     text: 'text-teal-700 dark:text-teal-400',       icon: '💪' },
   formality:     { bg: 'bg-gray-50 dark:bg-gray-800',        text: 'text-gray-700 dark:text-gray-300',       icon: '📋' },
   casual:        { bg: 'bg-cyan-50 dark:bg-cyan-900/20',     text: 'text-cyan-700 dark:text-cyan-400',       icon: '😊' },
+}
+
+// ── Manager Alerts Panel ─────────────────────────────────────────────────────
+
+const SEVERITY_STYLES: Record<string, { bg: string; border: string; icon: typeof AlertTriangle; iconColor: string }> = {
+  critical: { bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-800', icon: AlertTriangle, iconColor: 'text-red-500' },
+  warning: { bg: 'bg-amber-50 dark:bg-amber-900/10', border: 'border-amber-200 dark:border-amber-800', icon: Bell, iconColor: 'text-amber-500' },
+  info: { bg: 'bg-blue-50 dark:bg-blue-900/10', border: 'border-blue-200 dark:border-blue-800', icon: Eye, iconColor: 'text-blue-500' },
+}
+
+function ManagerAlertsPanel({ alerts, summary, onUpdate }: {
+  alerts: ManagerAlert[]
+  summary: { total: number; critical: number; warning: number; info: number }
+  onUpdate: () => void
+}) {
+  const [dismissing, setDismissing] = useState<string | null>(null)
+
+  const handleAction = async (alertId: string, action: 'acknowledged' | 'dismissed') => {
+    setDismissing(alertId)
+    try {
+      const res = await fetch('/api/manager-alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alertId, action }),
+      })
+      if (res.ok) onUpdate()
+    } catch { /* ignore */ }
+    setDismissing(null)
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Bell className="w-5 h-5 text-indigo-500" />
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Alerts</h2>
+        {summary.critical > 0 && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+            {summary.critical} critical
+          </span>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">{summary.total} active</span>
+      </div>
+      {alerts.slice(0, 5).map(alert => {
+        const style = SEVERITY_STYLES[alert.severity] || SEVERITY_STYLES.info
+        const Icon = style.icon
+        return (
+          <div key={alert.id} className={`${style.bg} border ${style.border} rounded-xl p-4 flex items-start gap-3`}>
+            <Icon className={`w-5 h-5 ${style.iconColor} flex-shrink-0 mt-0.5`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">{alert.title}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{alert.body}</p>
+              <p className="text-[10px] text-gray-400 mt-1">
+                {new Date(alert.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {alert.targetName && ` · ${alert.targetName}`}
+              </p>
+            </div>
+            <div className="flex gap-1 flex-shrink-0">
+              <button
+                onClick={() => handleAction(alert.id, 'acknowledged')}
+                disabled={dismissing === alert.id}
+                className="p-1.5 rounded-lg hover:bg-white/60 dark:hover:bg-gray-800 transition"
+                title="Acknowledge"
+              >
+                <Check className="w-4 h-4 text-green-600" />
+              </button>
+              <button
+                onClick={() => handleAction(alert.id, 'dismissed')}
+                disabled={dismissing === alert.id}
+                className="p-1.5 rounded-lg hover:bg-white/60 dark:hover:bg-gray-800 transition"
+                title="Dismiss"
+              >
+                <XCircle className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Pulse Check-in Panel ────────────────────────────────────────────────────
+
+function PulseCheckInPanel({ pulse, onSubmit }: { pulse: PulseData; onSubmit: () => void }) {
+  const [energy, setEnergy] = useState<number>(0)
+  const [focus, setFocus] = useState<number>(0)
+  const [blocker, setBlocker] = useState('')
+  const [win, setWin] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(pulse.hasRespondedThisWeek)
+
+  const handleSubmit = async () => {
+    if (energy === 0 && focus === 0) return
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/pulse-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          energyLevel: energy || undefined,
+          focusRating: focus || undefined,
+          blocker: blocker || undefined,
+          win: win || undefined,
+        }),
+      })
+      if (res.ok) {
+        setSubmitted(true)
+        onSubmit()
+      }
+    } catch { /* ignore */ }
+    setSubmitting(false)
+  }
+
+  const teamStats = pulse.teamAggregate?.currentWeek
+
+  return (
+    <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Battery className="w-5 h-5 text-green-500" />
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Weekly Pulse</h2>
+        {teamStats && (
+          <span className="text-xs text-gray-400 ml-auto">
+            {teamStats.participationRate}% team participation
+          </span>
+        )}
+      </div>
+
+      {submitted ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+            <Check className="w-4 h-4" />
+            <span>You&apos;ve checked in this week</span>
+          </div>
+          {/* Show team aggregate if available */}
+          {teamStats && teamStats.avgEnergy != null && (
+            <div className="flex gap-4 text-xs text-gray-500">
+              <span>Team energy: <strong className="text-gray-700 dark:text-gray-300">{teamStats.avgEnergy}/5</strong></span>
+              {teamStats.avgFocus != null && (
+                <span>Team focus: <strong className="text-gray-700 dark:text-gray-300">{teamStats.avgFocus}/5</strong></span>
+              )}
+              <span>{teamStats.respondents}/{teamStats.totalMembers} responded</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Energy level</label>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setEnergy(n)}
+                    className={`flex-1 py-1.5 text-sm rounded-lg border transition ${
+                      energy === n
+                        ? 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 font-bold'
+                        : 'border-gray-200 dark:border-border-dark text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between text-[9px] text-gray-400 mt-0.5 px-0.5">
+                <span>Drained</span><span>Energized</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Focus level</label>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setFocus(n)}
+                    className={`flex-1 py-1.5 text-sm rounded-lg border transition ${
+                      focus === n
+                        ? 'bg-indigo-100 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400 font-bold'
+                        : 'border-gray-200 dark:border-border-dark text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between text-[9px] text-gray-400 mt-0.5 px-0.5">
+                <span>Scattered</span><span>Locked in</span>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <input
+              type="text"
+              placeholder="Biggest blocker?"
+              value={blocker}
+              onChange={e => setBlocker(e.target.value)}
+              maxLength={200}
+              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark placeholder-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="One win this week?"
+              value={win}
+              onChange={e => setWin(e.target.value)}
+              maxLength={200}
+              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark placeholder-gray-400"
+            />
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || (energy === 0 && focus === 0)}
+            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+          >
+            {submitting ? 'Submitting...' : 'Submit Check-in'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function formatMonthLabel(monthStart: string): string {

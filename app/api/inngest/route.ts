@@ -26,6 +26,7 @@ import { managerWeeklyDigest } from '@/inngest/functions/manager-weekly-digest'
 import { detectStaleCommitments } from '@/inngest/functions/detect-stale-commitments'
 import { learnResponsePatterns } from '@/inngest/functions/learn-response-patterns'
 import { aggregateMonthlySentiment } from '@/inngest/functions/aggregate-monthly-sentiment'
+import { generateManagerAlerts } from '@/inngest/functions/generate-manager-alerts'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -51,5 +52,6 @@ export const { GET, POST, PUT } = serve({
     detectStaleCommitments,      // 8 AM PT weekdays — notify users about 14+ day old open commitments
     learnResponsePatterns,       // Monday 7 AM PT — learn user response patterns for smarter escalation
     aggregateMonthlySentiment,   // 1st of month 6 AM UTC — aggregate sentiment into culture snapshots
+    generateManagerAlerts,       // Monday 7 AM UTC — proactive alerts for managers (burnout, overload, sentiment shifts)
   ],
 })

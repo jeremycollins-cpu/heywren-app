@@ -85,6 +85,7 @@ jest.mock('lucide-react', () => {
     SlidersHorizontal: createIcon('SlidersHorizontal'),
     Star: createIcon('Star'),
     TrendingUp: createIcon('TrendingUp'),
+    Network: createIcon('Network'),
   }
 })
 
