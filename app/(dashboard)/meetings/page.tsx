@@ -18,6 +18,7 @@ interface TranscriptRecord {
 export default function MeetingsPage() {
   const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [title, setTitle] = useState('')
@@ -36,6 +37,9 @@ export default function MeetingsPage() {
       }
     } catch (err) {
       console.error('Failed to fetch transcripts:', err)
+      const message = err instanceof Error ? err.message : 'Failed to load meeting transcripts'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
