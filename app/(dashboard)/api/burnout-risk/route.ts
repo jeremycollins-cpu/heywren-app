@@ -72,7 +72,11 @@ export async function GET(request: NextRequest) {
       .eq('organization_id', orgId) as { data: MemberProfile[] | null }
 
     if (!members || members.length === 0) {
-      return NextResponse.json({ scores: [] })
+      return NextResponse.json({
+        scores: [],
+        riskDistribution: { critical: 0, high: 0, moderate: 0, low: 0 },
+        orgAvgRisk: 0,
+      })
     }
 
     const targetMembers = selfOnly

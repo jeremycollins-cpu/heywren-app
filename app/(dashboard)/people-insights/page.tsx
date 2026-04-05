@@ -238,7 +238,7 @@ export default function PeopleInsightsPage() {
 function CollaborationTab({ data }: { data: CollabData | null }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  if (!data) {
+  if (!data || !data.insights?.siloed) {
     return <EmptyPanel icon={Network} message="No collaboration data available yet" detail="Data populates as emails, chats, and meetings flow through the system" />
   }
 
@@ -387,7 +387,7 @@ function CollaborationTab({ data }: { data: CollabData | null }) {
 function BurnoutTab({ data }: { data: BurnoutData | null }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  if (!data) {
+  if (!data || !data.riskDistribution) {
     return <EmptyPanel icon={Flame} message="No burnout risk data available yet" detail="Scores compute from calendar events, commitments, and weekly activity" />
   }
 
@@ -477,7 +477,7 @@ function SignalCard({ label, score, detail, icon }: { label: string; score: numb
 function DisconnectTab({ data }: { data: DisconnectData | null }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  if (!data) {
+  if (!data || !data.orgSummary) {
     return <EmptyPanel icon={Moon} message="No disconnect data available yet" detail="Tracking starts after emails, chats, and calendar events are synced" />
   }
 
