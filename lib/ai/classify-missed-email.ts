@@ -14,6 +14,10 @@ export interface MissedEmailClassification {
   confidence: number
   expectedResponseTime?: 'same_day' | 'next_day' | 'this_week' | 'no_rush' | null
   isVip?: boolean
+  // Sentiment analysis (added at zero extra cost — same Haiku call)
+  sentimentScore?: number        // -1 (very negative) to 1 (very positive)
+  sentimentLabel?: 'positive' | 'neutral' | 'negative'
+  toneThemes?: string[]          // e.g. ['urgency', 'frustration', 'gratitude']
 }
 
 export interface UserEmailPreferences {
@@ -190,7 +194,7 @@ const TRIAGE_TOOL: Anthropic.Messages.Tool = {
 
 const EMAIL_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
   name: 'analyze_email',
-  description: 'Analyze an email for response needs, urgency, and classification.',
+  description: 'Analyze an email for response needs, urgency, classification, and sentiment.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -201,14 +205,17 @@ const EMAIL_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
       category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
       confidence: { type: 'number' },
       expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
+      sentimentScore: { type: 'number', description: 'Sender sentiment from -1 (very negative) to 1 (very positive). 0 is neutral.' },
+      sentimentLabel: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
+      toneThemes: { type: 'array', items: { type: 'string', enum: ['gratitude', 'urgency', 'frustration', 'collaboration', 'confusion', 'celebration', 'concern', 'encouragement', 'formality', 'casual'] }, description: 'Top 1-3 tone themes detected in the message' },
     },
-    required: ['needsResponse', 'urgency', 'reason', 'questionSummary', 'category', 'confidence'],
+    required: ['needsResponse', 'urgency', 'reason', 'questionSummary', 'category', 'confidence', 'sentimentScore', 'sentimentLabel', 'toneThemes'],
   },
 }
 
 const BATCH_EMAIL_TOOL: Anthropic.Messages.Tool = {
   name: 'analyze_emails_batch',
-  description: 'Analyze multiple emails for response needs.',
+  description: 'Analyze multiple emails for response needs and sentiment.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -225,8 +232,11 @@ const BATCH_EMAIL_TOOL: Anthropic.Messages.Tool = {
             category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
             confidence: { type: 'number' },
             expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
+            sentimentScore: { type: 'number' },
+            sentimentLabel: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
+            toneThemes: { type: 'array', items: { type: 'string' } },
           },
-          required: ['needsResponse', 'urgency', 'reason', 'category', 'confidence'],
+          required: ['needsResponse', 'urgency', 'reason', 'category', 'confidence', 'sentimentScore', 'sentimentLabel', 'toneThemes'],
         },
       },
     },
@@ -238,7 +248,7 @@ const BATCH_EMAIL_TOOL: Anthropic.Messages.Tool = {
 // Shared system prompt for Sonnet analysis (cached)
 // ============================================================
 
-const SONNET_SYSTEM_PROMPT = `Analyze emails for response needs.
+const SONNET_SYSTEM_PROMPT = `Analyze emails for response needs and sentiment.
 
 Urgency:
 - critical: Boss/client/stakeholder time-sensitive question; blocking work; today/tomorrow meeting
@@ -260,7 +270,13 @@ IMPLICIT SIGNALS (upgrade even without deadline words):
 
 expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" -> this_week; open-ended -> no_rush
 
-needsResponse=false for: sales/marketing, automated notifications, newsletters, transactional, mass-sent, calendar invites (no question), FYI-only`
+needsResponse=false for: sales/marketing, automated notifications, newsletters, transactional, mass-sent, calendar invites (no question), FYI-only
+
+SENTIMENT ANALYSIS (always provide, even for needsResponse=false):
+- sentimentScore: -1 (angry/hostile) to 1 (enthusiastic/grateful). 0 = neutral/factual.
+- sentimentLabel: positive (score > 0.2), negative (score < -0.2), neutral (between).
+- toneThemes: pick 1-3 from: gratitude, urgency, frustration, collaboration, confusion, celebration, concern, encouragement, formality, casual.
+  Examples: "Thanks so much for your help!" -> gratitude, encouragement. "This is the third time I've asked" -> frustration, urgency. "Quick sync tomorrow?" -> casual, collaboration.`
 
 // ============================================================
 // TIER 2: Haiku triage via tool_use (~$0.0003)
