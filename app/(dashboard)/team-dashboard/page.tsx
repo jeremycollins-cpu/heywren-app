@@ -10,7 +10,7 @@ import {
   Clock, Inbox, Rocket, MailCheck, Download, Plus, X,
   AlertTriangle, Sparkles, ArrowUp, ArrowDown,
   Smile, Frown, Meh, MessageCircle, ThermometerSun,
-  Bell, Check, XCircle, Eye, Battery, Brain,
+  Bell, Check, XCircle, Eye, Battery, Brain, Palmtree,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -256,6 +256,7 @@ export default function TeamDashboardPage() {
   const [cultureInsights, setCultureInsights] = useState<CultureInsights | null>(null)
   const [alertsData, setAlertsData] = useState<AlertsData | null>(null)
   const [pulseData, setPulseData] = useState<PulseData | null>(null)
+  const [oooUserIds, setOooUserIds] = useState<Set<string>>(new Set())
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -289,6 +290,7 @@ export default function TeamDashboardPage() {
         fetch('/api/culture-insights', { cache: 'no-store' }),
         fetch('/api/manager-alerts', { cache: 'no-store' }),
         fetch('/api/pulse-check', { cache: 'no-store' }),
+        fetch('/api/ooo?active=true', { cache: 'no-store' }),
       ])
 
       // Team dashboard (required)
@@ -317,6 +319,16 @@ export default function TeamDashboardPage() {
         if (pulseRes?.ok) {
           const d = await pulseRes.json()
           if (!d.error) setPulseData(d)
+        }
+      } catch { /* non-fatal */ }
+      try {
+        const oooRes = results[4].status === 'fulfilled' ? results[4].value : null
+        if (oooRes?.ok) {
+          const d = await oooRes.json()
+          if (d.periods) {
+            const ids = new Set<string>(d.periods.map((p: { userId: string }) => p.userId))
+            setOooUserIds(ids)
+          }
         }
       } catch { /* non-fatal */ }
     } catch (err) {
@@ -524,6 +536,12 @@ export default function TeamDashboardPage() {
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600">
                             <Award className="w-3 h-3" />
                             {entry.achievementCount}
+                          </span>
+                        )}
+                        {oooUserIds.has(entry.userId) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-50 dark:bg-green-900/20 text-green-600">
+                            <Palmtree className="w-3 h-3" />
+                            OOO
                           </span>
                         )}
                       </div>

@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { calculateWeeklyScores, persistWeeklyScores, getPreviousWeekStart, getWeekStart } from '@/lib/team/calculate-scores'
+import { getOooUserIds } from '@/lib/team/ooo'
 import { checkAndAwardAchievements } from '@/lib/team/achievements'
 import {
   celebrateAchievement,
@@ -53,9 +54,17 @@ export const calculateWeeklyScoresJob = inngest.createFunction(
 
       if (scores.length === 0) continue
 
+      // Get OOO users so their streaks are frozen (not reset)
+      const oooUsers = await step.run(`ooo-check-${org.id}`, async () => {
+        const weekEnd = new Date(prevMonday)
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
+        const oooSet = await getOooUserIds(org.id, prevMonday, weekEnd.toISOString().split('T')[0])
+        return [...oooSet]
+      })
+
       // Persist scores and update streaks/rankings
       await step.run(`persist-scores-${org.id}`, async () => {
-        await persistWeeklyScores(scores)
+        await persistWeeklyScores(scores, new Set(oooUsers))
       })
 
       // Check and award achievements

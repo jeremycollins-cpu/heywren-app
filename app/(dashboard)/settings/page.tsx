@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
-  Trophy, Folder, RefreshCw, Check, Clock
+  Trophy, Folder, RefreshCw, Check, Clock, Palmtree, Plane, Stethoscope
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -76,6 +76,26 @@ export default function SettingsPage() {
   const [orgTimezone, setOrgTimezone] = useState('America/New_York')
   const [workScheduleLoading, setWorkScheduleLoading] = useState(true)
   const [savingWorkSchedule, setSavingWorkSchedule] = useState(false)
+  // OOO (Out of Office)
+  interface OooPeriod {
+    id: string
+    startDate: string
+    endDate: string
+    oooType: 'pto' | 'travel' | 'sick' | 'other'
+    note: string | null
+    status: 'active' | 'completed' | 'cancelled'
+  }
+  const [oooPeriods, setOooPeriods] = useState<OooPeriod[]>([])
+  const [oooLoading, setOooLoading] = useState(true)
+  const [savingOoo, setSavingOoo] = useState(false)
+  const [showAddOoo, setShowAddOoo] = useState(false)
+  const [newOoo, setNewOoo] = useState({
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date().toISOString().split('T')[0],
+    ooo_type: 'pto' as 'pto' | 'travel' | 'sick' | 'other',
+    note: '',
+  })
+
   // Company domains
   const [companyDomains, setCompanyDomains] = useState<string[]>([])
   const [newDomain, setNewDomain] = useState('')
@@ -150,7 +170,87 @@ export default function SettingsPage() {
       setWorkScheduleLoading(false)
     }
     fetchWorkSchedule()
+
+    const fetchOooPeriods = async () => {
+      try {
+        const res = await fetch('/api/ooo?active=true')
+        const data = await res.json()
+        if (data.periods) setOooPeriods(data.periods)
+      } catch (err) {
+        console.error('Error fetching OOO periods:', err)
+      }
+      setOooLoading(false)
+    }
+    fetchOooPeriods()
   }, [])
+
+  const createOooPeriod = async () => {
+    if (!newOoo.start_date || !newOoo.end_date) {
+      toast.error('Please select start and end dates')
+      return
+    }
+    if (newOoo.end_date < newOoo.start_date) {
+      toast.error('End date must be after start date')
+      return
+    }
+    setSavingOoo(true)
+    try {
+      const res = await fetch('/api/ooo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: newOoo.start_date,
+          endDate: newOoo.end_date,
+          oooType: newOoo.ooo_type,
+          note: newOoo.note || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('Out of office period created')
+        const p = data.period
+        setOooPeriods(prev => [{
+          id: p.id,
+          startDate: p.start_date,
+          endDate: p.end_date,
+          oooType: p.ooo_type,
+          note: p.note,
+          status: p.status,
+        }, ...prev])
+        setShowAddOoo(false)
+        setNewOoo({
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
+          ooo_type: 'pto',
+          note: '',
+        })
+      }
+    } catch {
+      toast.error('Failed to create OOO period')
+    }
+    setSavingOoo(false)
+  }
+
+  const cancelOooPeriod = async (id: string) => {
+    try {
+      const res = await fetch('/api/ooo', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'cancelled' }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success('OOO period cancelled')
+        setOooPeriods(prev => prev.filter(p => p.id !== id))
+      }
+    } catch {
+      toast.error('Failed to cancel OOO period')
+    }
+  }
 
   const loadOutlookFolders = async () => {
     setFoldersLoading(true)
@@ -844,6 +944,143 @@ export default function SettingsPage() {
                 {savingWorkSchedule ? 'Saving...' : 'Save Schedule'}
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Out of Office */}
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Palmtree aria-hidden="true" className="w-5 h-5" />
+            Out of Office
+          </h2>
+          {!showAddOoo && (
+            <button
+              onClick={() => setShowAddOoo(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
+            >
+              <Plus className="w-4 h-4" />
+              Add OOO
+            </button>
+          )}
+        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Tag yourself as out of office for PTO or travel. Your scores, streaks, and alerts will be paused during this period.
+        </p>
+
+        {showAddOoo && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-border-dark space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="ooo-start" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Start Date</label>
+                <input
+                  id="ooo-start"
+                  type="date"
+                  value={newOoo.start_date}
+                  onChange={e => setNewOoo({ ...newOoo, start_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label htmlFor="ooo-end" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">End Date</label>
+                <input
+                  id="ooo-end"
+                  type="date"
+                  value={newOoo.end_date}
+                  onChange={e => setNewOoo({ ...newOoo, end_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="ooo-type" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Type</label>
+              <select
+                id="ooo-type"
+                value={newOoo.ooo_type}
+                onChange={e => setNewOoo({ ...newOoo, ooo_type: e.target.value as 'pto' | 'travel' | 'sick' | 'other' })}
+                className="w-full sm:w-48 px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+              >
+                <option value="pto">PTO / Vacation</option>
+                <option value="travel">Travel</option>
+                <option value="sick">Sick Leave</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="ooo-note" className="block text-sm font-medium text-gray-900 dark:text-white mb-1">Note (optional)</label>
+              <input
+                id="ooo-note"
+                type="text"
+                value={newOoo.note}
+                onChange={e => setNewOoo({ ...newOoo, note: e.target.value })}
+                placeholder="e.g. Beach vacation, business trip to NYC"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-border-dark rounded-lg bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowAddOoo(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createOooPeriod}
+                disabled={savingOoo}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+              >
+                {savingOoo ? 'Saving...' : 'Create OOO Period'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {oooLoading ? (
+          <div className="animate-pulse space-y-3">
+            <div className="h-14 bg-gray-100 dark:bg-gray-800 rounded-lg" />
+          </div>
+        ) : oooPeriods.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+            No active out-of-office periods. Click &quot;Add OOO&quot; to schedule time off.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {oooPeriods.map(period => {
+              const typeIcon = period.oooType === 'travel' ? Plane
+                : period.oooType === 'sick' ? Stethoscope
+                : Palmtree
+              const TypeIcon = typeIcon
+              const typeLabel = period.oooType === 'pto' ? 'PTO'
+                : period.oooType === 'travel' ? 'Travel'
+                : period.oooType === 'sick' ? 'Sick'
+                : 'Other'
+              return (
+                <div key={period.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-border-dark">
+                  <div className="flex items-center gap-3">
+                    <TypeIcon className="w-4 h-4 text-indigo-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {typeLabel}: {period.startDate} to {period.endDate}
+                      </p>
+                      {period.note && (
+                        <p className="text-xs text-gray-500">{period.note}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => cancelOooPeriod(period.id)}
+                    className="text-gray-400 hover:text-red-500 transition"
+                    aria-label="Cancel OOO period"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
