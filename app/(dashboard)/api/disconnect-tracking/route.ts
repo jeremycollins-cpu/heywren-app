@@ -71,7 +71,17 @@ export async function GET(request: NextRequest) {
       .select('user_id, department_id, profiles(display_name, avatar_url)')
       .eq('organization_id', orgId) as { data: MemberProfile[] | null }
 
-    if (!members) return NextResponse.json({ individuals: [] })
+    if (!members) return NextResponse.json({
+      individuals: [],
+      orgSummary: {
+        avgDisconnectScore: 100,
+        totalAfterHoursEvents: 0,
+        totalWeekendEvents: 0,
+        peopleWorkingAfterHours: 0,
+        peopleWorkingWeekends: 0,
+      },
+      lookbackDays: days,
+    })
 
     const targetIds = filterUserId && isManager
       ? [filterUserId]

@@ -70,7 +70,19 @@ export async function GET(request: NextRequest) {
       .eq('organization_id', orgId) as { data: MemberProfile[] | null }
 
     if (!members || members.length === 0) {
-      return NextResponse.json({ nodes: [], edges: [], insights: {} })
+      return NextResponse.json({
+        nodes: [],
+        edges: [],
+        insights: {
+          totalNodes: 0,
+          totalEdges: 0,
+          avgConnections: 0,
+          crossDeptCollaboration: 0,
+          siloed: [],
+          connectors: [],
+          bottlenecks: [],
+        },
+      })
     }
 
     const memberIds = members.map((m: MemberProfile) => m.user_id)
