@@ -283,28 +283,42 @@ export default function TeamDashboardPage() {
       const { data: user } = await supabase.auth.getUser()
       if (!user?.user) return
 
-      const [res, cultureRes, alertsRes, pulseRes] = await Promise.all([
+      // Use allSettled so one failing API doesn't block the others
+      const results = await Promise.allSettled([
         fetch(`/api/team-dashboard?userId=${user.user.id}`, { cache: 'no-store' }),
         fetch('/api/culture-insights', { cache: 'no-store' }),
         fetch('/api/manager-alerts', { cache: 'no-store' }),
         fetch('/api/pulse-check', { cache: 'no-store' }),
       ])
-      if (!res.ok) { setLoading(false); return }
+
+      // Team dashboard (required)
+      const res = results[0].status === 'fulfilled' ? results[0].value : null
+      if (!res?.ok) { setLoading(false); return }
       const dashData = await res.json()
       setData(dashData)
 
-      if (cultureRes.ok) {
-        const cultureData = await cultureRes.json()
-        if (!cultureData.error) setCultureInsights(cultureData)
-      }
-      if (alertsRes.ok) {
-        const ad = await alertsRes.json()
-        if (!ad.error) setAlertsData(ad)
-      }
-      if (pulseRes.ok) {
-        const pd = await pulseRes.json()
-        if (!pd.error) setPulseData(pd)
-      }
+      // Optional APIs — each wrapped individually so one failure doesn't break the page
+      try {
+        const cultureRes = results[1].status === 'fulfilled' ? results[1].value : null
+        if (cultureRes?.ok) {
+          const d = await cultureRes.json()
+          if (!d.error) setCultureInsights(d)
+        }
+      } catch { /* non-fatal */ }
+      try {
+        const alertsRes = results[2].status === 'fulfilled' ? results[2].value : null
+        if (alertsRes?.ok) {
+          const d = await alertsRes.json()
+          if (!d.error) setAlertsData(d)
+        }
+      } catch { /* non-fatal */ }
+      try {
+        const pulseRes = results[3].status === 'fulfilled' ? results[3].value : null
+        if (pulseRes?.ok) {
+          const d = await pulseRes.json()
+          if (!d.error) setPulseData(d)
+        }
+      } catch { /* non-fatal */ }
     } catch (err) {
       console.error('Error loading team dashboard:', err)
     } finally {

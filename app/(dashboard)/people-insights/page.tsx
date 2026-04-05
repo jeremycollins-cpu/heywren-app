@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Users, Network, AlertTriangle, Moon, Activity,
-  ArrowUp, ArrowDown, Flame, Clock, Timer,
-  Shield, Zap, TrendingDown, Heart, ChevronDown, ChevronUp,
-  MessageCircle, Target, Brain, Link2,
+  Flame, Clock, Timer,
+  Shield, Zap, TrendingDown, ChevronDown, ChevronUp,
+  Target, Link2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -162,24 +162,24 @@ export default function PeopleInsightsPage() {
       const { data: user } = await supabase.auth.getUser()
       if (!user?.user) { setLoading(false); return }
 
-      // Load all three in parallel
-      const [collabRes, burnoutRes, disconnectRes] = await Promise.all([
+      // Load all three independently — one failure shouldn't block others
+      const results = await Promise.allSettled([
         fetch('/api/collaboration-graph', { cache: 'no-store' }),
         fetch('/api/burnout-risk', { cache: 'no-store' }),
         fetch('/api/disconnect-tracking', { cache: 'no-store' }),
       ])
 
-      if (collabRes.ok) {
-        const d = await collabRes.json()
-        if (!d.error) setCollab(d)
-      }
-      if (burnoutRes.ok) {
-        const d = await burnoutRes.json()
-        if (!d.error) setBurnout(d)
-      }
-      if (disconnectRes.ok) {
-        const d = await disconnectRes.json()
-        if (!d.error) setDisconnect(d)
+      for (const [i, result] of results.entries()) {
+        if (result.status !== 'fulfilled' || !result.value.ok) continue
+        try {
+          const d = await result.value.json()
+          if (d.error) continue
+          if (i === 0) setCollab(d)
+          else if (i === 1) setBurnout(d)
+          else if (i === 2) setDisconnect(d)
+        } catch (parseErr) {
+          console.error(`Error parsing API response ${i}:`, parseErr)
+        }
       }
     } catch (err) {
       console.error('Error loading people insights:', err)
