@@ -535,17 +535,17 @@ export default function SettingsPage() {
           })
         }
 
-        // Fetch profile to get role and current_team_id
+        // Fetch profile to get job title and current_team_id
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('role, current_team_id')
+          .select('role, job_title, current_team_id')
           .eq('id', user.id)
           .single()
 
         if (profileError) {
           console.error('Error fetching profile:', profileError)
         } else {
-          setRole(profile.role || '')
+          setRole(profile.job_title || '')
 
           // Fetch team name
           if (profile.current_team_id) {
@@ -582,10 +582,11 @@ export default function SettingsPage() {
       })
       if (error) throw error
 
-      // Also update role in profiles table so it's readable by other queries
+      // Update display name and job title in profiles table
+      // Note: profiles.role is the system role (admin/super_admin) — never overwrite it
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ display_name: fullName, role })
+        .update({ display_name: fullName, job_title: role || null })
         .eq('id', user.id)
       if (profileError) console.error('Error updating profile:', profileError)
 
@@ -734,7 +735,7 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label htmlFor="settings-role" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Role</label>
+            <label htmlFor="settings-role" className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Job Title</label>
             <select
               id="settings-role"
               value={role}

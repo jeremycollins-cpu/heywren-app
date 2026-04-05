@@ -260,12 +260,15 @@ export async function GET(request: NextRequest) {
       const tokenExpired = tokenExpiresAt ? (now.getTime() - tokenExpiresAt.getTime()) > 24 * 60 * 60 * 1000 : false
       // Flag as warning only if no refresh token and access token expires within 24h
       const tokenExpiresSoon = !hasRefresh && tokenExpiresAt ? (tokenExpiresAt.getTime() - now.getTime()) < 24 * 60 * 60 * 1000 && !tokenExpired : false
+      // Slack is event-driven (webhook), not polled — use a longer staleness threshold
+      // since quiet channels won't trigger updates. Slack bot tokens also never expire.
+      const staleThresholdDays = int.provider === 'slack' ? 14 : 3
       return {
         provider: int.provider,
         daysSinceSync,
-        stale: daysSinceSync !== null && daysSinceSync >= 3,
-        tokenExpired,
-        tokenExpiresSoon,
+        stale: daysSinceSync !== null && daysSinceSync >= staleThresholdDays,
+        tokenExpired: int.provider === 'slack' ? false : tokenExpired,
+        tokenExpiresSoon: int.provider === 'slack' ? false : tokenExpiresSoon,
         tokenExpiresAt: tokenExpiresAt?.toISOString() || null,
       }
     })
