@@ -13,6 +13,10 @@ function LoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showMfaChallenge, setShowMfaChallenge] = useState(false)
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null)
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaLoading, setMfaLoading] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,6 +36,17 @@ function LoginContent() {
       if (error) {
         toast.error(error.message)
         return
+      }
+
+      // Check if MFA is required
+      const { data: factorsData } = await supabase.auth.mfa.listFactors()
+      const totpFactor = factorsData?.totp?.[0]
+
+      if (totpFactor) {
+        // User has 2FA enrolled — need to verify
+        setShowMfaChallenge(true)
+        setMfaFactorId(totpFactor.id)
+        return // Don't navigate yet
       }
 
       toast.success('Logged in successfully!')
@@ -72,6 +87,78 @@ function LoginContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleMfaVerify = async () => {
+    if (!mfaFactorId || !mfaCode.trim()) return
+    setMfaLoading(true)
+    try {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      })
+      if (challengeError) throw challengeError
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challengeData.id,
+        code: mfaCode,
+      })
+      if (verifyError) throw verifyError
+
+      toast.success('Verified!')
+      router.push('/')
+    } catch {
+      toast.error('Invalid code. Please try again.')
+      setMfaCode('')
+    }
+    setMfaLoading(false)
+  }
+
+  if (showMfaChallenge) {
+    return (
+      <div className="w-full max-w-md mx-auto space-y-6" style={{ fontFamily: 'Inter, -apple-system, system-ui, sans-serif' }}>
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: '-0.025em' }}>Two-Factor Authentication</h2>
+          <p className="text-gray-500 mt-2 text-sm">Enter the 6-digit code from your authenticator app</p>
+        </div>
+
+        <div className="space-y-4">
+          <input
+            type="text"
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            maxLength={6}
+            pattern="[0-9]*"
+            inputMode="numeric"
+            autoFocus
+            placeholder="000000"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 text-center text-xl tracking-widest font-mono"
+          />
+          <button
+            onClick={handleMfaVerify}
+            disabled={mfaLoading || mfaCode.length < 6}
+            className="w-full px-4 py-2.5 text-white font-semibold rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)' }}
+          >
+            {mfaLoading ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+
+        <div className="text-center">
+          <button
+            onClick={async () => {
+              setShowMfaChallenge(false)
+              setMfaFactorId(null)
+              setMfaCode('')
+              await supabase.auth.signOut()
+            }}
+            className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            Use a different account
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

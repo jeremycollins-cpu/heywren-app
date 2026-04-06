@@ -500,6 +500,9 @@ export default function TeamManagementPage() {
                                 onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
                                 memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
                                 isManager={isManager}
+                                callerRole={callerRole}
+                                departments={departments}
+                                onMemberUpdated={loadTeamData}
                               />
                             ))}
                           </div>
@@ -532,6 +535,9 @@ export default function TeamManagementPage() {
                   onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
                   memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
                   isManager={isManager}
+                  callerRole={callerRole}
+                  departments={departments}
+                  onMemberUpdated={loadTeamData}
                 />
               ))
             )}
@@ -634,15 +640,25 @@ const DAY_LABELS = [
   { day: 6, label: 'S' },
 ]
 
-function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies, isManager }: {
+function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies, isManager, callerRole, departments, onMemberUpdated }: {
   member: OrgMember
   anomalyCount: number
   isExpanded: boolean
   onToggle: () => void
   memberAnomalies: Anomaly[]
   isManager: boolean
+  callerRole: string
+  departments: Department[]
+  onMemberUpdated: () => void
 }) {
   const [showScheduleEditor, setShowScheduleEditor] = useState(false)
+  const [showMemberEditor, setShowMemberEditor] = useState(false)
+  const [editRole, setEditRole] = useState(member.role)
+  const [editJobTitle, setEditJobTitle] = useState(member.job_title || '')
+  const [editDeptId, setEditDeptId] = useState(member.department_id || '')
+  const [editSystemRole, setEditSystemRole] = useState<string>('')
+  const [systemRoleLoaded, setSystemRoleLoaded] = useState(false)
+  const [savingMember, setSavingMember] = useState(false)
   const [schedule, setSchedule] = useState({
     work_days: [1, 2, 3, 4, 5] as number[],
     start_time: '08:00',
@@ -689,6 +705,53 @@ function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies
       ? schedule.work_days.filter(d => d !== day)
       : [...schedule.work_days, day].sort()
     setSchedule({ ...schedule, work_days: updated })
+  }
+
+  const openMemberEditor = async () => {
+    setShowMemberEditor(true)
+    setEditRole(member.role)
+    setEditJobTitle(member.job_title || '')
+    setEditDeptId(member.department_id || '')
+    if (!systemRoleLoaded && callerRole === 'org_admin') {
+      try {
+        const supabase = (await import('@/lib/supabase/client')).createClient()
+        const { data } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', member.user_id)
+          .single()
+        if (data) setEditSystemRole(data.role || 'user')
+        setSystemRoleLoaded(true)
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  const saveMemberChanges = async () => {
+    setSavingMember(true)
+    try {
+      const body: Record<string, string | undefined> = { userId: member.user_id }
+      if (editRole !== member.role) body.orgRole = editRole
+      if (editJobTitle !== (member.job_title || '')) body.jobTitle = editJobTitle
+      if (editDeptId !== (member.department_id || '')) body.departmentId = editDeptId
+      if (callerRole === 'org_admin' && editSystemRole && systemRoleLoaded) body.systemRole = editSystemRole
+
+      const res = await fetch('/api/manage-member', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        toast.success(`${member.full_name} updated`)
+        setShowMemberEditor(false)
+        onMemberUpdated()
+      }
+    } catch {
+      toast.error('Failed to update member')
+    }
+    setSavingMember(false)
   }
 
   const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.member
@@ -822,19 +885,118 @@ function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies
             </div>
           )}
 
-          {/* Manager: Edit Schedule */}
+          {/* Manager: Edit Member */}
           {isManager && (
             <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-              {!showScheduleEditor ? (
-                <button
-                  onClick={loadSchedule}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
-                >
-                  <Settings className="w-3 h-3" />
-                  Edit Work Schedule
-                </button>
-              ) : (
-                <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {!showMemberEditor && (
+                  <button
+                    onClick={openMemberEditor}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
+                  >
+                    <Crown className="w-3 h-3" />
+                    Manage Member
+                  </button>
+                )}
+                {!showScheduleEditor && !showMemberEditor && (
+                  <button
+                    onClick={loadSchedule}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
+                  >
+                    <Settings className="w-3 h-3" />
+                    Edit Work Schedule
+                  </button>
+                )}
+              </div>
+
+              {showMemberEditor && (
+                <div className="space-y-3 mt-2">
+                  <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Manage Member</p>
+
+                  {/* Org Role */}
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Organization Role</label>
+                    <select
+                      value={editRole}
+                      onChange={e => setEditRole(e.target.value)}
+                      className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                    >
+                      <option value="member">Member</option>
+                      <option value="team_lead">Team Lead</option>
+                      <option value="dept_manager">Department Manager</option>
+                      {callerRole === 'org_admin' && <option value="org_admin">Org Admin</option>}
+                    </select>
+                  </div>
+
+                  {/* Job Title */}
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Job Title</label>
+                    <input
+                      type="text"
+                      value={editJobTitle}
+                      onChange={e => setEditJobTitle(e.target.value)}
+                      placeholder="e.g. Senior Engineer"
+                      className="w-full sm:w-64 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                    />
+                  </div>
+
+                  {/* Department */}
+                  {departments.length > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Department</label>
+                      <select
+                        value={editDeptId}
+                        onChange={e => setEditDeptId(e.target.value)}
+                        className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                      >
+                        <option value="">No department</option>
+                        {departments.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* System Role (org_admin only) */}
+                  {callerRole === 'org_admin' && systemRoleLoaded && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        System Access
+                        <span className="ml-1 text-gray-400 font-normal">Controls admin dashboard visibility</span>
+                      </label>
+                      <select
+                        value={editSystemRole}
+                        onChange={e => setEditSystemRole(e.target.value)}
+                        className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
+                      >
+                        <option value="user">Standard User</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={saveMemberChanges}
+                      disabled={savingMember}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 transition"
+                    >
+                      <Save className="w-3 h-3" />
+                      {savingMember ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      onClick={() => setShowMemberEditor(false)}
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showScheduleEditor && (
+                <div className="space-y-3 mt-2">
                   <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Work Schedule</p>
 
                   {/* Day toggles */}
