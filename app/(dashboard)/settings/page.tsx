@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
   Trophy, Folder, RefreshCw, Check, Clock, Palmtree, Plane, Stethoscope,
-  CalendarDays, Trash2
+  CalendarDays, Trash2, Smartphone
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -25,6 +25,14 @@ export default function SettingsPage() {
     overdue: true,
     weekly: true,
   })
+  const [mfaEnrolling, setMfaEnrolling] = useState(false)
+  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null)
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null)
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null)
+  const [mfaVerifyCode, setMfaVerifyCode] = useState('')
+  const [mfaEnabled, setMfaEnabled] = useState(false)
+  const [mfaLoading, setMfaLoading] = useState(true)
+  const [disablingMfa, setDisablingMfa] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -215,6 +223,21 @@ export default function SettingsPage() {
       setHolidaysLoading(false)
     }
     fetchCompanyHolidays()
+
+    const checkMfaStatus = async () => {
+      try {
+        const { data } = await supabase.auth.mfa.listFactors()
+        const totp = data?.totp?.[0]
+        if (totp && totp.status === 'verified') {
+          setMfaEnabled(true)
+          setMfaFactorId(totp.id)
+        }
+      } catch (err) {
+        console.error('Error checking MFA status:', err)
+      }
+      setMfaLoading(false)
+    }
+    checkMfaStatus()
   }, [])
 
   const addCompanyHoliday = async () => {
@@ -659,6 +682,67 @@ export default function SettingsPage() {
     }
   }
 
+  const startMfaEnrollment = async () => {
+    setMfaEnrolling(true)
+    try {
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: 'HeyWren Authenticator',
+      })
+      if (error) throw error
+      setMfaQrCode(data.totp.qr_code)
+      setMfaSecret(data.totp.secret)
+      setMfaFactorId(data.id)
+    } catch (err) {
+      toast.error('Failed to start 2FA setup')
+      setMfaEnrolling(false)
+    }
+  }
+
+  const verifyMfaEnrollment = async () => {
+    if (!mfaFactorId || !mfaVerifyCode.trim()) {
+      toast.error('Please enter the 6-digit code')
+      return
+    }
+    try {
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      })
+      if (challengeError) throw challengeError
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challengeData.id,
+        code: mfaVerifyCode,
+      })
+      if (verifyError) throw verifyError
+
+      setMfaEnabled(true)
+      setMfaEnrolling(false)
+      setMfaQrCode(null)
+      setMfaSecret(null)
+      setMfaVerifyCode('')
+      toast.success('Two-factor authentication enabled!')
+    } catch (err) {
+      toast.error('Invalid code. Please try again.')
+    }
+  }
+
+  const disableMfa = async () => {
+    if (!mfaFactorId) return
+    setDisablingMfa(true)
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: mfaFactorId })
+      if (error) throw error
+      setMfaEnabled(false)
+      setMfaFactorId(null)
+      toast.success('Two-factor authentication disabled')
+    } catch (err) {
+      toast.error('Failed to disable 2FA')
+    }
+    setDisablingMfa(false)
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -830,17 +914,123 @@ export default function SettingsPage() {
         </h2>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Add extra security to your account</p>
-            </div>
-            <button
-              onClick={() => toast('Two-factor authentication is not yet available. Coming soon!', { icon: 'ℹ️' })}
-              className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-            >
-              Enable
-            </button>
+          <div className="p-4 border border-gray-100 dark:border-gray-700 rounded-lg">
+            {mfaLoading ? (
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <div className="h-5 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  <div className="h-4 w-64 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
+                </div>
+                <div className="h-9 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              </div>
+            ) : mfaEnabled ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Smartphone aria-hidden="true" className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                      Two-Factor Authentication
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Enabled</span>
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Your account is protected with TOTP 2FA</p>
+                  </div>
+                </div>
+                <button
+                  onClick={disableMfa}
+                  disabled={disablingMfa}
+                  className="px-4 py-2 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition disabled:opacity-50"
+                >
+                  {disablingMfa ? 'Disabling...' : 'Disable'}
+                </button>
+              </div>
+            ) : !mfaEnrolling ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Smartphone aria-hidden="true" className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">Two-Factor Authentication</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Add extra security to your account</p>
+                  </div>
+                </div>
+                <button
+                  onClick={startMfaEnrollment}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                >
+                  Enable
+                </button>
+              </div>
+            ) : mfaQrCode ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Smartphone aria-hidden="true" className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">Set Up Two-Factor Authentication</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Scan the QR code with your authenticator app</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-4 py-4">
+                  <div className="bg-white p-3 rounded-lg">
+                    <img src={mfaQrCode} alt="TOTP QR Code" className="w-48 h-48" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Or enter this secret manually:</p>
+                    <code
+                      className="text-sm bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-lg font-mono text-gray-800 dark:text-gray-200 cursor-pointer select-all"
+                      onClick={() => {
+                        if (mfaSecret) {
+                          navigator.clipboard.writeText(mfaSecret)
+                          toast.success('Secret copied to clipboard')
+                        }
+                      }}
+                      title="Click to copy"
+                    >
+                      {mfaSecret}
+                    </code>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enter the 6-digit code from your authenticator app
+                  </label>
+                  <input
+                    type="text"
+                    value={mfaVerifyCode}
+                    onChange={(e) => setMfaVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    maxLength={6}
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    autoFocus
+                    placeholder="000000"
+                    className="w-full max-w-xs px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition text-gray-900 dark:text-white dark:bg-gray-800 text-center text-lg tracking-widest font-mono"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={verifyMfaEnrollment}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                    >
+                      Verify & Enable
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMfaEnrolling(false)
+                        setMfaQrCode(null)
+                        setMfaSecret(null)
+                        setMfaVerifyCode('')
+                        setMfaFactorId(null)
+                      }}
+                      className="px-4 py-2 border border-gray-300 dark:border-border-dark text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-4">
+                <div className="h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Setting up 2FA...</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between p-4 border border-gray-100 dark:border-gray-700 rounded-lg">

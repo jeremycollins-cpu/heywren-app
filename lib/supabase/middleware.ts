@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 
 // Routes that don't require onboarding completion
 const ONBOARDING_PATHS = ['/onboarding']
-const AUTH_PATHS = ['/login', '/signup', '/callback']
+const AUTH_PATHS = ['/login', '/signup', '/callback', '/mfa-verify']
 const API_PATHS = ['/api/']
 const PUBLIC_PATHS = [...AUTH_PATHS, ...API_PATHS]
 
@@ -54,6 +54,24 @@ export async function updateSession(request: NextRequest) {
   // No user → let pages handle their own auth redirects
   if (!user) {
     return response
+  }
+
+  // Check MFA enforcement
+  // If user has enrolled TOTP factors, verify they've completed the MFA challenge
+  // by checking the session's AAL (Authenticator Assurance Level)
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+
+    // If user has enrolled MFA factors but current session is only aal1,
+    // redirect to MFA challenge page
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+      // Don't redirect if already on the MFA verify page or login
+      if (!pathname.startsWith('/mfa-verify') && !AUTH_PATHS.some(p => pathname.startsWith(p))) {
+        const mfaUrl = new URL('/mfa-verify', request.url)
+        return NextResponse.redirect(mfaUrl)
+      }
+    }
   }
 
   // Skip if already on onboarding pages
