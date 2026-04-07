@@ -50,24 +50,48 @@ export async function GET(request: NextRequest) {
 
     const admin = getAdminClient()
 
+    // Try organization_members first, fall back to team_members
     const { data: callerMembership } = await admin
       .from('organization_members')
-      .select('organization_id, role')
+      .select('organization_id, department_id, team_id, role')
       .eq('user_id', callerId)
       .limit(1)
-      .single()
+      .maybeSingle()
 
-    if (!callerMembership) {
-      return NextResponse.json({ error: 'Not a member of any organization' }, { status: 403 })
+    let members: MemberProfile[]
+
+    if (callerMembership?.organization_id) {
+      // Org-based: get all org members
+      const { data: orgMembers } = await admin
+        .from('organization_members')
+        .select('user_id, department_id, team_id, role, profiles(display_name, avatar_url, job_title)')
+        .eq('organization_id', callerMembership.organization_id) as { data: MemberProfile[] | null }
+      members = orgMembers || []
+    } else {
+      // Fallback: team-based (no org hierarchy — use team_members + profiles)
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', callerId)
+        .single()
+
+      if (!profile?.current_team_id) {
+        return NextResponse.json({ error: 'No team found' }, { status: 404 })
+      }
+
+      const { data: teamMembers } = await admin
+        .from('team_members')
+        .select('user_id, role, team_id, profiles(display_name, avatar_url, job_title)')
+        .eq('team_id', profile.current_team_id)
+
+      members = (teamMembers || []).map((m: any) => ({
+        user_id: m.user_id,
+        department_id: null,
+        team_id: m.team_id,
+        role: m.role || 'member',
+        profiles: m.profiles,
+      }))
     }
-
-    const orgId = callerMembership.organization_id
-
-    // Get org members
-    const { data: members } = await admin
-      .from('organization_members')
-      .select('user_id, department_id, team_id, role, profiles(display_name, avatar_url, job_title)')
-      .eq('organization_id', orgId) as { data: MemberProfile[] | null }
 
     if (!members || members.length === 0) {
       return NextResponse.json({
@@ -89,24 +113,29 @@ export async function GET(request: NextRequest) {
     const memberMap = new Map<string, MemberProfile>()
     for (const m of members) memberMap.set(m.user_id, m)
 
-    // Try pre-computed edges first
-    const now = new Date()
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-      .toISOString().split('T')[0]
-
-    const { data: precomputed } = await admin
-      .from('collaboration_edges')
-      .select('user_a, user_b, email_count, chat_count, meeting_count, commitment_count, strength')
-      .eq('organization_id', orgId)
-      .eq('month_start', monthStart)
-
+    // Try pre-computed edges first (only if org-based)
     let edges: CollabEdge[]
+    const orgId = callerMembership?.organization_id
 
-    if (precomputed && precomputed.length > 0) {
-      edges = precomputed as CollabEdge[]
+    if (orgId) {
+      const now = new Date()
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+        .toISOString().split('T')[0]
+
+      const { data: precomputed } = await admin
+        .from('collaboration_edges')
+        .select('user_a, user_b, email_count, chat_count, meeting_count, commitment_count, strength')
+        .eq('organization_id', orgId)
+        .eq('month_start', monthStart)
+
+      if (precomputed && precomputed.length > 0) {
+        edges = precomputed as CollabEdge[]
+      } else {
+        edges = await computeLiveEdges(admin, memberIds, orgId)
+      }
     } else {
-      // Compute live from last 30 days of data
-      edges = await computeLiveEdges(admin, memberIds, orgId)
+      // Team-based: always compute live
+      edges = await computeLiveEdges(admin, memberIds, null)
     }
 
     // Build nodes
@@ -165,7 +194,7 @@ export async function GET(request: NextRequest) {
 async function computeLiveEdges(
   admin: any, // eslint-disable-line
   memberIds: string[],
-  _orgId: string
+  _orgId: string | null
 ): Promise<CollabEdge[]> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const edgeMap = new Map<string, { email: number; chat: number; meeting: number; commitment: number }>()
@@ -294,19 +323,19 @@ function computeInsights(
   const siloThreshold = Math.max(1, Math.floor(avgConnections * 0.5))
   const siloed = nodes
     .filter(n => n.connectionCount < siloThreshold)
-    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount }))
+    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount }))
 
   // Connectors: most connections (top 10%)
   const sortedByConnections = [...nodes].sort((a, b) => b.connectionCount - a.connectionCount)
   const connectorCount = Math.max(1, Math.ceil(nodes.length * 0.1))
   const connectors = sortedByConnections.slice(0, connectorCount)
-    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount, interactions: n.totalInteractions }))
+    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount, totalInteractions: n.totalInteractions }))
 
   // Bottlenecks: people who appear in many edges with high strength (everyone depends on them)
   const bottleneckThreshold = avgConnections * 1.5
   const bottlenecks = nodes
     .filter(n => n.connectionCount > bottleneckThreshold && n.avgStrength > 0.5)
-    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount, avgStrength: n.avgStrength }))
+    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount, avgStrength: n.avgStrength }))
 
   // Cross-department collaboration: count edges between different departments
   const deptMap = new Map<string, string | null>()
