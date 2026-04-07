@@ -37,19 +37,20 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Refresh session — single network call, required for Supabase SSR token refresh
-  const { data: { user } } = await supabase.auth.getUser()
+  // Use getSession() to read from JWT cookie — no network call.
+  // Token refresh and validation via getUser() happens in server components/API routes.
+  const { data: { session } } = await supabase.auth.getSession()
 
   // Skip further checks for public/API paths
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return response
   }
 
-  if (!user) {
+  if (!session) {
     return response
   }
 
-  // MFA enforcement — reads from JWT cookie, no additional network call
+  // MFA enforcement — reads from JWT cookie, no network call
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
   if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
     if (!pathname.startsWith('/mfa-verify') && !AUTH_PATHS.some(p => pathname.startsWith(p))) {
