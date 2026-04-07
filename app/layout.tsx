@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'HeyWren - AI-Powered Follow-Through',
   description: 'Nothing falls through the cracks. HeyWren monitors Slack for commitments and nudges you to follow through.',
   keywords: ['productivity', 'slack', 'ai', 'follow-through', 'commitments', 'team accountability'],
-  metadataBase: new URL('https://heywren.com'),
+  metadataBase: new URL('https://heywren.ai'),
   alternates: {
     canonical: '/',
   },

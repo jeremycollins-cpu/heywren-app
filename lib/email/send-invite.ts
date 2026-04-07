@@ -114,7 +114,7 @@ export async function sendInviteEmail(params: SendInviteParams): Promise<SendInv
     return { success: false, error: 'Email service not configured' }
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
   const inviteUrl = `${appUrl}/invite/${inviteToken}`
 
   const html = buildEmailHtml({ inviterName, organizationName, role, inviteUrl })
@@ -123,7 +123,7 @@ export async function sendInviteEmail(params: SendInviteParams): Promise<SendInv
     const resend = new Resend(apiKey)
 
     const { error } = await resend.emails.send({
-      from: 'HeyWren <notifications@heywren.com>',
+      from: 'HeyWren <notifications@heywren.ai>',
       to: email,
       subject: `${inviterName} invited you to join ${organizationName} on HeyWren`,
       html,

@@ -28,7 +28,7 @@ export const emailWelcomeDrip = inngest.createFunction(
   { cron: '0 * * * *' }, // Every hour
   async ({ step }) => {
     const supabase = getAdminClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
     const now = new Date()
 
     // Initialize drip state for new users who don't have one yet
@@ -108,7 +108,7 @@ export const emailWelcomeDrip = inngest.createFunction(
             to: profile.email,
             subject,
             html,
-            from: 'HeyWren <hello@heywren.com>',
+            from: 'HeyWren <hello@heywren.ai>',
             emailType: 'welcome_d0',
             userId: drip.user_id,
             idempotencyKey: `welcome_d0_${drip.user_id}`,
@@ -143,7 +143,7 @@ export const emailWelcomeDrip = inngest.createFunction(
             to: profile.email,
             subject,
             html,
-            from: 'HeyWren <hello@heywren.com>',
+            from: 'HeyWren <hello@heywren.ai>',
             emailType: 'welcome_d1',
             userId: drip.user_id,
             idempotencyKey: `welcome_d1_${drip.user_id}`,
@@ -179,7 +179,7 @@ export const emailWelcomeDrip = inngest.createFunction(
             to: profile.email,
             subject,
             html,
-            from: 'HeyWren <hello@heywren.com>',
+            from: 'HeyWren <hello@heywren.ai>',
             emailType: 'welcome_d3',
             userId: drip.user_id,
             idempotencyKey: `welcome_d3_${drip.user_id}`,
@@ -229,7 +229,7 @@ export const emailWelcomeDrip = inngest.createFunction(
             to: profile.email,
             subject,
             html,
-            from: 'HeyWren <hello@heywren.com>',
+            from: 'HeyWren <hello@heywren.ai>',
             emailType: 'welcome_d7',
             userId: drip.user_id,
             idempotencyKey: `welcome_d7_${drip.user_id}`,

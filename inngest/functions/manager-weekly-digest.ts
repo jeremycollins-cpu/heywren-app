@@ -205,7 +205,7 @@ export const managerWeeklyDigest = inngest.createFunction(
               {
                 type: 'button',
                 text: { type: 'plain_text', text: 'View Dashboard' },
-                url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'}/team-dashboard`,
+                url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'}/team-dashboard`,
               },
             ],
           } as any)

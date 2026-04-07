@@ -20,7 +20,7 @@ export const emailManagerBriefing = inngest.createFunction(
   { cron: '0 9 * * 1' }, // Monday 9 AM UTC
   async ({ step }) => {
     const supabase = getAdminClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
     const thisMonday = getWeekStart()
     const prevMonday = getPreviousWeekStart(thisMonday)

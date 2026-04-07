@@ -23,7 +23,7 @@ export const emailAchievement = inngest.createFunction(
   { cron: '0 9 * * 1' }, // Monday 9 AM UTC
   async ({ step }) => {
     const supabase = getAdminClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
     // Get the week that was just scored
     const now = new Date()

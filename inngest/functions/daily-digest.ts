@@ -55,7 +55,7 @@ export const dailyDigest = inngest.createFunction(
 
     let digestsSent = 0
     let digestsFailed = 0
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
     const now = new Date()
 

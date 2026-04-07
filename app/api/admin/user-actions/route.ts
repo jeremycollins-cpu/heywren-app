@@ -425,7 +425,7 @@ export async function POST(request: NextRequest) {
     if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 })
 
     const resend = new Resend(apiKey)
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
     const unsubscribeUrl = `${appUrl}/settings?tab=notifications`
 
     let subject: string
@@ -483,7 +483,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const { data, error } = await resend.emails.send({
-        from: 'HeyWren <notifications@heywren.com>',
+        from: 'HeyWren <notifications@heywren.ai>',
         to: userEmail,
         subject: `[TEST] ${subject}`,
         html,

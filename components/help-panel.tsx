@@ -346,8 +346,8 @@ export default function HelpPanel({ open, onClose, onStartWalkthrough }: HelpPan
                 docs
               </a>
               {' '}or email us at{' '}
-              <a href="mailto:help@heywren.com" className="font-semibold underline hover:text-blue-800">
-                help@heywren.com
+              <a href="mailto:help@heywren.ai" className="font-semibold underline hover:text-blue-800">
+                help@heywren.ai
               </a>
             </p>
           </div>
