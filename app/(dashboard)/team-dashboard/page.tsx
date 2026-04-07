@@ -360,8 +360,13 @@ export default function TeamDashboardPage() {
         if (collabRes?.ok) {
           const d = await collabRes.json()
           if (d.nodes && d.edges) setCollabGraph(d)
+        } else if (collabRes) {
+          const errBody = await collabRes.text().catch(() => '')
+          console.error('Collaboration graph API error:', collabRes.status, errBody)
+        } else if (results[5].status === 'rejected') {
+          console.error('Collaboration graph fetch rejected:', (results[5] as PromiseRejectedResult).reason)
         }
-      } catch { /* non-fatal */ }
+      } catch (e) { console.error('Collaboration graph parse error:', e) }
     } catch (err) {
       console.error('Error loading team dashboard:', err)
     } finally {
