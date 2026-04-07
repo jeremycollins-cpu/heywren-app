@@ -15,6 +15,9 @@ import {
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import dynamic from 'next/dynamic'
+
+const CollaborationNetwork = dynamic(() => import('@/components/graphs/collaboration-network'), { ssr: false })
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -276,6 +279,7 @@ export default function TeamDashboardPage() {
   const [alertsData, setAlertsData] = useState<AlertsData | null>(null)
   const [pulseData, setPulseData] = useState<PulseData | null>(null)
   const [oooUserIds, setOooUserIds] = useState<Set<string>>(new Set())
+  const [collabGraph, setCollabGraph] = useState<{ nodes: any[]; edges: any[]; insights: any } | null>(null)
   const supabase = createClient()
 
   const handleExportReport = async () => {
@@ -310,6 +314,7 @@ export default function TeamDashboardPage() {
         fetch('/api/manager-alerts', { cache: 'no-store' }),
         fetch('/api/pulse-check', { cache: 'no-store' }),
         fetch('/api/ooo?active=true', { cache: 'no-store' }),
+        fetch('/api/collaboration-graph', { cache: 'no-store' }),
       ])
 
       // Team dashboard (required)
@@ -348,6 +353,13 @@ export default function TeamDashboardPage() {
             const ids = new Set<string>(d.periods.map((p: { userId: string }) => p.userId))
             setOooUserIds(ids)
           }
+        }
+      } catch { /* non-fatal */ }
+      try {
+        const collabRes = results[5].status === 'fulfilled' ? results[5].value : null
+        if (collabRes?.ok) {
+          const d = await collabRes.json()
+          if (d.nodes && d.edges) setCollabGraph(d)
         }
       } catch { /* non-fatal */ }
     } catch (err) {
@@ -746,6 +758,15 @@ export default function TeamDashboardPage() {
       {/* ── Culture & Tone Insights ─────────────────────────────────────── */}
       {cultureInsights && cultureInsights.sampleCount > 0 && (
         <CultureInsightsSection insights={cultureInsights} />
+      )}
+
+      {/* ── Collaboration Network ─────────────────────────────────────── */}
+      {collabGraph && collabGraph.nodes.length > 0 && (
+        <CollaborationNetwork
+          nodes={collabGraph.nodes}
+          edges={collabGraph.edges}
+          insights={collabGraph.insights}
+        />
       )}
 
       {/* ── Achievements & Challenges (secondary) ──────────────────────── */}
