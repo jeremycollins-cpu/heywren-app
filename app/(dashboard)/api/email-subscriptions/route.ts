@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { scanUserSubscriptions } from '@/lib/email/scan-subscriptions'
 
 function getAdminClient() {
   return createClient(
@@ -75,13 +76,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { subscriptionId, action } = await request.json()
+    const body = await request.json()
+    const { subscriptionId, action } = body
+
+    const admin = getAdminClient()
+
+    // ── Scan action: trigger on-demand inbox scan ──────────────────────
+    if (action === 'scan') {
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userData.user.id)
+        .single()
+
+      if (!profile?.current_team_id) {
+        return NextResponse.json({ error: 'No team' }, { status: 400 })
+      }
+
+      const result = await scanUserSubscriptions(profile.current_team_id, userData.user.id)
+      return NextResponse.json({ success: true, ...result })
+    }
 
     if (!subscriptionId || !['unsubscribe', 'keep'].includes(action)) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
-
-    const admin = getAdminClient()
 
     // Verify ownership
     const { data: sub } = await admin

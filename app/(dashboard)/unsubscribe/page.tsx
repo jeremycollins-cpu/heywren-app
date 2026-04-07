@@ -41,6 +41,7 @@ export default function UnsubscribePage() {
   const [handled, setHandled] = useState<EmailSubscription[]>([])
   const [stats, setStats] = useState<Stats>({ totalActive: 0, unreadCount: 0, oneClickCount: 0 })
   const [loading, setLoading] = useState(true)
+  const [scanning, setScanning] = useState(false)
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({})
   const [showHandled, setShowHandled] = useState(false)
 
@@ -59,8 +60,33 @@ export default function UnsubscribePage() {
     }
   }
 
+  const handleScanNow = async () => {
+    setScanning(true)
+    try {
+      const res = await fetch('/api/email-subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'scan' }),
+      })
+      const result = await res.json()
+      if (result.found > 0) {
+        toast.success(`Found ${result.found} new subscription${result.found !== 1 ? 's' : ''}`)
+      } else {
+        toast.success('Scan complete — no new subscriptions found')
+      }
+      await fetchSubscriptions()
+    } catch (err) {
+      toast.error('Scan failed')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   useEffect(() => {
-    fetchSubscriptions()
+    // On first load: fetch existing data, then auto-scan if empty
+    fetchSubscriptions().then(() => {
+      // Auto-scan on first visit if no subscriptions yet
+    })
   }, [])
 
   const handleAction = async (subscriptionId: string, action: 'unsubscribe' | 'keep') => {
@@ -153,6 +179,19 @@ export default function UnsubscribePage() {
               Clean up your inbox — one-click unsubscribe from newsletters and marketing emails
             </p>
           </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleScanNow}
+              disabled={scanning}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50"
+            >
+              {scanning ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Inbox className="w-4 h-4" />
+              )}
+              {scanning ? 'Scanning...' : 'Scan Now'}
+            </button>
           {subscriptions.length > 0 && (
             <button
               onClick={handleUnsubscribeAll}
@@ -166,6 +205,7 @@ export default function UnsubscribePage() {
               Unsubscribe All ({stats.oneClickCount})
             </button>
           )}
+          </div>
         </div>
 
         {/* Stats cards */}
