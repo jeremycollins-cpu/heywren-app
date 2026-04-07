@@ -484,6 +484,7 @@ export async function POST(request: NextRequest) {
     try {
       const { data, error } = await resend.emails.send({
         from: 'HeyWren <notifications@heywren.ai>',
+        replyTo: 'Wren <wren@heywren.ai>',
         to: userEmail,
         subject: `[TEST] ${subject}`,
         html,

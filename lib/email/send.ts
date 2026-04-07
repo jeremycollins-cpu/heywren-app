@@ -10,6 +10,7 @@ interface SendEmailParams {
   subject: string
   html: string
   from?: string
+  replyTo?: string
   /** Email type for tracking/dedup (e.g. 'weekly_recap', 'nudge') */
   emailType?: string
   /** User ID for tracking */
@@ -45,7 +46,7 @@ function getAdminClient() {
 }
 
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-  const { to, subject, html, from, emailType, userId, idempotencyKey } = params
+  const { to, subject, html, from, replyTo, emailType, userId, idempotencyKey } = params
 
   const resend = getResend()
   if (!resend) {
@@ -72,6 +73,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   try {
     const { data, error } = await resend.emails.send({
       from: from || 'HeyWren <notifications@heywren.ai>',
+      replyTo: replyTo || 'Wren <wren@heywren.ai>',
       to,
       subject,
       html,

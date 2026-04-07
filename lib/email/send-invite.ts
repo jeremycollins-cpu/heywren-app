@@ -124,6 +124,7 @@ export async function sendInviteEmail(params: SendInviteParams): Promise<SendInv
 
     const { error } = await resend.emails.send({
       from: 'HeyWren <notifications@heywren.ai>',
+      replyTo: 'Wren <wren@heywren.ai>',
       to: email,
       subject: `${inviterName} invited you to join ${organizationName} on HeyWren`,
       html,
