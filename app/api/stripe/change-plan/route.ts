@@ -9,10 +9,15 @@ function getAdminClient() {
   )
 }
 
-const PRICE_IDS: Record<string, string> = {
-  basic: process.env.STRIPE_BASIC_PRICE_ID!,
-  pro: process.env.STRIPE_PRO_PRICE_ID!,
-  team: process.env.STRIPE_TEAM_PRICE_ID!,
+const PRICE_IDS: Record<string, Record<string, string | undefined>> = {
+  pro: {
+    monthly: process.env.STRIPE_PRO_PRICE_ID!,
+    annual: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || undefined,
+  },
+  team: {
+    monthly: process.env.STRIPE_TEAM_PRICE_ID!,
+    annual: process.env.STRIPE_TEAM_ANNUAL_PRICE_ID || undefined,
+  },
 }
 
 export async function POST(request: NextRequest) {
@@ -25,17 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { teamId, newPlan, promoCode } = await request.json()
+    const { teamId, newPlan, billingInterval = 'monthly', promoCode } = await request.json()
 
     if (!teamId || !newPlan) {
       return NextResponse.json({ error: 'Missing teamId or newPlan' }, { status: 400 })
     }
 
-    if (!['basic', 'pro', 'team'].includes(newPlan)) {
+    if (!['pro', 'team'].includes(newPlan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
-    const newPriceId = PRICE_IDS[newPlan]
+    if (!['monthly', 'annual'].includes(billingInterval)) {
+      return NextResponse.json({ error: 'Invalid billing interval' }, { status: 400 })
+    }
+
+    // Fall back to monthly if annual price isn't configured yet
+    const newPriceId = PRICE_IDS[newPlan]?.[billingInterval] || PRICE_IDS[newPlan]?.monthly
     if (!newPriceId) {
       return NextResponse.json({ error: 'Price ID not configured for this plan' }, { status: 500 })
     }

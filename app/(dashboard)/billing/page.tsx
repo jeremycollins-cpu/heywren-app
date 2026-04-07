@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { type PlanKey, type PlanDisplay, PLAN_DISPLAY } from '@/lib/plans'
+import { type PlanKey, type PlanDisplay, type DisplayablePlan, PLAN_DISPLAY } from '@/lib/plans'
 import { getStripe } from '@/lib/stripe/client'
 
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'cancelling' | 'incomplete'
@@ -24,6 +24,7 @@ interface BillingInfo {
 }
 
 const PLANS = PLAN_DISPLAY
+type BillingInterval = 'monthly' | 'annual'
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string; description: string }> = {
   trialing: {
@@ -68,7 +69,8 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
-  const [showUpgradeModal, setShowUpgradeModal] = useState<Exclude<PlanKey, 'trial'> | null>(null)
+  const [showUpgradeModal, setShowUpgradeModal] = useState<DisplayablePlan | null>(null)
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>('annual')
   const [promoCode, setPromoCode] = useState('')
   const [promoStatus, setPromoStatus] = useState<{ valid: boolean; message: string; percentOff?: number; amountOff?: number } | null>(null)
   const [promoLoading, setPromoLoading] = useState(false)
@@ -149,7 +151,7 @@ export default function BillingPage() {
     }
   }
 
-  const handleChangePlan = async (newPlan: Exclude<PlanKey, 'trial'>) => {
+  const handleChangePlan = async (newPlan: DisplayablePlan) => {
     if (!billingInfo) return
     setActionLoading(newPlan)
     try {
@@ -158,7 +160,7 @@ export default function BillingPage() {
         const response = await fetch('/api/stripe/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan: newPlan, promoCode: promoCode.trim() || undefined }),
+          body: JSON.stringify({ plan: newPlan, billingInterval, promoCode: promoCode.trim() || undefined }),
         })
 
         const result = await response.json()
@@ -174,13 +176,13 @@ export default function BillingPage() {
       const response = await fetch('/api/stripe/change-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId: billingInfo.teamId, newPlan, promoCode: promoCode.trim() || undefined }),
+        body: JSON.stringify({ teamId: billingInfo.teamId, newPlan, billingInterval, promoCode: promoCode.trim() || undefined }),
       })
 
       const result = await response.json()
       if (!response.ok) throw new Error(result.error)
 
-      toast.success(`Switched to ${PLANS[newPlan].name} plan!`)
+      toast.success(`Switched to ${PLANS[newPlan as DisplayablePlan].name} plan!`)
       setShowUpgradeModal(null)
       setPromoCode('')
       setPromoStatus(null)
@@ -246,7 +248,9 @@ export default function BillingPage() {
     return <LoadingSkeleton variant="card" />
   }
 
-  const currentPlan = billingInfo?.plan || 'trial'
+  const rawPlan = billingInfo?.plan || 'trial'
+  // Legacy 'basic' users are treated as 'pro' in the new model
+  const currentPlan = rawPlan === 'basic' ? 'pro' : rawPlan
   const currentStatus = STATUS_CONFIG[billingInfo?.status || 'trialing']
   const isActivePaid = billingInfo?.status === 'active' || billingInfo?.status === 'trialing'
   const isCancelled = billingInfo?.status === 'cancelled'
@@ -280,7 +284,7 @@ export default function BillingPage() {
             </span>
             {currentPlan !== 'trial' && (
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                — {PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.name || 'Trial'} Plan
+                — {PLANS[currentPlan as DisplayablePlan]?.name || 'Trial'} Plan
               </span>
             )}
           </div>
@@ -315,7 +319,7 @@ export default function BillingPage() {
             <div className="flex items-center gap-2">
               <Crown className="w-4 h-4 text-indigo-600" />
               <span className="text-sm font-semibold text-indigo-600">
-                {PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.name}
+                {PLANS[currentPlan as DisplayablePlan]?.name}
               </span>
             </div>
           )}
@@ -325,10 +329,10 @@ export default function BillingPage() {
           <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Plan</p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-              {currentPlan === 'trial' ? 'Trial' : PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.name}
+              {currentPlan === 'trial' ? 'Trial' : PLANS[currentPlan as DisplayablePlan]?.name}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              {currentPlan === 'trial' ? 'Free' : `${PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.price}/user/mo`}
+              {currentPlan === 'trial' ? 'Free' : `${PLANS[currentPlan as DisplayablePlan]?.price || '$25'}/user/mo`}
             </p>
           </div>
           <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
@@ -345,7 +349,7 @@ export default function BillingPage() {
             <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
               {currentPlan === 'trial'
                 ? '$0'
-                : `$${(PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0) * (billingInfo?.memberCount || 1)}`}
+                : `$${(PLANS[currentPlan as DisplayablePlan]?.priceValue || 0) * (billingInfo?.memberCount || 1)}`}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
               {currentPlan === 'trial' ? 'During trial' : 'Billed monthly'}
@@ -358,16 +362,45 @@ export default function BillingPage() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white" style={{ letterSpacing: '-0.025em' }}>
-            {currentPlan === 'trial' || currentPlan === 'basic' ? 'Upgrade Your Plan' : 'Change Plan'}
+            {currentPlan === 'trial' ? 'Choose Your Plan' : 'Change Plan'}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">All plans include a 14-day free trial</p>
         </div>
 
+        {/* Billing interval toggle */}
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-1">
+            <button
+              onClick={() => setBillingInterval('monthly')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                billingInterval === 'monthly'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setBillingInterval('annual')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all flex items-center gap-1.5 ${
+                billingInterval === 'annual'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              Annual
+              <span className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded-full text-xs font-semibold">
+                Save 20%
+              </span>
+            </button>
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-3 gap-5">
-          {(Object.entries(PLANS) as [Exclude<PlanKey, 'trial'>, PlanDisplay][]).map(([planKey, plan]: [Exclude<PlanKey, 'trial'>, PlanDisplay]) => {
+          {(Object.entries(PLANS) as [DisplayablePlan, PlanDisplay][]).map(([planKey, plan]: [DisplayablePlan, PlanDisplay]) => {
             const isCurrent = currentPlan === planKey
-            const isUpgrade = !isCurrent && plan.priceValue > (PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0)
-            const isDowngrade = !isCurrent && plan.priceValue < (PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0)
+            const isTeamUpgrade = planKey === 'team' && currentPlan === 'pro'
+            const displayPrice = billingInterval === 'annual' ? plan.annualPrice : plan.price
 
             return (
               <div
@@ -380,7 +413,6 @@ export default function BillingPage() {
                       : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'
                 }`}
               >
-                {/* Current / Popular badges */}
                 {isCurrent && (
                   <div className="absolute -top-3 left-4 bg-indigo-600 text-white px-3 py-0.5 rounded-full text-xs font-semibold">
                     Current Plan
@@ -397,11 +429,16 @@ export default function BillingPage() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{plan.description}</p>
 
                   <div className="mt-4 mb-5">
-                    <span className="text-4xl font-bold text-gray-900 dark:text-white">{plan.price}</span>
+                    <span className="text-4xl font-bold text-gray-900 dark:text-white">{displayPrice}</span>
                     <span className="text-gray-500 dark:text-gray-400 text-sm">/user/month</span>
+                    {billingInterval === 'annual' && (
+                      <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">Billed annually</span>
+                    )}
+                    {plan.minUsers > 1 && (
+                      <span className="block text-xs text-indigo-600 dark:text-indigo-400 font-medium mt-0.5">{plan.minUsers}-user minimum</span>
+                    )}
                   </div>
 
-                  {/* Action button */}
                   {isCurrent ? (
                     <div className="w-full py-2.5 px-4 rounded-lg font-medium text-sm text-center bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
                       Your current plan
@@ -411,17 +448,17 @@ export default function BillingPage() {
                       onClick={() => setShowUpgradeModal(planKey)}
                       disabled={actionLoading !== null}
                       className={`w-full py-2.5 px-4 rounded-lg font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
-                        isUpgrade || isCancelled
+                        isTeamUpgrade || isCancelled
                           ? 'text-white hover:opacity-90'
                           : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                       }`}
-                      style={(isUpgrade || isCancelled) ? {
+                      style={(isTeamUpgrade || isCancelled) ? {
                         background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
                         boxShadow: '0 4px 16px rgba(79, 70, 229, 0.2)',
                       } : undefined}
                     >
-                      {(isUpgrade || isCancelled) && <ArrowUpRight className="w-4 h-4" />}
-                      {isCancelled ? 'Subscribe' : isUpgrade ? 'Upgrade' : 'Downgrade'}
+                      {(isTeamUpgrade || isCancelled) && <ArrowUpRight className="w-4 h-4" />}
+                      {isCancelled ? 'Subscribe' : isTeamUpgrade ? 'Upgrade to Team' : 'Switch Plan'}
                     </button>
                   ) : (
                     <div className="w-full py-2.5 px-4 rounded-lg font-medium text-sm text-center bg-gray-100 dark:bg-gray-800 text-gray-400">
@@ -429,7 +466,6 @@ export default function BillingPage() {
                     </div>
                   )}
 
-                  {/* Features */}
                   <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700 space-y-3">
                     {plan.features.map((feature, idx) => (
                       <div key={idx} className="flex items-start gap-2.5">
@@ -442,6 +478,31 @@ export default function BillingPage() {
               </div>
             )
           })}
+
+          {/* Enterprise CTA */}
+          <div className="relative rounded-2xl border-2 border-gray-200 dark:border-gray-800 bg-gradient-to-b from-gray-50 dark:from-gray-800/50 to-white dark:to-gray-900">
+            <div className="p-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Enterprise</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">For organizations with advanced needs</p>
+              <div className="mt-4 mb-5">
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">Custom pricing</span>
+              </div>
+              <a
+                href="mailto:sales@heywren.ai?subject=Enterprise%20Plan%20Inquiry"
+                className="w-full py-2.5 px-4 rounded-lg font-semibold text-sm text-center transition-all block bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100"
+              >
+                Contact Sales
+              </a>
+              <div className="mt-5 pt-5 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                {['Everything in Team', 'Unlimited members', 'SSO / SAML', 'Custom integrations', 'Dedicated account manager', 'SLA guarantees'].map((f, idx) => (
+                  <div key={idx} className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                    <span className="text-sm text-gray-600 dark:text-gray-400">{f}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -532,9 +593,9 @@ export default function BillingPage() {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 dark:text-white">
-                    {PLANS[showUpgradeModal].priceValue > (PLANS[currentPlan as Exclude<PlanKey, 'trial'>]?.priceValue || 0) ? 'Upgrade' : 'Downgrade'} to {PLANS[showUpgradeModal].name}
+                    {showUpgradeModal === 'team' && currentPlan === 'pro' ? 'Upgrade' : 'Switch'} to {PLANS[showUpgradeModal].name}
                   </h3>
-                  <p className="text-sm text-gray-500">{PLANS[showUpgradeModal].price}/user/month</p>
+                  <p className="text-sm text-gray-500">{billingInterval === 'annual' ? PLANS[showUpgradeModal].annualPrice : PLANS[showUpgradeModal].price}/user/month{billingInterval === 'annual' ? ' (billed annually)' : ''}</p>
                 </div>
               </div>
               <button onClick={() => { setShowUpgradeModal(null); setPromoCode(''); setPromoStatus(null) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
@@ -547,7 +608,7 @@ export default function BillingPage() {
                 Your plan will change immediately. Billing will be adjusted with a prorated charge or credit.
                 {billingInfo?.memberCount && billingInfo.memberCount > 1 && (
                   <span className="block mt-2 font-medium">
-                    Estimated new cost: ${PLANS[showUpgradeModal].priceValue * (billingInfo.memberCount || 1)}/month for {billingInfo.memberCount} members
+                    Estimated new cost: ${(billingInterval === 'annual' ? PLANS[showUpgradeModal].annualPriceValue : PLANS[showUpgradeModal].priceValue) * Math.max(billingInfo.memberCount || 1, PLANS[showUpgradeModal].minUsers)}/month for {Math.max(billingInfo.memberCount, PLANS[showUpgradeModal].minUsers)} members
                   </span>
                 )}
               </p>

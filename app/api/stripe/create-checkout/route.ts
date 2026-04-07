@@ -8,15 +8,21 @@ import { createClient } from '@/lib/supabase/server'
 import { stripe } from '@/lib/stripe/server'
 
 interface CheckoutRequest {
-  plan: 'basic' | 'pro' | 'team'
+  plan: 'pro' | 'team'
+  billingInterval?: 'monthly' | 'annual'
   joiningTeamId?: string | null
   promoCode?: string
 }
 
-const PRICE_IDS: Record<string, string> = {
-  basic: process.env.STRIPE_BASIC_PRICE_ID!,
-  pro: process.env.STRIPE_PRO_PRICE_ID!,
-  team: process.env.STRIPE_TEAM_PRICE_ID!,
+const PRICE_IDS: Record<string, Record<string, string | undefined>> = {
+  pro: {
+    monthly: process.env.STRIPE_PRO_PRICE_ID!,
+    annual: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || undefined,
+  },
+  team: {
+    monthly: process.env.STRIPE_TEAM_PRICE_ID!,
+    annual: process.env.STRIPE_TEAM_ANNUAL_PRICE_ID || undefined,
+  },
 }
 
 export async function POST(request: NextRequest) {
@@ -28,13 +34,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { plan, joiningTeamId, promoCode } = (await request.json()) as CheckoutRequest
+    const { plan, billingInterval = 'monthly', joiningTeamId, promoCode } = (await request.json()) as CheckoutRequest
 
-    if (!plan || !['basic', 'pro', 'team'].includes(plan)) {
+    if (!plan || !['pro', 'team'].includes(plan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
 
-    const priceId = PRICE_IDS[plan]
+    if (!['monthly', 'annual'].includes(billingInterval)) {
+      return NextResponse.json({ error: 'Invalid billing interval' }, { status: 400 })
+    }
+
+    // Fall back to monthly if annual price isn't configured yet
+    const priceId = PRICE_IDS[plan]?.[billingInterval] || PRICE_IDS[plan]?.monthly
     if (!priceId) {
       return NextResponse.json({ error: 'Price ID not configured for this plan' }, { status: 500 })
     }
@@ -65,6 +76,7 @@ export async function POST(request: NextRequest) {
     const metadata: Record<string, string> = {
       userId,
       plan,
+      billingInterval,
       email: userEmail,
       fullName,
       companyName,
