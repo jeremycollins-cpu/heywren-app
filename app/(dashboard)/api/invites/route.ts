@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/(dashboard)/api/invites/route.ts
 // API routes for managing invitations (list, create, revoke)
 

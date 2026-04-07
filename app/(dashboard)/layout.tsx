@@ -79,7 +79,7 @@ export default function DashboardLayout({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // Auth guard: redirect to login if session is invalid
+  // Auth guard: redirect to login if session is invalid, check onboarding
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -87,6 +87,34 @@ export default function DashboardLayout({
         router.replace('/login')
         return
       }
+
+      // Check if onboarding is completed
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('onboarding_completed, current_team_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profile && !profile.onboarding_completed) {
+        // Check if user has integrations (effectively onboarded but flag not set)
+        if (profile.current_team_id) {
+          const res = await fetch('/api/integrations/status', { cache: 'no-store' })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.integrations && data.integrations.length > 0) {
+              await supabase
+                .from('profiles')
+                .update({ onboarding_completed: true })
+                .eq('id', user.id)
+              setAuthChecked(true)
+              return
+            }
+          }
+        }
+        router.replace('/onboarding/profile')
+        return
+      }
+
       setAuthChecked(true)
     }
     checkAuth()
