@@ -405,14 +405,26 @@ export async function POST(request: NextRequest) {
     const template = body.template || 'recap'
 
     const { data: profile } = await adminDb.from('profiles').select('email, full_name').eq('id', userId).single()
-    if (!profile?.email) return NextResponse.json({ error: 'User has no email' }, { status: 400 })
+
+    // Fall back to auth.users if profile doesn't have an email
+    let userEmail = profile?.email || ''
+    let userName = profile?.full_name?.split(' ')[0] || 'there'
+    if (!userEmail) {
+      try {
+        const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
+        userEmail = authUser?.user?.email || ''
+        if (!userName || userName === 'there') {
+          userName = authUser?.user?.user_metadata?.full_name?.split(' ')[0] || authUser?.user?.user_metadata?.name?.split(' ')[0] || 'there'
+        }
+      } catch { /* auth lookup failed */ }
+    }
+    if (!userEmail) return NextResponse.json({ error: 'User has no email in profiles or auth.users' }, { status: 400 })
 
     const { Resend } = await import('resend')
     const apiKey = process.env.RESEND_API_KEY
     if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 })
 
     const resend = new Resend(apiKey)
-    const userName = profile.full_name?.split(' ')[0] || 'there'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
     const unsubscribeUrl = `${appUrl}/settings?tab=notifications`
 
@@ -472,12 +484,12 @@ export async function POST(request: NextRequest) {
     try {
       const { data, error } = await resend.emails.send({
         from: 'HeyWren <notifications@heywren.com>',
-        to: profile.email,
+        to: userEmail,
         subject: `[TEST] ${subject}`,
         html,
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ success: true, message: `Test "${template}" email sent to ${profile.email} (${data?.id})` })
+      return NextResponse.json({ success: true, message: `Test "${template}" email sent to ${userEmail} (${data?.id})` })
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 500 })
     }
