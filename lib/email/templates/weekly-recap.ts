@@ -1,21 +1,21 @@
 // lib/email/templates/weekly-recap.ts
 // Weekly personal recap email — sent every Monday morning.
 
-import { baseLayout, ctaButton, statRow, paragraph, insightBox, sectionHeading } from './base-layout'
+import { baseLayout, ctaButton, statRow, paragraph, insightBox, sectionHeading, wrenGreeting, divider } from './base-layout'
 
 export interface WeeklyRecapData {
   userName: string
-  weekLabel: string // e.g. "Mar 31 – Apr 6"
+  weekLabel: string
   totalPoints: number
-  pointsDelta: number // +/- vs previous week
+  pointsDelta: number
   rank: number | null
-  rankDelta: number | null // positive = moved up
+  rankDelta: number | null
   streak: number
   commitmentsCompleted: number
   commitmentsCreated: number
   overdueCount: number
-  onTimeRate: number // 0-100
-  responseRate: number // 0-100
+  onTimeRate: number
+  responseRate: number
   achievementEarned?: { name: string; tier: string } | null
   insight?: string | null
   dashboardUrl: string
@@ -25,78 +25,99 @@ export interface WeeklyRecapData {
 
 export function buildWeeklyRecapEmail(data: WeeklyRecapData): { subject: string; html: string } {
   const subject = data.overdueCount > 0
-    ? `Your week in review: ${data.totalPoints} pts earned, ${data.overdueCount} items need attention`
-    : `Your week in review: ${data.totalPoints} pts earned — nice work!`
+    ? `Your week: ${data.totalPoints} pts earned, ${data.overdueCount} items need you`
+    : `Your week: ${data.totalPoints} pts — you're on a roll`
 
-  const greeting = `Hi ${data.userName},`
-  const intro = `Here's your HeyWren recap for the week of <strong>${data.weekLabel}</strong>.`
-
-  // Points change indicator
   const pointsChange = data.pointsDelta > 0
     ? `↑ +${data.pointsDelta}`
     : data.pointsDelta < 0
     ? `↓ ${data.pointsDelta}`
     : ''
 
-  // Rank change indicator
   const rankChange = data.rankDelta && data.rankDelta > 0
     ? `↑ +${data.rankDelta}`
     : data.rankDelta && data.rankDelta < 0
     ? `↓ ${Math.abs(data.rankDelta)}`
     : ''
 
+  // Personalized intro message
+  let introMessage = `Here's your follow-through report for <strong>${data.weekLabel}</strong>.`
+  if (data.commitmentsCompleted >= 10) {
+    introMessage = `You crushed it this week. Here's your follow-through report for <strong>${data.weekLabel}</strong>.`
+  } else if (data.overdueCount === 0 && data.commitmentsCompleted > 0) {
+    introMessage = `Clean slate — nothing overdue. Here's your report for <strong>${data.weekLabel}</strong>.`
+  } else if (data.streak >= 4) {
+    introMessage = `${data.streak} weeks strong. Here's your follow-through report for <strong>${data.weekLabel}</strong>.`
+  }
+
   const stats = statRow([
-    { label: 'Points Earned', value: String(data.totalPoints), change: pointsChange },
+    { label: 'Points', value: String(data.totalPoints), change: pointsChange },
     { label: 'Completed', value: String(data.commitmentsCompleted) },
-    { label: 'On-Time Rate', value: `${data.onTimeRate}%` },
+    { label: 'On-Time', value: `${data.onTimeRate}%` },
     ...(data.rank ? [{ label: 'Rank', value: `#${data.rank}`, change: rankChange }] : []),
   ])
 
-  // Streak callout
+  // Streak badge
   const streakHtml = data.streak >= 2
-    ? `<div style="text-align:center;margin:12px 0;"><span style="background-color:#fef3c7;color:#92400e;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;">${data.streak}-week streak</span></div>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px auto;">
+  <tr>
+    <td style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);padding:8px 20px;border-radius:24px;text-align:center;border:1px solid #fcd34d;">
+      <span style="font-size:13px;font-weight:700;color:#92400e;">${data.streak}-week streak</span>
+    </td>
+  </tr>
+</table>`
     : ''
 
-  // Achievement section
+  // Achievement
   const achievementHtml = data.achievementEarned
-    ? `${sectionHeading('Achievement Unlocked')}
-<div style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);padding:16px 20px;border-radius:8px;text-align:center;">
-  <div style="font-size:16px;font-weight:700;color:#92400e;">${data.achievementEarned.name}</div>
-  <div style="font-size:13px;color:#a16207;margin-top:4px;text-transform:uppercase;letter-spacing:0.05em;">${data.achievementEarned.tier}</div>
-</div>`
+    ? `${divider()}
+${sectionHeading('Achievement Unlocked')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="background:linear-gradient(135deg,#fef9c3 0%,#fef3c7 100%);padding:20px;border-radius:12px;text-align:center;border:1px solid #fde68a;">
+      <div style="font-size:28px;line-height:1;">&#127942;</div>
+      <div style="font-size:17px;font-weight:700;color:#92400e;margin-top:8px;">${data.achievementEarned.name}</div>
+      <div style="font-size:12px;color:#a16207;margin-top:4px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">${data.achievementEarned.tier}</div>
+    </td>
+  </tr>
+</table>`
     : ''
 
   // Overdue alert
   const overdueHtml = data.overdueCount > 0
-    ? `${sectionHeading('Needs Your Attention')}
-<div style="background-color:#fef2f2;border-left:4px solid #dc2626;padding:14px 18px;border-radius:0 8px 8px 0;">
-  <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.5;">
-    You have <strong>${data.overdueCount} overdue ${data.overdueCount === 1 ? 'item' : 'items'}</strong> that could use your attention.
-  </p>
-</div>
+    ? `${divider()}
+${sectionHeading('Needs Your Attention')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="background-color:#fef2f2;border-left:4px solid #ef4444;padding:16px 18px;border-radius:0 12px 12px 0;">
+      <p style="margin:0;color:#991b1b;font-size:14px;line-height:1.6;font-weight:500;">
+        You have <strong>${data.overdueCount} overdue ${data.overdueCount === 1 ? 'item' : 'items'}</strong> — a quick review keeps things from piling up.
+      </p>
+    </td>
+  </tr>
+</table>
 ${ctaButton('Review Overdue Items', data.overdueUrl)}`
     : ''
 
-  // Insight
   const insightHtml = data.insight ? insightBox(data.insight) : ''
 
   const body = `
-${paragraph(greeting)}
-${paragraph(intro)}
+${wrenGreeting(data.userName, introMessage)}
 ${stats}
 ${streakHtml}
 ${achievementHtml}
 ${overdueHtml}
 ${insightHtml}
-${ctaButton('View Your Dashboard', data.dashboardUrl)}
+${divider()}
+${ctaButton('Open Your Dashboard', data.dashboardUrl)}
 `
 
-  const preheader = `${data.totalPoints} points earned this week${data.overdueCount > 0 ? ` — ${data.overdueCount} items overdue` : ''}`
+  const preheader = `${data.totalPoints} pts this week${data.overdueCount > 0 ? ` · ${data.overdueCount} overdue` : data.streak >= 2 ? ` · ${data.streak}-week streak` : ''}`
 
   const html = baseLayout({
     preheader,
     body,
-    footerNote: 'You receive this email weekly. Manage your preferences in HeyWren Settings.',
+    footerNote: 'Wren sends this every Monday. Manage preferences in Settings.',
     unsubscribeUrl: data.unsubscribeUrl,
   })
 
