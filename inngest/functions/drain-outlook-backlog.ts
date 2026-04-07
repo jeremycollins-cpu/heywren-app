@@ -152,6 +152,7 @@ export const drainOutlookBacklog = inngest.createFunction(
                 const batchInput = chunk.map(b => ({ id: b.id, text: b.text }))
                 const batchResults = await detectCommitmentsBatch(batchInput)
 
+                const processedIds: Array<{ dbId: string; count: number }> = []
                 for (const item of chunk) {
                   const detected = batchResults.get(item.id) || []
                   let inserted = 0
@@ -166,22 +167,31 @@ export const drainOutlookBacklog = inngest.createFunction(
                     if (ok) inserted++
                   }
                   commitments += inserted
+                  processedIds.push({ dbId: item.dbId, count: inserted })
+                  processed++
+                }
+                // Batch update: mark all processed in one query per count value
+                const byCount = new Map<number, string[]>()
+                for (const { dbId, count } of processedIds) {
+                  const ids = byCount.get(count) || []
+                  ids.push(dbId)
+                  byCount.set(count, ids)
+                }
+                for (const [count, ids] of byCount) {
                   await supabase
                     .from('outlook_messages')
-                    .update({ processed: true, commitments_found: inserted })
-                    .eq('id', item.dbId)
-                  processed++
+                    .update({ processed: true, commitments_found: count })
+                    .in('id', ids)
                 }
               } catch (err) {
                 console.error(`[Drain Backlog] AI batch error for user ${user.userId}:`, (err as Error).message)
-                // Mark these as processed with 0 to avoid infinite retry
-                for (const item of chunk) {
-                  await supabase
-                    .from('outlook_messages')
-                    .update({ processed: true, commitments_found: 0 })
-                    .eq('id', item.dbId)
-                  processed++
-                }
+                // Batch mark as processed with 0 to avoid infinite retry
+                const failedIds = chunk.map(item => item.dbId)
+                await supabase
+                  .from('outlook_messages')
+                  .update({ processed: true, commitments_found: 0 })
+                  .in('id', failedIds)
+                processed += chunk.length
               }
             }
 

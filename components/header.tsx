@@ -59,7 +59,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     fetchNotifications()
-    const interval = setInterval(fetchNotifications, 60000) // refresh every minute
+    const interval = setInterval(fetchNotifications, 300000) // refresh every 5 min (reduced from 60s to save Disk IO)
     return () => clearInterval(interval)
   }, [fetchNotifications])
 
