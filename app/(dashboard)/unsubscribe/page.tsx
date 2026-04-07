@@ -71,6 +71,8 @@ export default function UnsubscribePage() {
       const result = await res.json()
       if (result.found > 0) {
         toast.success(`Found ${result.found} new subscription${result.found !== 1 ? 's' : ''}`)
+      } else if (result.debug) {
+        toast.error(result.debug, { duration: 8000 })
       } else {
         toast.success('Scan complete — no new subscriptions found')
       }

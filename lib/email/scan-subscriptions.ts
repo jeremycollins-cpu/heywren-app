@@ -120,15 +120,15 @@ interface SenderInfo {
 export async function scanUserSubscriptions(
   teamId: string,
   userId: string,
-): Promise<{ found: number; errors: number }> {
+): Promise<{ found: number; errors: number; debug?: string }> {
   const supabase = getAdminClient()
   let found = 0
   let errors = 0
 
   // Get the user's Outlook integration (access_token is a top-level column, not in config)
-  const { data: integration } = await supabase
+  const { data: integration, error: integrationError } = await supabase
     .from('integrations')
-    .select('id, access_token, refresh_token, config, user_id')
+    .select('id, access_token, refresh_token, config, user_id, status, provider')
     .eq('team_id', teamId)
     .eq('user_id', userId)
     .eq('provider', 'outlook')
@@ -136,8 +136,30 @@ export async function scanUserSubscriptions(
     .limit(1)
     .maybeSingle()
 
-  if (!integration?.access_token) {
-    return { found: 0, errors: 0 }
+  if (integrationError) {
+    console.error('[Unsubscribe scan] Integration query error:', integrationError)
+    return { found: 0, errors: 1, debug: `Integration query error: ${integrationError.message}` }
+  }
+
+  if (!integration) {
+    // Check if there's any Outlook integration at all for this team (maybe status isn't 'connected')
+    const { data: anyIntegration } = await supabase
+      .from('integrations')
+      .select('id, status, provider, user_id')
+      .eq('team_id', teamId)
+      .eq('provider', 'outlook')
+      .limit(5)
+
+    const debugInfo = anyIntegration?.length
+      ? `Found ${anyIntegration.length} outlook integration(s) but none match user_id=${userId} with status=connected. Statuses: ${anyIntegration.map(i => `${i.user_id}:${i.status}`).join(', ')}`
+      : `No outlook integrations found for team ${teamId}`
+
+    console.error('[Unsubscribe scan]', debugInfo)
+    return { found: 0, errors: 0, debug: debugInfo }
+  }
+
+  if (!integration.access_token) {
+    return { found: 0, errors: 0, debug: 'Integration found but access_token is null/empty' }
   }
 
   const integrationId = integration.id
@@ -163,9 +185,8 @@ export async function scanUserSubscriptions(
     msToken = updatedToken
 
     if (pageData.error) {
-      console.error('Graph API error:', pageData.error.message)
-      errors++
-      break
+      console.error('[Unsubscribe scan] Graph API error:', JSON.stringify(pageData.error))
+      return { found: 0, errors: 1, debug: `Graph API error: ${pageData.error.message || JSON.stringify(pageData.error)}` }
     }
 
     const emails = pageData.value || []
@@ -250,7 +271,9 @@ export async function scanUserSubscriptions(
 
   console.log(`[Unsubscribe scan] User ${userId}: scanned ${pages} pages, found ${senderMap.size} senders with unsubscribe signals, ${errors} errors`)
 
-  if (senderMap.size === 0) return { found: 0, errors }
+  if (senderMap.size === 0) {
+    return { found: 0, errors, debug: `Scanned ${pages} page(s) of emails from Graph API. No emails had List-Unsubscribe headers or unsubscribe text in body preview.` }
+  }
 
   // Check which senders are already tracked
   const senderEmails = [...senderMap.keys()]
