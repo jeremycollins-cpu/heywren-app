@@ -79,17 +79,37 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'No team found' }, { status: 404 })
       }
 
-      const { data: teamMembers } = await admin
+      // Query team_members and profiles separately (avoids FK join issues)
+      const { data: teamMembers, error: tmError } = await admin
         .from('team_members')
-        .select('user_id, role, team_id, profiles(display_name, avatar_url, job_title)')
+        .select('user_id, role, team_id')
         .eq('team_id', profile.current_team_id)
 
-      members = (teamMembers || []).map((m: any) => ({
+      console.log(`[Collab graph] Team ${profile.current_team_id}: ${teamMembers?.length || 0} members${tmError ? `, error: ${tmError.message}` : ''}`)
+
+      if (!teamMembers?.length) {
+        return NextResponse.json({ nodes: [], edges: [], insights: { totalNodes: 0, totalEdges: 0, avgConnections: 0, crossDeptCollaboration: 0, siloed: [], connectors: [], bottlenecks: [] } })
+      }
+
+      const memberUserIds = teamMembers.map(m => m.user_id)
+      const { data: memberProfiles } = await admin
+        .from('profiles')
+        .select('id, display_name, avatar_url, job_title')
+        .in('id', memberUserIds)
+
+      const profileMap = new Map<string, { display_name: string; avatar_url: string | null; job_title: string | null }>()
+      for (const p of memberProfiles || []) {
+        profileMap.set(p.id, { display_name: p.display_name, avatar_url: p.avatar_url, job_title: p.job_title })
+      }
+
+      console.log(`[Collab graph] Found ${memberProfiles?.length || 0} profiles for ${memberUserIds.length} members`)
+
+      members = teamMembers.map((m: any) => ({
         user_id: m.user_id,
         department_id: null,
         team_id: m.team_id,
         role: m.role || 'member',
-        profiles: m.profiles,
+        profiles: profileMap.get(m.user_id) || null,
       }))
     }
 
@@ -170,6 +190,8 @@ export async function GET(request: NextRequest) {
 
     // Identify insights
     const insights = computeInsights(nodes, edges, members)
+
+    console.log(`[Collab graph] Final: ${nodes.length} nodes, ${edges.length} edges`)
 
     return NextResponse.json({
       nodes,
