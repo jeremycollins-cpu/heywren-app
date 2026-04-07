@@ -12,12 +12,22 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  // Prevent browsers and CDNs from caching dynamic pages
+  // Skip all Supabase calls for static assets, API routes, and auth pages
+  // API routes handle their own auth. This prevents middleware timeouts
+  // when Supabase is under load (Disk IO budget, etc.)
   const pathname = request.nextUrl.pathname
   const isStaticAsset = pathname.startsWith('/_next/') || pathname.startsWith('/favicon') || pathname.includes('.')
+  const isApiRoute = pathname.startsWith('/api/')
+  const isAuthPage = AUTH_PATHS.some(p => pathname.startsWith(p))
+
   if (!isStaticAsset) {
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
     response.headers.set('Pragma', 'no-cache')
+  }
+
+  // Only call Supabase auth for dashboard pages (not API routes, auth pages, or static assets)
+  if (isStaticAsset || isApiRoute || isAuthPage) {
+    return response
   }
 
   const supabase = createServerClient(
