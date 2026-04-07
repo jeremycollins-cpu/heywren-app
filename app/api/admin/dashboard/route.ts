@@ -370,7 +370,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 8. Admin notes — stored in profiles metadata or a custom query
+    // 8. Email send history — from email_sends table
+    let emailActivity: { totalSent: number; byType: Record<string, number>; recentSends: { email_type: string; status: string; created_at: string }[] } | null = null
+    try {
+      const [{ data: allSends }, { data: recentSends }] = await Promise.all([
+        adminDb.from('email_sends').select('email_type, status').eq('user_id', userId),
+        adminDb.from('email_sends').select('email_type, status, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(15),
+      ])
+      const sends = allSends || []
+      const sentOnly = sends.filter(s => s.status === 'sent')
+      const byType: Record<string, number> = {}
+      for (const s of sentOnly) {
+        byType[s.email_type] = (byType[s.email_type] || 0) + 1
+      }
+      emailActivity = {
+        totalSent: sentOnly.length,
+        byType,
+        recentSends: recentSends || [],
+      }
+    } catch {
+      // email_sends table may not exist yet before migration runs
+    }
+
+    // 9. Admin notes — stored in profiles metadata or a custom query
     const { data: adminNotes } = await adminDb
       .from('profiles')
       .select('admin_notes')
@@ -442,6 +464,7 @@ export async function GET(request: NextRequest) {
       },
       backlogAlerts,
       teamHealth,
+      emailActivity,
       adminNotes: adminNotes?.admin_notes || null,
     })
   }
