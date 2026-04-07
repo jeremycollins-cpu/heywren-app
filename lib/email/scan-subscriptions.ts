@@ -125,45 +125,55 @@ export async function scanUserSubscriptions(
   let found = 0
   let errors = 0
 
-  // Get the user's Outlook integration (access_token is a top-level column, not in config)
-  const { data: integration, error: integrationError } = await supabase
+  // Get Outlook integration — try user-specific first, then any team integration with a valid token.
+  // Integrations may be connected by the team owner and shared, or per-user.
+  // Also try any status (tokens may still be refreshable even if status is 'disconnected').
+  const { data: integrations, error: integrationError } = await supabase
     .from('integrations')
-    .select('id, access_token, refresh_token, config, user_id, status, provider')
+    .select('id, access_token, refresh_token, config, user_id, status')
     .eq('team_id', teamId)
-    .eq('user_id', userId)
     .eq('provider', 'outlook')
-    .eq('status', 'connected')
-    .limit(1)
-    .maybeSingle()
+    .not('refresh_token', 'is', null)
+    .order('status', { ascending: true }) // 'connected' sorts before 'disconnected'
 
   if (integrationError) {
     console.error('[Unsubscribe scan] Integration query error:', integrationError)
     return { found: 0, errors: 1, debug: `Integration query error: ${integrationError.message}` }
   }
 
-  if (!integration) {
-    // Check if there's any Outlook integration at all for this team (maybe status isn't 'connected')
-    const { data: anyIntegration } = await supabase
-      .from('integrations')
-      .select('id, status, provider, user_id')
-      .eq('team_id', teamId)
-      .eq('provider', 'outlook')
-      .limit(5)
-
-    const debugInfo = anyIntegration?.length
-      ? `Found ${anyIntegration.length} outlook integration(s) but none match user_id=${userId} with status=connected. Statuses: ${anyIntegration.map(i => `${i.user_id}:${i.status}`).join(', ')}`
-      : `No outlook integrations found for team ${teamId}`
-
-    console.error('[Unsubscribe scan]', debugInfo)
-    return { found: 0, errors: 0, debug: debugInfo }
+  if (!integrations?.length) {
+    return { found: 0, errors: 0, debug: 'No Outlook integrations with refresh tokens found for this team. Please reconnect Outlook from the Integrations page.' }
   }
 
-  if (!integration.access_token) {
-    return { found: 0, errors: 0, debug: 'Integration found but access_token is null/empty' }
+  // Prefer: 1) user's own connected, 2) user's own any status, 3) any team integration
+  const integration =
+    integrations.find(i => i.user_id === userId && i.status === 'connected') ||
+    integrations.find(i => i.user_id === userId) ||
+    integrations.find(i => i.status === 'connected') ||
+    integrations[0]
+
+  if (!integration.refresh_token) {
+    return { found: 0, errors: 0, debug: 'Integration found but refresh_token is missing. Please reconnect Outlook.' }
+  }
+
+  // If access_token is missing or status is disconnected, try refreshing the token first
+  let initialToken = integration.access_token as string
+  if (!initialToken || integration.status === 'disconnected') {
+    console.log(`[Unsubscribe scan] Token missing or disconnected, attempting refresh for integration ${integration.id}`)
+    const refreshed = await refreshMicrosoftToken(supabase, integration.id, integration.refresh_token as string)
+    if (!refreshed) {
+      return { found: 0, errors: 1, debug: 'Outlook token expired and refresh failed. Please reconnect Outlook from the Integrations page.' }
+    }
+    initialToken = refreshed
+    // Also update the integration status back to connected
+    await supabase
+      .from('integrations')
+      .update({ status: 'connected' })
+      .eq('id', integration.id)
   }
 
   const integrationId = integration.id
-  let msToken = integration.access_token as string
+  let msToken = initialToken
   const refreshToken = integration.refresh_token as string
 
   // Query Graph API for recent emails with internetMessageHeaders
