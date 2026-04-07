@@ -33,6 +33,7 @@ import { emailNudgeFallback } from '@/inngest/functions/email-nudge-fallback'
 import { emailAchievement } from '@/inngest/functions/email-achievement'
 import { emailManagerBriefing } from '@/inngest/functions/email-manager-briefing'
 import { emailReengagement } from '@/inngest/functions/email-reengagement'
+import { scanEmailSubscriptions } from '@/inngest/functions/scan-email-subscriptions'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -66,5 +67,6 @@ export const { GET, POST, PUT } = serve({
     emailAchievement,            // Monday 9 AM UTC — achievement & streak celebration emails
     emailManagerBriefing,        // Monday 9 AM UTC — manager weekly briefing email
     emailReengagement,           // 11 AM daily — re-engagement email for 7+ day inactive users
+    scanEmailSubscriptions,      // 7 AM PT daily — surface marketing emails with unsubscribe links
   ],
 })

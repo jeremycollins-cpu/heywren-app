@@ -10,7 +10,7 @@ import { usePlan } from '@/lib/contexts/plan-context'
 import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey, type DisplayablePlan } from '@/lib/plans'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning, MailX,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network,
@@ -237,6 +237,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
+        { href: '/unsubscribe', label: 'Unsubscribe', icon: MailX, tourId: 'nav-unsubscribe', badge: 0, badgeColor: '' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
         { href: '/waiting-room', label: 'Waiting Room', icon: Hourglass, tourId: 'nav-waiting-room', badge: badges.waitingRoom, badgeColor: 'bg-amber-500' },
         { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff', badge: 0, badgeColor: '' },
