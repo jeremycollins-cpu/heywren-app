@@ -125,32 +125,41 @@ export async function scanUserSubscriptions(
   let found = 0
   let errors = 0
 
-  // Get Outlook integration — try user-specific first, then any team integration with a valid token.
-  // Integrations may be connected by the team owner and shared, or per-user.
-  // Also try any status (tokens may still be refreshable even if status is 'disconnected').
-  const { data: integrations, error: integrationError } = await supabase
+  // Get Outlook integration — try user-specific first (matches how admin health panel works),
+  // then fall back to team-level integrations.
+  // Query 1: user's own integration (most reliable — this is what the admin panel shows as "Token Active")
+  let { data: integration, error: integrationError } = await supabase
     .from('integrations')
     .select('id, access_token, refresh_token, config, user_id, status')
-    .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'outlook')
     .not('refresh_token', 'is', null)
-    .order('status', { ascending: true }) // 'connected' sorts before 'disconnected'
+    .order('status', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  // Query 2: fall back to any team integration if user doesn't have their own
+  if (!integration) {
+    const { data: teamIntegration } = await supabase
+      .from('integrations')
+      .select('id, access_token, refresh_token, config, user_id, status')
+      .eq('team_id', teamId)
+      .eq('provider', 'outlook')
+      .not('refresh_token', 'is', null)
+      .eq('status', 'connected')
+      .limit(1)
+      .maybeSingle()
+    integration = teamIntegration
+  }
 
   if (integrationError) {
     console.error('[Unsubscribe scan] Integration query error:', integrationError)
     return { found: 0, errors: 1, debug: `Integration query error: ${integrationError.message}` }
   }
 
-  if (!integrations?.length) {
-    return { found: 0, errors: 0, debug: 'No Outlook integrations with refresh tokens found for this team. Please reconnect Outlook from the Integrations page.' }
+  if (!integration) {
+    return { found: 0, errors: 0, debug: 'No Outlook integration found for your account. Please connect Outlook from the Integrations page.' }
   }
-
-  // Prefer: 1) user's own connected, 2) user's own any status, 3) any team integration
-  const integration =
-    integrations.find(i => i.user_id === userId && i.status === 'connected') ||
-    integrations.find(i => i.user_id === userId) ||
-    integrations.find(i => i.status === 'connected') ||
-    integrations[0]
 
   if (!integration.refresh_token) {
     return { found: 0, errors: 0, debug: 'Integration found but refresh_token is missing. Please reconnect Outlook.' }
