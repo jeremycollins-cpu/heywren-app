@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .single()
 
-    if (!callerMembership || !MANAGER_ROLES.includes(callerMembership.role)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    if (!callerMembership) {
+      return NextResponse.json({ error: 'Not a member of any organization' }, { status: 403 })
     }
 
     const orgId = callerMembership.organization_id
