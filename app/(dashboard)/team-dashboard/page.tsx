@@ -187,11 +187,30 @@ interface PulseData {
   } | null
 }
 
+interface TeamHealth {
+  score: number
+  prevScore: number | null
+  delta: number | null
+  level: 'healthy' | 'moderate' | 'at_risk'
+  components: Record<string, number>
+}
+
+interface WorkloadPerson {
+  userId: string
+  displayName: string
+  avatarUrl: string | null
+  openItems: number
+  overdueItems: number
+  level: 'healthy' | 'heavy' | 'overloaded'
+}
+
 interface DashboardData {
   organization: { id: string; name: string }
   callerRole: string
   scope: string
   pulse: Pulse
+  teamHealth: TeamHealth
+  workloadBalance: WorkloadPerson[]
   leaderboard: LeaderboardEntry[]
   spotlights: Spotlight[]
   themes: Theme[]
@@ -341,7 +360,7 @@ export default function TeamDashboardPage() {
   if (loading) return <LoadingSkeleton variant="dashboard" />
   if (!data) return <EmptyState />
 
-  const { pulse, leaderboard, spotlights, themes, trends, achievements, myAchievements, challenges } = data
+  const { pulse, teamHealth, workloadBalance, leaderboard, spotlights, themes, trends, achievements, myAchievements, challenges } = data
 
   return (
     <UpgradeGate featureKey="team_management">
@@ -362,6 +381,56 @@ export default function TeamDashboardPage() {
           Export Report
         </button>
       </div>
+
+      {/* ── Team Health Score ────────────────────────────────────────── */}
+      {teamHealth && (
+        <div className={`relative overflow-hidden rounded-xl border p-5 ${
+          teamHealth.level === 'healthy' ? 'border-green-200 dark:border-green-800 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20'
+          : teamHealth.level === 'moderate' ? 'border-yellow-200 dark:border-yellow-800 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20'
+          : 'border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-2xl font-extrabold ${
+                teamHealth.level === 'healthy' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                : teamHealth.level === 'moderate' ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400'
+                : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
+              }`}>
+                {teamHealth.score}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Team Health Score</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {teamHealth.level === 'healthy' ? 'Your team is performing well' : teamHealth.level === 'moderate' ? 'Some areas need attention' : 'Several signals need action'}
+                  {teamHealth.delta !== null && (
+                    <span className={`ml-2 font-medium ${teamHealth.delta > 0 ? 'text-green-600 dark:text-green-400' : teamHealth.delta < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+                      {teamHealth.delta > 0 ? '↑' : teamHealth.delta < 0 ? '↓' : '→'} {teamHealth.delta > 0 ? '+' : ''}{teamHealth.delta} from last week
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="hidden sm:flex gap-4 text-center text-xs">
+              <div>
+                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.onTime}%</div>
+                <div className="text-gray-400">On-Time</div>
+              </div>
+              <div>
+                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.responseRate}%</div>
+                <div className="text-gray-400">Response</div>
+              </div>
+              <div>
+                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.participation}%</div>
+                <div className="text-gray-400">Active</div>
+              </div>
+              <div>
+                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.overdueRatio}%</div>
+                <div className="text-gray-400">Overdue</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Manager Alerts ────────────────────────────────────────────── */}
       {alertsData && alertsData.alerts.length > 0 && (
@@ -436,6 +505,51 @@ export default function TeamDashboardPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Workload Balance ──────────────────────────────────────────── */}
+      {workloadBalance && workloadBalance.length > 0 && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Workload Balance</h2>
+            </div>
+            <div className="flex gap-3 text-xs text-gray-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" />Healthy</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400" />Heavy</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" />Overloaded</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {workloadBalance.slice(0, 12).map(person => {
+              const maxItems = Math.max(...workloadBalance.map(p => p.openItems), 1)
+              const barWidth = Math.max(4, Math.round((person.openItems / maxItems) * 100))
+              const barColor = person.level === 'overloaded' ? 'bg-red-400' : person.level === 'heavy' ? 'bg-yellow-400' : 'bg-green-400'
+              const bgColor = person.level === 'overloaded' ? 'bg-red-50 dark:bg-red-900/10' : person.level === 'heavy' ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''
+              return (
+                <div key={person.userId} className={`flex items-center gap-3 py-1.5 px-2 rounded-lg ${bgColor}`}>
+                  <div className="w-28 truncate text-sm text-gray-700 dark:text-gray-300 font-medium">{person.displayName}</div>
+                  <div className="flex-1 h-5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${barWidth}%` }} />
+                  </div>
+                  <div className="w-16 text-right text-xs font-mono">
+                    <span className="text-gray-700 dark:text-gray-300 font-semibold">{person.openItems}</span>
+                    {person.overdueItems > 0 && (
+                      <span className="text-red-500 ml-1">({person.overdueItems})</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {workloadBalance.filter(p => p.level === 'overloaded').length > 0 && (
+            <p className="mt-3 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              {workloadBalance.filter(p => p.level === 'overloaded').length} team member{workloadBalance.filter(p => p.level === 'overloaded').length !== 1 ? 's' : ''} overloaded (2x+ team average)
+            </p>
+          )}
         </div>
       )}
 

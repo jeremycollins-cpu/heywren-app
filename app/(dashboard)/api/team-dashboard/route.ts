@@ -491,11 +491,112 @@ export async function GET(request: NextRequest) {
       avgOnTimeRate: trends.length > 0 ? trends[trends.length - 1].avgOnTimeRate : 0,
     }
 
+    // ── Team Health Score (0-100 composite) ──────────────────────────────
+    const currentTrend = trends.length > 0 ? trends[trends.length - 1] : null
+    const prevTrend = trends.length > 1 ? trends[trends.length - 2] : null
+
+    let healthScore = 0
+    let healthComponents: Record<string, number> = {}
+    if (currentTrend && totalMembers > 0) {
+      const onTimeScore = Math.min(100, currentTrend.avgOnTimeRate) * 0.25
+      const responseScore = Math.min(100, currentTrend.avgResponseRate) * 0.20
+
+      // Overdue: 0 overdue = 100, scale down as overdue increases relative to team size
+      const overdueRatio = totalMembers > 0 ? currentTrend.overdue / totalMembers : 0
+      const overdueScore = Math.max(0, 100 - (overdueRatio * 200)) * 0.20
+
+      // Participation: % of team that was active this week
+      const participationScore = Math.min(100, Math.round((activeThisWeek / totalMembers) * 100)) * 0.15
+
+      // Streak health: % of team on 2+ week streaks
+      const streakScore = Math.min(100, Math.round((activeStreakMembers / totalMembers) * 100)) * 0.10
+
+      // Completion velocity: completions as a ratio (cap at 100)
+      const velocityScore = Math.min(100, currentTrend.completions > 0 ? Math.round((currentTrend.completions / totalMembers) * 50) : 0) * 0.10
+
+      healthScore = Math.round(onTimeScore + responseScore + overdueScore + participationScore + streakScore + velocityScore)
+      healthComponents = {
+        onTime: Math.round(currentTrend.avgOnTimeRate),
+        responseRate: Math.round(currentTrend.avgResponseRate),
+        overdueRatio: Math.round(overdueRatio * 100),
+        participation: Math.round((activeThisWeek / totalMembers) * 100),
+        streaks: Math.round((activeStreakMembers / totalMembers) * 100),
+        velocity: currentTrend.completions,
+      }
+    }
+
+    // Previous week health score for trend
+    let prevHealthScore: number | null = null
+    if (prevTrend && totalMembers > 0) {
+      const prevOverdueRatio = totalMembers > 0 ? prevTrend.overdue / totalMembers : 0
+      const prevActiveCount = (weeklyScoresRes.data || []).filter((s: WeeklyScoreRow) => s.week_start === previousWeek).map((s: WeeklyScoreRow) => s.user_id)
+      const prevActiveUnique = new Set(prevActiveCount).size
+      prevHealthScore = Math.round(
+        Math.min(100, prevTrend.avgOnTimeRate) * 0.25 +
+        Math.min(100, prevTrend.avgResponseRate) * 0.20 +
+        Math.max(0, 100 - (prevOverdueRatio * 200)) * 0.20 +
+        Math.min(100, Math.round((prevActiveUnique / totalMembers) * 100)) * 0.15 +
+        Math.min(100, Math.round((activeStreakMembers / totalMembers) * 100)) * 0.10 +
+        Math.min(100, prevTrend.completions > 0 ? Math.round((prevTrend.completions / totalMembers) * 50) : 0) * 0.10
+      )
+    }
+
+    const teamHealth = {
+      score: healthScore,
+      prevScore: prevHealthScore,
+      delta: prevHealthScore !== null ? healthScore - prevHealthScore : null,
+      level: healthScore >= 75 ? 'healthy' as const : healthScore >= 50 ? 'moderate' as const : 'at_risk' as const,
+      components: healthComponents,
+    }
+
+    // ── Workload Balance ─────────────────────────────────────────────────
+    // Fetch open commitments per person (pending + in_progress)
+    const { data: openCommitmentsData } = await admin
+      .from('commitments')
+      .select('assignee_id, status')
+      .eq('organization_id', organization_id)
+      .in('status', ['pending', 'in_progress', 'overdue'])
+      .is('deleted_at', null)
+      .not('assignee_id', 'is', null)
+
+    const workloadMap = new Map<string, { open: number; overdue: number }>()
+    for (const c of openCommitmentsData || []) {
+      if (!c.assignee_id) continue
+      const entry = workloadMap.get(c.assignee_id) || { open: 0, overdue: 0 }
+      entry.open++
+      if (c.status === 'overdue') entry.overdue++
+      workloadMap.set(c.assignee_id, entry)
+    }
+
+    // Calculate team average for thresholds
+    const workloadValues = [...workloadMap.values()].map(w => w.open)
+    const avgWorkload = workloadValues.length > 0 ? workloadValues.reduce((a, b) => a + b, 0) / workloadValues.length : 0
+
+    const workloadBalance = allUserIds
+      .map(uid => {
+        const profile = profileMap.get(uid)
+        const load = workloadMap.get(uid) || { open: 0, overdue: 0 }
+        const level = load.open > avgWorkload * 2 ? 'overloaded' as const
+          : load.open > avgWorkload * 1.5 ? 'heavy' as const
+          : 'healthy' as const
+        return {
+          userId: uid,
+          displayName: profile?.display_name || profile?.email?.split('@')[0] || 'Unknown',
+          avatarUrl: profile?.avatar_url || null,
+          openItems: load.open,
+          overdueItems: load.overdue,
+          level,
+        }
+      })
+      .sort((a, b) => b.openItems - a.openItems)
+
     return NextResponse.json({
       organization: orgRes.data,
       callerRole: role,
       scope: effectiveScope,
       pulse,
+      teamHealth,
+      workloadBalance,
       leaderboard,
       spotlights,
       themes,
