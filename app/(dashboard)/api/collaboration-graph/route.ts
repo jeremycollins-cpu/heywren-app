@@ -131,11 +131,11 @@ export async function GET(request: NextRequest) {
       if (precomputed && precomputed.length > 0) {
         edges = precomputed as CollabEdge[]
       } else {
-        edges = await computeLiveEdges(admin, memberIds, orgId)
+        edges = await computeLiveEdges(admin, memberIds, memberMap, orgId)
       }
     } else {
       // Team-based: always compute live
-      edges = await computeLiveEdges(admin, memberIds, null)
+      edges = await computeLiveEdges(admin, memberIds, memberMap, null)
     }
 
     // Build nodes
@@ -194,6 +194,7 @@ export async function GET(request: NextRequest) {
 async function computeLiveEdges(
   admin: any, // eslint-disable-line
   memberIds: string[],
+  memberMap: Map<string, MemberProfile>,
   _orgId: string | null
 ): Promise<CollabEdge[]> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -206,20 +207,22 @@ async function computeLiveEdges(
     edgeMap.get(key)![channel]++
   }
 
-  // Email interactions
-  const [emailsResult, chatsResult, meetingsResult, commitmentsResult] = await Promise.all([
+  // Query the actual communication data tables (not just missed/flagged items)
+  const [emailsResult, slackResult, meetingsResult, commitmentsResult] = await Promise.all([
+    // outlook_messages: all synced emails (the primary email data source)
     admin
-      .from('missed_emails')
-      .select('user_id, from_email')
+      .from('outlook_messages')
+      .select('user_id, from_email, to_recipients')
       .in('user_id', memberIds)
       .gte('received_at', thirtyDaysAgo)
-      .limit(1000),
+      .limit(2000),
+    // slack_messages: all processed Slack messages
     admin
-      .from('missed_chats')
-      .select('user_id, sender_user_id')
+      .from('slack_messages')
+      .select('team_id, user_id, sender_name, metadata')
       .in('user_id', memberIds)
-      .gte('sent_at', thirtyDaysAgo)
-      .limit(1000),
+      .gte('created_at', thirtyDaysAgo)
+      .limit(2000),
     admin
       .from('meeting_transcripts')
       .select('user_id, attendees')
@@ -245,24 +248,58 @@ async function computeLiveEdges(
     if (p.email) emailToUser.set(p.email.toLowerCase(), p.id)
   }
 
-  // Process emails
-  for (const email of (emailsResult.data || []) as Array<{ user_id: string; from_email: string }>) {
+  // Process emails from outlook_messages
+  // Edge: from_email sender → user_id (recipient), and also parse to_recipients for reverse edges
+  for (const email of (emailsResult.data || []) as Array<{ user_id: string; from_email: string; to_recipients: string | null }>) {
+    // Sender → recipient
     const senderId = emailToUser.get(email.from_email?.toLowerCase() || '')
     if (senderId) addEdge(email.user_id, senderId, 'email')
+
+    // Also check if any team members are in to_recipients (catches emails the user sent to teammates)
+    if (email.to_recipients) {
+      const recipientEmails = email.to_recipients.toLowerCase().split(',').map(s => s.trim())
+      for (const recipEmail of recipientEmails) {
+        // Match against known member emails (partial match since to_recipients may include names)
+        for (const [knownEmail, uid] of emailToUser) {
+          if (recipEmail.includes(knownEmail) && uid !== email.user_id) {
+            addEdge(email.user_id, uid, 'email')
+          }
+        }
+      }
+    }
   }
 
-  // Process chats — need to map Slack user IDs to our user IDs
-  const { data: slackMappings } = await admin
-    .from('slack_user_mappings')
-    .select('slack_user_id, user_id')
+  // Process Slack messages
+  // slack_messages has user_id (whose inbox it belongs to) and metadata may have sender info
+  // Also use slack_user_id mappings from profiles or integrations
+  const { data: slackProfiles } = await admin
+    .from('profiles')
+    .select('id, slack_user_id')
+    .in('id', memberIds)
+    .not('slack_user_id', 'is', null)
   const slackToUser = new Map<string, string>()
-  for (const m of slackMappings || []) {
-    slackToUser.set(m.slack_user_id, m.user_id)
+  for (const p of (slackProfiles || []) as Array<{ id: string; slack_user_id: string | null }>) {
+    if (p.slack_user_id) slackToUser.set(p.slack_user_id, p.id)
   }
 
-  for (const chat of (chatsResult.data || []) as Array<{ user_id: string; sender_user_id: string }>) {
-    const senderId = slackToUser.get(chat.sender_user_id)
-    if (senderId) addEdge(chat.user_id, senderId, 'chat')
+  for (const msg of (slackResult.data || []) as Array<{ user_id: string; sender_name: string; metadata: any }>) {
+    // Try to match sender to a team member via slack_user_id in metadata
+    const senderSlackId = msg.metadata?.sender_slack_id || msg.metadata?.slackUserId
+    if (senderSlackId) {
+      const senderId = slackToUser.get(senderSlackId)
+      if (senderId) addEdge(msg.user_id, senderId, 'chat')
+    }
+    // Also try matching sender_name to profile display_name
+    if (msg.sender_name) {
+      for (const [uid, member] of memberMap) {
+        const profile = member.profiles as { display_name: string } | null
+        if (profile?.display_name && uid !== msg.user_id &&
+            msg.sender_name.toLowerCase().includes(profile.display_name.toLowerCase().split(' ')[0])) {
+          addEdge(msg.user_id, uid, 'chat')
+          break
+        }
+      }
+    }
   }
 
   // Process meetings (attendees is JSONB array)
