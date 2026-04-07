@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/api/meetings/upload/route.ts
 // Manual transcript upload endpoint.
 // Users paste or upload meeting transcripts for commitment detection.

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/api/invites/accept/route.ts
 // Public API route for accepting an invitation via token
 

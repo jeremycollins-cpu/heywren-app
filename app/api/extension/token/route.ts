@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/api/extension/token/route.ts
 // Generates a short-lived authentication token for the Chrome extension.
 // The user authenticates via the web app, then gets a token to use in the extension.

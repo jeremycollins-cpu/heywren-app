@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/api/stripe/create-checkout/route.ts
 // Creates Stripe checkout session v2
 // Key change: no longer requires a teamId (team is created AFTER payment in provisioning)
