@@ -410,24 +410,26 @@ export default function TeamDashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="hidden sm:flex gap-4 text-center text-xs">
-              <div>
-                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.onTime}%</div>
-                <div className="text-gray-400">On-Time</div>
+            {Object.keys(teamHealth.components).length > 0 && (
+              <div className="hidden sm:flex gap-4 text-center text-xs">
+                <div>
+                  <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.onTime ?? 0}%</div>
+                  <div className="text-gray-400">On-Time</div>
+                </div>
+                <div>
+                  <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.responseRate ?? 0}%</div>
+                  <div className="text-gray-400">Response</div>
+                </div>
+                <div>
+                  <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.participation ?? 0}%</div>
+                  <div className="text-gray-400">Active</div>
+                </div>
+                <div>
+                  <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.overdueRatio ?? 0}%</div>
+                  <div className="text-gray-400">Overdue</div>
+                </div>
               </div>
-              <div>
-                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.responseRate}%</div>
-                <div className="text-gray-400">Response</div>
-              </div>
-              <div>
-                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.participation}%</div>
-                <div className="text-gray-400">Active</div>
-              </div>
-              <div>
-                <div className="font-bold text-gray-700 dark:text-gray-300">{teamHealth.components.overdueRatio}%</div>
-                <div className="text-gray-400">Overdue</div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}

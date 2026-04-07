@@ -181,13 +181,17 @@ export const emailManagerBriefing = inngest.createFunction(
             : null
           const healthDelta = prevOnTime !== null ? healthScore - prevOnTime : null
 
-          // Workload: count overloaded members
-          const { data: openCommitments } = await supabase
-            .from('commitments')
-            .select('assignee_id')
-            .eq('organization_id', org.id)
-            .in('status', ['pending', 'in_progress', 'overdue'])
-            .is('deleted_at', null)
+          // Workload: count overloaded members (query by team_id since
+          // organization_id isn't backfilled on all commitment rows)
+          const scopedUserIds = scopedScores.map(s => s.user_id)
+          const { data: openCommitments } = scopedUserIds.length > 0
+            ? await supabase
+                .from('commitments')
+                .select('assignee_id')
+                .in('assignee_id', scopedUserIds)
+                .in('status', ['pending', 'in_progress', 'overdue'])
+                .is('deleted_at', null)
+            : { data: [] as { assignee_id: string }[] }
 
           const loadCounts = new Map<string, number>()
           for (const c of openCommitments || []) {
@@ -195,7 +199,8 @@ export const emailManagerBriefing = inngest.createFunction(
           }
           const loadValues = [...loadCounts.values()]
           const avgLoad = loadValues.length > 0 ? loadValues.reduce((a, b) => a + b, 0) / loadValues.length : 0
-          const overloadedMembers = loadValues.filter(v => v > avgLoad * 2).length
+          const overloadThreshold = Math.max(8, avgLoad * 2)
+          const overloadedMembers = loadValues.filter(v => v > overloadThreshold).length
 
           const { subject, html } = buildManagerBriefingEmail({
             managerName: profile.full_name?.split(' ')[0] || 'there',

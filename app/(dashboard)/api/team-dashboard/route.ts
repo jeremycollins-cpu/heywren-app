@@ -480,6 +480,9 @@ export async function GET(request: NextRequest) {
       progress: c.target_value > 0 ? Math.min(100, Math.round(c.current_value / c.target_value * 100)) : 0,
     }))
 
+    // ── Team IDs for scoped queries ─────────────────────────────────────
+    const teamIds = [...new Set((profilesRes.data || []).map((m: any) => m.team_id).filter(Boolean))]
+
     // ── Company pulse stats ───────────────────────────────────────────────
     const pulse = {
       totalMembers,
@@ -492,53 +495,80 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Team Health Score (0-100 composite) ──────────────────────────────
+    // Use the most recent trend that has actual data (non-zero metrics).
+    // If weekly_scores hasn't run yet for the current week, fall back to
+    // computing health from live commitment data.
     const currentTrend = trends.length > 0 ? trends[trends.length - 1] : null
     const prevTrend = trends.length > 1 ? trends[trends.length - 2] : null
 
+    // Also fetch live overdue count as a fallback/supplement
+    const { count: liveOverdueCount } = teamIds.length > 0
+      ? await admin
+          .from('commitments')
+          .select('*', { count: 'exact', head: true })
+          .in('team_id', teamIds)
+          .eq('status', 'overdue')
+          .is('deleted_at', null)
+      : { count: 0 }
+
+    // Compute health score — use trend data if available, supplement with live data
+    function computeHealthScore(
+      onTimeRate: number, responseRate: number, overdueCount: number,
+      members: number, activeCount: number, streakCount: number, completions: number
+    ): { score: number; components: Record<string, number> } {
+      if (members === 0) return { score: 0, components: {} }
+      const onTimeS = Math.min(100, onTimeRate) * 0.25
+      const responseS = Math.min(100, responseRate) * 0.20
+      const overdueRatio = overdueCount / members
+      const overdueS = Math.max(0, 100 - (overdueRatio * 200)) * 0.20
+      const participationS = Math.min(100, Math.round((activeCount / members) * 100)) * 0.15
+      const streakS = Math.min(100, Math.round((streakCount / members) * 100)) * 0.10
+      const velocityS = Math.min(100, completions > 0 ? Math.round((completions / members) * 50) : 0) * 0.10
+      return {
+        score: Math.round(onTimeS + responseS + overdueS + participationS + streakS + velocityS),
+        components: {
+          onTime: Math.round(onTimeRate),
+          responseRate: Math.round(responseRate),
+          overdueRatio: Math.round(overdueRatio * 100),
+          participation: Math.round((activeCount / members) * 100),
+          streaks: Math.round((streakCount / members) * 100),
+          velocity: completions,
+        },
+      }
+    }
+
     let healthScore = 0
     let healthComponents: Record<string, number> = {}
+
     if (currentTrend && totalMembers > 0) {
-      const onTimeScore = Math.min(100, currentTrend.avgOnTimeRate) * 0.25
-      const responseScore = Math.min(100, currentTrend.avgResponseRate) * 0.20
-
-      // Overdue: 0 overdue = 100, scale down as overdue increases relative to team size
-      const overdueRatio = totalMembers > 0 ? currentTrend.overdue / totalMembers : 0
-      const overdueScore = Math.max(0, 100 - (overdueRatio * 200)) * 0.20
-
-      // Participation: % of team that was active this week
-      const participationScore = Math.min(100, Math.round((activeThisWeek / totalMembers) * 100)) * 0.15
-
-      // Streak health: % of team on 2+ week streaks
-      const streakScore = Math.min(100, Math.round((activeStreakMembers / totalMembers) * 100)) * 0.10
-
-      // Completion velocity: completions as a ratio (cap at 100)
-      const velocityScore = Math.min(100, currentTrend.completions > 0 ? Math.round((currentTrend.completions / totalMembers) * 50) : 0) * 0.10
-
-      healthScore = Math.round(onTimeScore + responseScore + overdueScore + participationScore + streakScore + velocityScore)
-      healthComponents = {
-        onTime: Math.round(currentTrend.avgOnTimeRate),
-        responseRate: Math.round(currentTrend.avgResponseRate),
-        overdueRatio: Math.round(overdueRatio * 100),
-        participation: Math.round((activeThisWeek / totalMembers) * 100),
-        streaks: Math.round((activeStreakMembers / totalMembers) * 100),
-        velocity: currentTrend.completions,
-      }
+      // Use trend data but supplement overdue with live count if trend shows 0
+      const overdueForScore = currentTrend.overdue > 0 ? currentTrend.overdue : (liveOverdueCount || 0)
+      const result = computeHealthScore(
+        currentTrend.avgOnTimeRate, currentTrend.avgResponseRate, overdueForScore,
+        totalMembers, activeThisWeek, activeStreakMembers, currentTrend.completions
+      )
+      healthScore = result.score
+      healthComponents = result.components
+    } else if (totalMembers > 0) {
+      // No trend data — compute from live data only
+      const result = computeHealthScore(
+        0, 0, liveOverdueCount || 0,
+        totalMembers, activeThisWeek, activeStreakMembers, 0
+      )
+      healthScore = result.score
+      healthComponents = result.components
     }
 
     // Previous week health score for trend
     let prevHealthScore: number | null = null
     if (prevTrend && totalMembers > 0) {
-      const prevOverdueRatio = totalMembers > 0 ? prevTrend.overdue / totalMembers : 0
       const prevActiveCount = (weeklyScoresRes.data || []).filter((s: WeeklyScoreRow) => s.week_start === previousWeek).map((s: WeeklyScoreRow) => s.user_id)
       const prevActiveUnique = new Set(prevActiveCount).size
-      prevHealthScore = Math.round(
-        Math.min(100, prevTrend.avgOnTimeRate) * 0.25 +
-        Math.min(100, prevTrend.avgResponseRate) * 0.20 +
-        Math.max(0, 100 - (prevOverdueRatio * 200)) * 0.20 +
-        Math.min(100, Math.round((prevActiveUnique / totalMembers) * 100)) * 0.15 +
-        Math.min(100, Math.round((activeStreakMembers / totalMembers) * 100)) * 0.10 +
-        Math.min(100, prevTrend.completions > 0 ? Math.round((prevTrend.completions / totalMembers) * 50) : 0) * 0.10
+      const prevResult = computeHealthScore(
+        prevTrend.avgOnTimeRate, prevTrend.avgResponseRate, prevTrend.overdue,
+        totalMembers, prevActiveUnique, activeStreakMembers, prevTrend.completions
       )
+      prevHealthScore = prevResult.score
     }
 
     const teamHealth = {
@@ -550,14 +580,17 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Workload Balance ─────────────────────────────────────────────────
-    // Fetch open commitments per person (pending + in_progress)
-    const { data: openCommitmentsData } = await admin
-      .from('commitments')
-      .select('assignee_id, status')
-      .eq('organization_id', organization_id)
-      .in('status', ['pending', 'in_progress', 'overdue'])
-      .is('deleted_at', null)
-      .not('assignee_id', 'is', null)
+    // Fetch open commitments per person — use team_id scope since not all
+    // commitments have organization_id backfilled
+    const { data: openCommitmentsData } = teamIds.length > 0
+      ? await admin
+          .from('commitments')
+          .select('assignee_id, status')
+          .in('team_id', teamIds)
+          .in('status', ['pending', 'in_progress', 'overdue'])
+          .is('deleted_at', null)
+          .not('assignee_id', 'is', null)
+      : { data: [] }
 
     const workloadMap = new Map<string, { open: number; overdue: number }>()
     for (const c of openCommitmentsData || []) {
@@ -576,8 +609,12 @@ export async function GET(request: NextRequest) {
       .map(uid => {
         const profile = profileMap.get(uid)
         const load = workloadMap.get(uid) || { open: 0, overdue: 0 }
-        const level = load.open > avgWorkload * 2 ? 'overloaded' as const
-          : load.open > avgWorkload * 1.5 ? 'heavy' as const
+        // Only flag if there's meaningful load — minimum thresholds prevent
+        // false positives when the team average is very low (e.g. avg = 1)
+        const overloadThreshold = Math.max(8, avgWorkload * 2)
+        const heavyThreshold = Math.max(5, avgWorkload * 1.5)
+        const level = load.open > overloadThreshold ? 'overloaded' as const
+          : load.open > heavyThreshold ? 'heavy' as const
           : 'healthy' as const
         return {
           userId: uid,
