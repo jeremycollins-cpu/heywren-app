@@ -86,6 +86,7 @@ jest.mock('lucide-react', () => {
     Star: createIcon('Star'),
     TrendingUp: createIcon('TrendingUp'),
     Network: createIcon('Network'),
+    MailX: createIcon('MailX'),
   }
 })
 

@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
 import { WrenIcon, WrenFullLogo } from '@/components/logo'
@@ -160,7 +160,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
   // Re-fetch badge counts when commitments or action items change in real-time
   // Throttled: minimum 30s between refetches to reduce Disk IO pressure
-  const lastRefetchRef = React.useRef(0)
+  const lastRefetchRef = useRef(0)
   const refetchBadges = useCallback(() => {
     const now = Date.now()
     if (now - lastRefetchRef.current < 30000) return // throttle: max once per 30s

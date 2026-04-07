@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { UpgradeGate } from '@/components/upgrade-gate'
+import UpgradeGate from '@/components/upgrade-gate'
 
 interface EmailSubscription {
   id: string
