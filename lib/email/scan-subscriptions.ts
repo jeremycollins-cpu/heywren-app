@@ -74,24 +74,23 @@ async function refreshMicrosoftToken(
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          client_id: process.env.AZURE_AD_CLIENT_ID || process.env.AZURE_CLIENT_ID || '',
-          client_secret: process.env.AZURE_AD_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || '',
-          refresh_token: refreshToken,
+          client_id: process.env.AZURE_AD_CLIENT_ID!,
+          client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
           grant_type: 'refresh_token',
-          scope: 'https://graph.microsoft.com/.default offline_access',
+          refresh_token: refreshToken,
+          scope: 'openid profile email Mail.Read Calendars.Read User.Read offline_access',
         }),
       }
     )
     const tokenData = await tokenRes.json()
     if (tokenData.access_token) {
+      const expiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString()
       await supabase
         .from('integrations')
         .update({
-          config: {
-            access_token: tokenData.access_token,
-            refresh_token: tokenData.refresh_token || refreshToken,
-            token_expires_at: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString(),
-          },
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token || refreshToken,
+          config: { token_expires_at: expiresAt },
         })
         .eq('id', integrationId)
       return tokenData.access_token
@@ -126,23 +125,24 @@ export async function scanUserSubscriptions(
   let found = 0
   let errors = 0
 
-  // Get the user's Outlook integration
+  // Get the user's Outlook integration (access_token is a top-level column, not in config)
   const { data: integration } = await supabase
     .from('integrations')
-    .select('id, config')
+    .select('id, access_token, refresh_token, config, user_id')
     .eq('team_id', teamId)
+    .eq('user_id', userId)
     .eq('provider', 'outlook')
     .eq('status', 'connected')
     .limit(1)
     .maybeSingle()
 
-  if (!integration?.config?.access_token) {
+  if (!integration?.access_token) {
     return { found: 0, errors: 0 }
   }
 
   const integrationId = integration.id
-  let msToken = integration.config.access_token as string
-  const refreshToken = integration.config.refresh_token as string
+  let msToken = integration.access_token as string
+  const refreshToken = integration.refresh_token as string
 
   // Query Graph API for recent emails with internetMessageHeaders
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
@@ -247,6 +247,8 @@ export async function scanUserSubscriptions(
 
     nextLink = pageData['@odata.nextLink'] || null
   }
+
+  console.log(`[Unsubscribe scan] User ${userId}: scanned ${pages} pages, found ${senderMap.size} senders with unsubscribe signals, ${errors} errors`)
 
   if (senderMap.size === 0) return { found: 0, errors }
 
