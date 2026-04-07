@@ -76,6 +76,11 @@ interface UserDetail {
   }
   backlogAlerts?: { type: string; count: number; message: string }[]
   teamHealth?: { totalMembers: number; activeMembers: number; invitedCount: number } | null
+  emailActivity?: {
+    totalSent: number
+    byType: Record<string, number>
+    recentSends: { email_type: string; status: string; created_at: string }[]
+  } | null
   adminNotes?: string | null
 }
 
@@ -113,6 +118,7 @@ function AdminContent() {
   const [actionLog, setActionLog] = useState<Array<{ time: string; action: string; result: string; success: boolean }>>([])
   const [adminNotes, setAdminNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(true)
+  const [testEmailTemplate, setTestEmailTemplate] = useState('recap')
 
   useEffect(() => { loadOverview() }, [])
 
@@ -497,6 +503,41 @@ function AdminContent() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Email Activity */}
+            {selectedUser.emailActivity && (
+              <div className="bg-white border rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-indigo-500" />
+                  Email Activity ({selectedUser.emailActivity.totalSent} sent)
+                </h3>
+                {selectedUser.emailActivity.totalSent === 0 ? (
+                  <p className="text-sm text-gray-400">No emails sent yet</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {Object.entries(selectedUser.emailActivity.byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+                        <span key={type} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {type.replace(/_/g, ' ')} &middot; {count}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2 font-medium">Recent</p>
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {selectedUser.emailActivity.recentSends.map((send, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-gray-50">
+                          <span className="text-gray-700">{send.email_type.replace(/_/g, ' ')}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={send.status === 'sent' ? 'text-green-600' : 'text-red-500'}>{send.status}</span>
+                            <span className="text-gray-400">{new Date(send.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1011,6 +1052,31 @@ function AdminContent() {
                   </div>
                 </div>
               )}
+
+              {/* Email Testing */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Email Testing</p>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <select
+                  value={testEmailTemplate}
+                  onChange={(e) => setTestEmailTemplate(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                >
+                  <option value="welcome">Welcome (Day 0)</option>
+                  <option value="recap">Weekly Recap</option>
+                  <option value="nudge">Overdue Nudge</option>
+                  <option value="achievement">Achievement</option>
+                  <option value="manager">Manager Briefing</option>
+                  <option value="reengagement">Re-engagement</option>
+                </select>
+                <button
+                  onClick={() => runAction('send_test_email', { userId: profile.id, template: testEmailTemplate })}
+                  disabled={actionLoading === 'send_test_email'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {actionLoading === 'send_test_email' ? 'Sending...' : `Send Test to ${profile.email}`}
+                </button>
+              </div>
 
               {/* Danger Zone */}
               <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Danger Zone</p>

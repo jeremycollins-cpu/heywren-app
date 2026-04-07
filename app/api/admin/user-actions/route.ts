@@ -399,6 +399,90 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Send a test email to a user using one of the engagement templates
+  if (action === 'send_test_email') {
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+    const template = body.template || 'recap'
+
+    const { data: profile } = await adminDb.from('profiles').select('email, full_name').eq('id', userId).single()
+    if (!profile?.email) return NextResponse.json({ error: 'User has no email' }, { status: 400 })
+
+    const { Resend } = await import('resend')
+    const apiKey = process.env.RESEND_API_KEY
+    if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 })
+
+    const resend = new Resend(apiKey)
+    const userName = profile.full_name?.split(' ')[0] || 'there'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const unsubscribeUrl = `${appUrl}/settings?tab=notifications`
+
+    let subject: string
+    let html: string
+
+    if (template === 'welcome') {
+      const { buildWelcomeDay0 } = await import('@/lib/email/templates/welcome')
+      const result = buildWelcomeDay0({ userName, appUrl, unsubscribeUrl })
+      subject = result.subject; html = result.html
+    } else if (template === 'recap') {
+      const { buildWeeklyRecapEmail } = await import('@/lib/email/templates/weekly-recap')
+      const result = buildWeeklyRecapEmail({
+        userName, weekLabel: 'Mar 31 – Apr 6', totalPoints: 247, pointsDelta: 42,
+        rank: 3, rankDelta: 2, streak: 8, commitmentsCompleted: 12, commitmentsCreated: 15,
+        overdueCount: 2, onTimeRate: 88, responseRate: 94,
+        achievementEarned: { name: 'Follow-Through Pro', tier: 'silver' },
+        insight: 'Your points jumped 20% compared to last week. Great momentum!',
+        dashboardUrl: `${appUrl}/dashboard`, overdueUrl: `${appUrl}/commitments?status=overdue`, unsubscribeUrl,
+      })
+      subject = result.subject; html = result.html
+    } else if (template === 'nudge') {
+      const { buildNudgeEmail } = await import('@/lib/email/templates/nudge')
+      const result = buildNudgeEmail({ userName, overdueCount: 3, oldestOverdueDays: 5, dashboardUrl: `${appUrl}/commitments?status=overdue`, unsubscribeUrl })
+      subject = result.subject; html = result.html
+    } else if (template === 'achievement') {
+      const { buildAchievementEmail } = await import('@/lib/email/templates/achievement')
+      const result = buildAchievementEmail({
+        userName, achievementName: 'Follow-Through Pro', achievementDescription: 'Complete 50 commitments on time',
+        tier: 'silver', reason: 'You earned this by reaching 50 on-time completions.',
+        nextAchievement: { name: 'Follow-Through Master', progress: 50, target: 100 },
+        dashboardUrl: appUrl, unsubscribeUrl,
+      })
+      subject = result.subject; html = result.html
+    } else if (template === 'manager') {
+      const { buildManagerBriefingEmail } = await import('@/lib/email/templates/manager-briefing')
+      const result = buildManagerBriefingEmail({
+        managerName: userName, orgName: 'Your Organization', weekLabel: 'Mar 31 – Apr 6',
+        memberCount: 12, totalPoints: 1840, pointsDeltaPct: 15, totalCompleted: 47,
+        totalOverdue: 5, avgResponseRate: 89, avgOnTimeRate: 82, activeStreaks: 8,
+        topPerformers: [{ name: 'Alice', points: 310 }, { name: 'Bob', points: 275 }, { name: 'Carol', points: 240 }],
+        burnoutAlerts: 1, unresolvedAlerts: 2, newAchievements: 4,
+        dashboardUrl: `${appUrl}/team-dashboard`, peopleInsightsUrl: `${appUrl}/people-insights`, unsubscribeUrl,
+      })
+      subject = result.subject; html = result.html
+    } else if (template === 'reengagement') {
+      const { buildReengagementEmail } = await import('@/lib/email/templates/reengagement')
+      const result = buildReengagementEmail({
+        userName, daysSinceLastActive: 9, commitmentsDetected: 6, overdueCount: 3, missedEmailCount: 4,
+        dashboardUrl: `${appUrl}/dashboard`, settingsUrl: `${appUrl}/settings?tab=notifications`, unsubscribeUrl,
+      })
+      subject = result.subject; html = result.html
+    } else {
+      return NextResponse.json({ error: `Unknown template: ${template}` }, { status: 400 })
+    }
+
+    try {
+      const { data, error } = await resend.emails.send({
+        from: 'HeyWren <notifications@heywren.com>',
+        to: profile.email,
+        subject: `[TEST] ${subject}`,
+        html,
+      })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ success: true, message: `Test "${template}" email sent to ${profile.email} (${data?.id})` })
+    } catch (err) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+    }
+  }
+
   // Save admin notes for a user
   if (action === 'save_notes') {
     if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })

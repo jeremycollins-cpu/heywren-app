@@ -1,5 +1,7 @@
 // lib/email/send-invite.ts
-// Send invitation emails via the Resend API
+// Send invitation emails via the Resend SDK
+
+import { Resend } from 'resend'
 
 interface SendInviteParams {
   email: string
@@ -118,24 +120,18 @@ export async function sendInviteEmail(params: SendInviteParams): Promise<SendInv
   const html = buildEmailHtml({ inviterName, organizationName, role, inviteUrl })
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from: 'HeyWren <notifications@heywren.com>',
-        to: email,
-        subject: `${inviterName} invited you to join ${organizationName} on HeyWren`,
-        html,
-      }),
+    const resend = new Resend(apiKey)
+
+    const { error } = await resend.emails.send({
+      from: 'HeyWren <notifications@heywren.com>',
+      to: email,
+      subject: `${inviterName} invited you to join ${organizationName} on HeyWren`,
+      html,
     })
 
-    if (!response.ok) {
-      const errorBody = await response.text()
-      console.error('[send-invite] Resend API error:', response.status, errorBody)
-      return { success: false, error: `Email delivery failed (${response.status})` }
+    if (error) {
+      console.error('[send-invite] Resend error:', error)
+      return { success: false, error: error.message }
     }
 
     return { success: true }
