@@ -50,7 +50,7 @@ export const emailReengagement = inngest.createFunction(
     const userIds = inactiveUsers.map(u => u.id)
 
     // Check who already received a re-engagement email in the last 14 days
-    const recentlySent = await step.run('check-recent-sends', async () => {
+    const recentlySentData = await step.run('check-recent-sends', async () => {
       const { data } = await supabase
         .from('email_sends')
         .select('user_id')
@@ -59,18 +59,20 @@ export const emailReengagement = inngest.createFunction(
         .gte('created_at', fourteenDaysAgo.toISOString())
         .in('user_id', userIds)
 
-      return new Set((data || []).map(d => d.user_id))
+      return data || []
     })
+    const recentlySent = new Set(recentlySentData.map(d => d.user_id))
 
     // Check preferences
-    const prefs = await step.run('fetch-prefs', async () => {
+    const prefsData = await step.run('fetch-prefs', async () => {
       const { data } = await supabase
         .from('notification_preferences')
         .select('user_id, email_reengagement')
         .in('user_id', userIds)
 
-      return new Map((data || []).map(p => [p.user_id, p]))
+      return data || []
     })
+    const prefs = new Map(prefsData.map(p => [p.user_id, p]))
 
     // Filter to eligible users
     const eligible = inactiveUsers.filter(u => {
@@ -87,18 +89,13 @@ export const emailReengagement = inngest.createFunction(
     // Batch fetch activity data for eligible users
     const eligibleIds = eligible.map(u => u.id)
 
-    const activityData = await step.run('fetch-activity-data', async () => {
+    const activityRaw = await step.run('fetch-activity-data', async () => {
       // Commitments detected while away
       const { data: newCommitments } = await supabase
         .from('commitments')
         .select('assignee_id')
         .in('assignee_id', eligibleIds)
         .gte('created_at', sevenDaysAgo.toISOString())
-
-      const commitmentCounts = new Map<string, number>()
-      for (const c of newCommitments || []) {
-        commitmentCounts.set(c.assignee_id, (commitmentCounts.get(c.assignee_id) || 0) + 1)
-      }
 
       // Overdue items
       const { data: overdue } = await supabase
@@ -108,11 +105,6 @@ export const emailReengagement = inngest.createFunction(
         .eq('status', 'overdue')
         .is('deleted_at', null)
 
-      const overdueCounts = new Map<string, number>()
-      for (const c of overdue || []) {
-        overdueCounts.set(c.assignee_id, (overdueCounts.get(c.assignee_id) || 0) + 1)
-      }
-
       // Missed emails
       const { data: missedEmails } = await supabase
         .from('missed_emails')
@@ -120,13 +112,25 @@ export const emailReengagement = inngest.createFunction(
         .in('user_id', eligibleIds)
         .eq('status', 'pending')
 
-      const missedCounts = new Map<string, number>()
-      for (const e of missedEmails || []) {
-        missedCounts.set(e.user_id, (missedCounts.get(e.user_id) || 0) + 1)
+      return {
+        newCommitments: newCommitments || [],
+        overdue: overdue || [],
+        missedEmails: missedEmails || [],
       }
-
-      return { commitmentCounts, overdueCounts, missedCounts }
     })
+
+    const commitmentCounts = new Map<string, number>()
+    for (const c of activityRaw.newCommitments) {
+      commitmentCounts.set(c.assignee_id, (commitmentCounts.get(c.assignee_id) || 0) + 1)
+    }
+    const overdueCounts = new Map<string, number>()
+    for (const c of activityRaw.overdue) {
+      overdueCounts.set(c.assignee_id, (overdueCounts.get(c.assignee_id) || 0) + 1)
+    }
+    const missedCounts = new Map<string, number>()
+    for (const e of activityRaw.missedEmails) {
+      missedCounts.set(e.user_id, (missedCounts.get(e.user_id) || 0) + 1)
+    }
 
     let emailsSent = 0
 
@@ -139,9 +143,9 @@ export const emailReengagement = inngest.createFunction(
         const { subject, html } = buildReengagementEmail({
           userName: user.full_name?.split(' ')[0] || 'there',
           daysSinceLastActive,
-          commitmentsDetected: activityData.commitmentCounts.get(user.id) || 0,
-          overdueCount: activityData.overdueCounts.get(user.id) || 0,
-          missedEmailCount: activityData.missedCounts.get(user.id) || 0,
+          commitmentsDetected: commitmentCounts.get(user.id) || 0,
+          overdueCount: overdueCounts.get(user.id) || 0,
+          missedEmailCount: missedCounts.get(user.id) || 0,
           dashboardUrl: `${appUrl}/dashboard`,
           settingsUrl: `${appUrl}/settings?tab=notifications`,
           unsubscribeUrl: `${appUrl}/settings?tab=notifications`,

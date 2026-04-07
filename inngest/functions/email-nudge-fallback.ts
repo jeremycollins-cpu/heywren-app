@@ -32,7 +32,7 @@ export const emailNudgeFallback = inngest.createFunction(
     todayStart.setUTCHours(0, 0, 0, 0)
 
     // Find users with overdue commitments
-    const overdueByUser = await step.run('fetch-overdue-by-user', async () => {
+    const overdueRaw = await step.run('fetch-overdue-by-user', async () => {
       const { data } = await supabase
         .from('commitments')
         .select('assignee_id, due_date')
@@ -40,22 +40,23 @@ export const emailNudgeFallback = inngest.createFunction(
         .is('deleted_at', null)
         .not('assignee_id', 'is', null)
 
-      const grouped = new Map<string, { count: number; oldestDueDays: number }>()
-      for (const c of data || []) {
-        const existing = grouped.get(c.assignee_id)
-        const dueDays = c.due_date
-          ? Math.floor((now.getTime() - new Date(c.due_date).getTime()) / (1000 * 60 * 60 * 24))
-          : 1
-
-        if (!existing) {
-          grouped.set(c.assignee_id, { count: 1, oldestDueDays: dueDays })
-        } else {
-          existing.count++
-          existing.oldestDueDays = Math.max(existing.oldestDueDays, dueDays)
-        }
-      }
-      return grouped
+      return data || []
     })
+
+    const overdueByUser = new Map<string, { count: number; oldestDueDays: number }>()
+    for (const c of overdueRaw) {
+      const existing = overdueByUser.get(c.assignee_id)
+      const dueDays = c.due_date
+        ? Math.floor((now.getTime() - new Date(c.due_date).getTime()) / (1000 * 60 * 60 * 24))
+        : 1
+
+      if (!existing) {
+        overdueByUser.set(c.assignee_id, { count: 1, oldestDueDays: dueDays })
+      } else {
+        existing.count++
+        existing.oldestDueDays = Math.max(existing.oldestDueDays, dueDays)
+      }
+    }
 
     if (overdueByUser.size === 0) {
       return { success: true, emailsSent: 0, reason: 'no overdue commitments' }
@@ -64,7 +65,7 @@ export const emailNudgeFallback = inngest.createFunction(
     const userIds = [...overdueByUser.keys()]
 
     // Check which users already received an email nudge today
-    const alreadySent = await step.run('check-today-sends', async () => {
+    const alreadySentData = await step.run('check-today-sends', async () => {
       const { data } = await supabase
         .from('email_sends')
         .select('user_id')
@@ -73,28 +74,31 @@ export const emailNudgeFallback = inngest.createFunction(
         .gte('created_at', todayStart.toISOString())
         .in('user_id', userIds)
 
-      return new Set((data || []).map(d => d.user_id))
+      return data || []
     })
+    const alreadySent = new Set(alreadySentData.map(d => d.user_id))
 
     // Check email preferences
-    const prefs = await step.run('fetch-email-prefs', async () => {
+    const prefsData = await step.run('fetch-email-prefs', async () => {
       const { data } = await supabase
         .from('notification_preferences')
         .select('user_id, email_nudges')
         .in('user_id', userIds)
 
-      return new Map((data || []).map(p => [p.user_id, p]))
+      return data || []
     })
+    const prefs = new Map(prefsData.map(p => [p.user_id, p]))
 
     // Fetch profiles
-    const profiles = await step.run('fetch-profiles', async () => {
+    const profilesData = await step.run('fetch-profiles', async () => {
       const { data } = await supabase
         .from('profiles')
         .select('id, email, full_name')
         .in('id', userIds)
 
-      return new Map((data || []).map(p => [p.id, p]))
+      return data || []
     })
+    const profiles = new Map(profilesData.map(p => [p.id, p]))
 
     let emailsSent = 0
 

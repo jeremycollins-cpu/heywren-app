@@ -47,39 +47,42 @@ export const emailWeeklyRecap = inngest.createFunction(
     }
 
     // Get previous week scores for delta comparison
-    const prevScores = await step.run('fetch-prev-scores', async () => {
+    const prevScoresData = await step.run('fetch-prev-scores', async () => {
       const { data } = await supabase
         .from('weekly_scores')
         .select('user_id, total_points')
         .eq('week_start', twoWeeksAgo)
 
-      return new Map((data || []).map(s => [s.user_id, s]))
+      return data || []
     })
+    const prevScoresMap = new Map(prevScoresData.map(s => [s.user_id, s]))
 
     // Get member scores for rank/streak info
-    const memberScores = await step.run('fetch-member-scores', async () => {
+    const memberScoresData = await step.run('fetch-member-scores', async () => {
       const userIds = scores.map(s => s.user_id)
       const { data } = await supabase
         .from('member_scores')
         .select('user_id, org_rank, prev_org_rank, current_streak')
         .in('user_id', userIds)
 
-      return new Map((data || []).map(ms => [ms.user_id, ms]))
+      return data || []
     })
+    const memberScores = new Map(memberScoresData.map(ms => [ms.user_id, ms]))
 
     // Get profiles
-    const profiles = await step.run('fetch-profiles', async () => {
+    const profilesData = await step.run('fetch-profiles', async () => {
       const userIds = scores.map(s => s.user_id)
       const { data } = await supabase
         .from('profiles')
         .select('id, email, full_name')
         .in('id', userIds)
 
-      return new Map((data || []).map(p => [p.id, p]))
+      return data || []
     })
+    const profiles = new Map(profilesData.map(p => [p.id, p]))
 
     // Get overdue counts per user
-    const overdueCounts = await step.run('fetch-overdue-counts', async () => {
+    const overdueData = await step.run('fetch-overdue-counts', async () => {
       const userIds = scores.map(s => s.user_id)
       const { data } = await supabase
         .from('commitments')
@@ -88,26 +91,27 @@ export const emailWeeklyRecap = inngest.createFunction(
         .eq('status', 'overdue')
         .is('deleted_at', null)
 
-      const counts = new Map<string, number>()
-      for (const c of data || []) {
-        counts.set(c.assignee_id, (counts.get(c.assignee_id) || 0) + 1)
-      }
-      return counts
+      return data || []
     })
+    const overdueCounts = new Map<string, number>()
+    for (const c of overdueData) {
+      overdueCounts.set(c.assignee_id, (overdueCounts.get(c.assignee_id) || 0) + 1)
+    }
 
     // Check email preferences — opt out of weekly recap?
-    const prefs = await step.run('fetch-email-prefs', async () => {
+    const prefsData = await step.run('fetch-email-prefs', async () => {
       const userIds = scores.map(s => s.user_id)
       const { data } = await supabase
         .from('notification_preferences')
         .select('user_id, email_weekly_recap')
         .in('user_id', userIds)
 
-      return new Map((data || []).map(p => [p.user_id, p]))
+      return data || []
     })
+    const prefs = new Map(prefsData.map(p => [p.user_id, p]))
 
     // Get latest achievements per user (this week only)
-    const achievements = await step.run('fetch-achievements', async () => {
+    const achievementsData = await step.run('fetch-achievements', async () => {
       const userIds = scores.map(s => s.user_id)
       const { data } = await supabase
         .from('member_achievements')
@@ -115,7 +119,7 @@ export const emailWeeklyRecap = inngest.createFunction(
         .in('user_id', userIds)
         .eq('week_earned', prevMonday)
 
-      if (!data || data.length === 0) return new Map()
+      if (!data || data.length === 0) return [] as { user_id: string; name: string; tier: string }[]
 
       const achievementIds = [...new Set(data.map(a => a.achievement_id))]
       const { data: achDetails } = await supabase
@@ -125,16 +129,21 @@ export const emailWeeklyRecap = inngest.createFunction(
 
       const achMap = new Map((achDetails || []).map(a => [a.id, a]))
 
-      // Return first achievement per user
-      const result = new Map<string, { name: string; tier: string }>()
+      // Return first achievement per user as plain array
+      const seen = new Set<string>()
+      const result: { user_id: string; name: string; tier: string }[] = []
       for (const a of data) {
-        if (!result.has(a.user_id)) {
+        if (!seen.has(a.user_id)) {
           const detail = achMap.get(a.achievement_id)
-          if (detail) result.set(a.user_id, { name: detail.name, tier: detail.tier })
+          if (detail) {
+            seen.add(a.user_id)
+            result.push({ user_id: a.user_id, name: detail.name, tier: detail.tier })
+          }
         }
       }
       return result
     })
+    const achievements = new Map(achievementsData.map(a => [a.user_id, { name: a.name, tier: a.tier }]))
 
     let emailsSent = 0
     let emailsSkipped = 0
@@ -152,7 +161,7 @@ export const emailWeeklyRecap = inngest.createFunction(
       }
 
       const ms = memberScores.get(score.user_id)
-      const prev = prevScores.get(score.user_id)
+      const prev = prevScoresMap.get(score.user_id)
       const overdueCount = overdueCounts.get(score.user_id) || 0
       const achievement = achievements.get(score.user_id) || null
 

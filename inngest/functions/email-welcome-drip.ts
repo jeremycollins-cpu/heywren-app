@@ -77,14 +77,15 @@ export const emailWelcomeDrip = inngest.createFunction(
 
     // Fetch profiles for all drip users
     const userIds = drips.map(d => d.user_id)
-    const profiles = await step.run('fetch-profiles', async () => {
+    const profilesData = await step.run('fetch-profiles', async () => {
       const { data } = await supabase
         .from('profiles')
         .select('id, email, full_name')
         .in('id', userIds)
 
-      return new Map((data || []).map(p => [p.id, p]))
+      return data || []
     })
+    const profiles = new Map(profilesData.map(p => [p.id, p]))
 
     let emailsSent = 0
 

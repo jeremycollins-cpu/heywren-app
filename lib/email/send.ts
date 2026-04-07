@@ -90,7 +90,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
           status: 'failed',
           error: error.message,
           idempotency_key: idempotencyKey || null,
-        }).catch(() => {})
+        })
       }
 
       return { success: false, error: error.message }
@@ -106,8 +106,8 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
         status: 'sent',
         resend_id: data?.id || null,
         idempotency_key: idempotencyKey || null,
-      }).catch(err => {
-        console.error('[send-email] Failed to log send:', err)
+      }).then(({ error }: { error: unknown }) => {
+        if (error) console.error('[send-email] Failed to log send:', error)
       })
     }
 

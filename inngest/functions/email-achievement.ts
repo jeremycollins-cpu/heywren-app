@@ -82,24 +82,26 @@ export const emailAchievement = inngest.createFunction(
     }
 
     // Check preferences
-    const prefs = await step.run('fetch-prefs', async () => {
+    const prefsData = await step.run('fetch-prefs', async () => {
       const { data } = await supabase
         .from('notification_preferences')
         .select('user_id, email_achievements')
         .in('user_id', allUserIds)
 
-      return new Map((data || []).map(p => [p.user_id, p]))
+      return data || []
     })
+    const prefs = new Map(prefsData.map(p => [p.user_id, p]))
 
     // Fetch profiles
-    const profiles = await step.run('fetch-profiles', async () => {
+    const profilesData = await step.run('fetch-profiles', async () => {
       const { data } = await supabase
         .from('profiles')
         .select('id, email, full_name')
         .in('id', allUserIds)
 
-      return new Map((data || []).map(p => [p.id, p]))
+      return data || []
     })
+    const profiles = new Map(profilesData.map(p => [p.id, p]))
 
     let emailsSent = 0
 
