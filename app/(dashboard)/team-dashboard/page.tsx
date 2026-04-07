@@ -359,6 +359,7 @@ export default function TeamDashboardPage() {
         const collabRes = results[5].status === 'fulfilled' ? results[5].value : null
         if (collabRes?.ok) {
           const d = await collabRes.json()
+          console.log('Collaboration graph response:', d.nodes?.length, 'nodes,', d.edges?.length, 'edges')
           if (d.nodes && d.edges) setCollabGraph(d)
         } else if (collabRes) {
           const errBody = await collabRes.text().catch(() => '')
@@ -766,13 +767,19 @@ export default function TeamDashboardPage() {
       )}
 
       {/* ── Collaboration Network ─────────────────────────────────────── */}
-      {collabGraph && collabGraph.nodes.length > 0 && (
+      {collabGraph && collabGraph.nodes.length > 0 ? (
         <CollaborationNetwork
           nodes={collabGraph.nodes}
           edges={collabGraph.edges}
           insights={collabGraph.insights}
         />
-      )}
+      ) : collabGraph ? (
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Collaboration Network</h3>
+          <p className="text-sm text-gray-500">Not enough collaboration data yet. The network graph will appear once team members have email, Slack, meeting, or commitment interactions with each other.</p>
+          <p className="text-xs text-gray-400 mt-2">Debug: {collabGraph.nodes.length} nodes, {collabGraph.edges.length} edges</p>
+        </div>
+      ) : null}
 
       {/* ── Achievements & Challenges (secondary) ──────────────────────── */}
       <div>
