@@ -25,7 +25,7 @@ export const emailNudgeFallback = inngest.createFunction(
   { cron: '0 10 * * 1-5' }, // 10 AM weekdays
   async ({ step }) => {
     const supabase = getAdminClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
     const now = new Date()
 
     const todayStart = new Date(now)

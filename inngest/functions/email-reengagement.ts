@@ -25,7 +25,7 @@ export const emailReengagement = inngest.createFunction(
   { cron: '0 11 * * *' }, // 11 AM daily
   async ({ step }) => {
     const supabase = getAdminClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
     const now = new Date()
 
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)

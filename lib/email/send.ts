@@ -71,7 +71,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 
   try {
     const { data, error } = await resend.emails.send({
-      from: from || 'HeyWren <notifications@heywren.com>',
+      from: from || 'HeyWren <notifications@heywren.ai>',
       to,
       subject,
       html,

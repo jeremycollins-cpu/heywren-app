@@ -131,7 +131,7 @@ export const sendNudges = inngest.createFunction(
     // -- 6. Send DMs ---------------------------------------------------------
     let nudgesSent = 0
     let nudgesFailed = 0
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.com'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
     for (const [, group] of grouped) {
       const integration = slackIntegrations.get(group.teamId)
