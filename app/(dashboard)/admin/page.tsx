@@ -113,6 +113,7 @@ function AdminContent() {
   const [actionLog, setActionLog] = useState<Array<{ time: string; action: string; result: string; success: boolean }>>([])
   const [adminNotes, setAdminNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(true)
+  const [testEmailTemplate, setTestEmailTemplate] = useState('recap')
 
   useEffect(() => { loadOverview() }, [])
 
@@ -1011,6 +1012,31 @@ function AdminContent() {
                   </div>
                 </div>
               )}
+
+              {/* Email Testing */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Email Testing</p>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <select
+                  value={testEmailTemplate}
+                  onChange={(e) => setTestEmailTemplate(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                >
+                  <option value="welcome">Welcome (Day 0)</option>
+                  <option value="recap">Weekly Recap</option>
+                  <option value="nudge">Overdue Nudge</option>
+                  <option value="achievement">Achievement</option>
+                  <option value="manager">Manager Briefing</option>
+                  <option value="reengagement">Re-engagement</option>
+                </select>
+                <button
+                  onClick={() => runAction('send_test_email', { userId: profile.id, template: testEmailTemplate })}
+                  disabled={actionLoading === 'send_test_email'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {actionLoading === 'send_test_email' ? 'Sending...' : `Send Test to ${profile.email}`}
+                </button>
+              </div>
 
               {/* Danger Zone */}
               <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Danger Zone</p>
