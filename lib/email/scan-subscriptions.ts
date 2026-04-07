@@ -125,32 +125,15 @@ export async function scanUserSubscriptions(
   let found = 0
   let errors = 0
 
-  // Get Outlook integration — try user-specific first (matches how admin health panel works),
-  // then fall back to team-level integrations.
-  // Query 1: user's own integration (most reliable — this is what the admin panel shows as "Token Active")
-  let { data: integration, error: integrationError } = await supabase
+  // Outlook tokens and inboxes are per-user — only look at this user's integration
+  const { data: integration, error: integrationError } = await supabase
     .from('integrations')
-    .select('id, access_token, refresh_token, config, user_id, status')
+    .select('id, access_token, refresh_token, config, status')
     .eq('user_id', userId)
     .eq('provider', 'outlook')
     .not('refresh_token', 'is', null)
-    .order('status', { ascending: true })
     .limit(1)
     .maybeSingle()
-
-  // Query 2: fall back to any team integration if user doesn't have their own
-  if (!integration) {
-    const { data: teamIntegration } = await supabase
-      .from('integrations')
-      .select('id, access_token, refresh_token, config, user_id, status')
-      .eq('team_id', teamId)
-      .eq('provider', 'outlook')
-      .not('refresh_token', 'is', null)
-      .eq('status', 'connected')
-      .limit(1)
-      .maybeSingle()
-    integration = teamIntegration
-  }
 
   if (integrationError) {
     console.error('[Unsubscribe scan] Integration query error:', integrationError)
@@ -158,7 +141,7 @@ export async function scanUserSubscriptions(
   }
 
   if (!integration) {
-    return { found: 0, errors: 0, debug: 'No Outlook integration found for your account. Please connect Outlook from the Integrations page.' }
+    return { found: 0, errors: 0, debug: 'No Outlook integration found. Please connect Outlook from the Integrations page.' }
   }
 
   if (!integration.refresh_token) {
