@@ -1,19 +1,19 @@
 # HeyWren Platform Cost & Scalability Analysis
 
-**Date:** April 2026
-**Scope:** Per-user cost modeling, margin analysis, and scalability projections across all three pricing tiers.
+**Date:** April 2026 (Updated: new two-tier pricing model)
+**Scope:** Per-user cost modeling, margin analysis, and scalability projections.
 
 ---
 
 ## 1. Revenue Per User Per Month
 
-| Plan  | Price/User/Month | Max Team Size |
-|-------|----------------:|:-------------:|
-| Basic | $5              | 5             |
-| Pro   | $10             | 25            |
-| Team  | $20             | 100           |
+| Plan  | Monthly Price | Annual Price (per month) | Min Users | Max Team Size |
+|-------|-------------:|-------------------------:|:---------:|:-------------:|
+| Pro   | $25          | $20                      | 1         | 25            |
+| Team  | $25          | $20                      | 5         | 100           |
+| Enterprise | Custom  | Custom                   | Custom    | Unlimited     |
 
-All plans include a 14-day free trial (trial users get Pro-level access).
+All plans include a 14-day free trial. Pro and Team are the same per-user price — Team requires a 5-user minimum and unlocks team-level features (dashboards, playbooks, handoff, admin controls). Enterprise is sales-led, not self-serve.
 
 ---
 
@@ -50,8 +50,7 @@ All AI features use **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`).
 
 | Plan  | Features Included | Est. API Cost/User/Month |
 |-------|-------------------|-------------------------:|
-| Basic | Commitment detection, completion, basic chat | **$0.25 - $0.40** |
-| Pro   | + Drafts, coaching, themes, meetings, Hey Wren, email classification | **$0.45 - $0.75** |
+| Pro   | All AI features: commitment detection, completion, drafts, coaching, themes, meetings, Hey Wren, email classification, chat | **$0.45 - $0.75** |
 | Team  | Same AI features as Pro (Team adds dashboards/admin, not more AI) | **$0.45 - $0.75** |
 
 **Key cost optimizations already in place:**
@@ -151,18 +150,12 @@ Estimated emails per user per month:
 
 **Standard rate: 2.9% + $0.30 per transaction** (monthly subscription).
 
-| Plan | Price | Stripe Fee/User/Month | Net Revenue |
-|------|------:|----------------------:|------------:|
-| Basic | $5.00 | $0.45 (8.9%) | $4.55 |
-| Pro | $10.00 | $0.59 (5.9%) | $9.41 |
-| Team | $20.00 | $0.88 (4.4%) | $19.12 |
+| Billing | Price/User/Mo | Stripe Fee/User/Month | Net Revenue |
+|---------|-------------:|----------------------:|------------:|
+| Monthly | $25.00 | $1.03 (4.1%) | $23.97 |
+| Annual | $20.00 ($240/yr) | $0.61 (3.1%) | $19.39 |
 
-Annual billing (recommended to push) reduces Stripe overhead significantly:
-| Plan | Annual Price | Stripe Fee/Year | Effective Monthly Fee | Net Revenue/Mo |
-|------|------------:|----------------:|----------------------:|---------------:|
-| Basic | $50 | $1.75 (3.5%) | $0.15 | $4.85 |
-| Pro | $100 | $3.20 (3.2%) | $0.27 | $9.73 |
-| Team | $200 | $6.10 (3.1%) | $0.51 | $19.49 |
+Annual billing is significantly more efficient for both Stripe fees and cash flow.
 
 ### 2.7 Nango (Integration Auth Orchestration)
 
@@ -181,50 +174,52 @@ Manages OAuth token refresh for Slack, Outlook, Zoom, Google Meet.
 
 ## 3. Total Cost Per User Per Month
 
-### At 500 Users (Current Beta Scale)
+Both Pro and Team have identical per-user costs (same AI features). Team just requires a 5-user minimum and unlocks team-management features that have negligible marginal cost.
 
-| Cost Category | Basic | Pro | Team |
-|---------------|------:|----:|-----:|
-| Claude API | $0.35 | $0.60 | $0.60 |
-| Supabase (amortized) | $0.07 | $0.07 | $0.07 |
-| Vercel (amortized) | $0.05 | $0.05 | $0.05 |
-| Inngest (amortized) | $0.40 | $0.40 | $0.40 |
-| Resend | $0.04 | $0.04 | $0.04 |
-| Stripe (monthly billing) | $0.45 | $0.59 | $0.88 |
-| Nango (amortized) | $0.04 | $0.04 | $0.04 |
-| **Total COGS/User** | **$1.40** | **$1.79** | **$2.08** |
-| **Revenue/User** | **$5.00** | **$10.00** | **$20.00** |
-| **Gross Margin** | **$3.60 (72%)** | **$8.21 (82%)** | **$17.92 (90%)** |
+### At 500 Users (Current Beta Scale) — Monthly Billing
 
-### At 5,000 Users (Growth Target)
+| Cost Category | Cost/User |
+|---------------|----------:|
+| Claude API | $0.60 |
+| Supabase (amortized) | $0.07 |
+| Vercel (amortized) | $0.05 |
+| Inngest (amortized) | $0.40 |
+| Resend | $0.04 |
+| Stripe (monthly @ $25) | $1.03 |
+| Nango (amortized) | $0.04 |
+| **Total COGS/User** | **$2.23** |
+| **Revenue/User (monthly)** | **$25.00** |
+| **Gross Margin** | **$22.77 (91%)** |
 
-| Cost Category | Basic | Pro | Team |
-|---------------|------:|----:|-----:|
-| Claude API | $0.30 | $0.55 | $0.55 |
-| Supabase (amortized) | $0.025 | $0.025 | $0.025 |
-| Vercel (amortized) | $0.02 | $0.02 | $0.02 |
-| Inngest (amortized) | $0.15 | $0.15 | $0.15 |
-| Resend | $0.012 | $0.012 | $0.012 |
-| Stripe (monthly billing) | $0.45 | $0.59 | $0.88 |
-| Nango (amortized) | $0.03 | $0.03 | $0.03 |
-| **Total COGS/User** | **$0.99** | **$1.38** | **$1.67** |
-| **Revenue/User** | **$5.00** | **$10.00** | **$20.00** |
-| **Gross Margin** | **$4.01 (80%)** | **$8.62 (86%)** | **$18.33 (92%)** |
+### At 5,000 Users (Growth Target) — Mixed Billing (60% annual, 40% monthly)
 
-### At 50,000 Users (Scale)
+| Cost Category | Cost/User |
+|---------------|----------:|
+| Claude API | $0.55 |
+| Supabase (amortized) | $0.025 |
+| Vercel (amortized) | $0.02 |
+| Inngest (amortized) | $0.15 |
+| Resend | $0.012 |
+| Stripe (blended) | $0.78 |
+| Nango (amortized) | $0.03 |
+| **Total COGS/User** | **$1.57** |
+| **Blended ARPU** | **$22.00** |
+| **Gross Margin** | **$20.43 (93%)** |
 
-| Cost Category | Basic | Pro | Team |
-|---------------|------:|----:|-----:|
-| Claude API | $0.25 | $0.50 | $0.50 |
-| Supabase (amortized) | $0.01 | $0.01 | $0.01 |
-| Vercel (amortized) | $0.01 | $0.01 | $0.01 |
-| Inngest (amortized) | $0.08 | $0.08 | $0.08 |
-| Resend | $0.01 | $0.01 | $0.01 |
-| Stripe (annual billing) | $0.15 | $0.27 | $0.51 |
-| Nango (amortized) | $0.01 | $0.01 | $0.01 |
-| **Total COGS/User** | **$0.52** | **$0.89** | **$1.13** |
-| **Revenue/User** | **$5.00** | **$10.00** | **$20.00** |
-| **Gross Margin** | **$4.48 (90%)** | **$9.11 (91%)** | **$18.87 (94%)** |
+### At 50,000 Users (Scale) — Mostly Annual (80% annual, 20% monthly)
+
+| Cost Category | Cost/User |
+|---------------|----------:|
+| Claude API | $0.50 |
+| Supabase (amortized) | $0.01 |
+| Vercel (amortized) | $0.01 |
+| Inngest (amortized) | $0.08 |
+| Resend | $0.01 |
+| Stripe (blended) | $0.69 |
+| Nango (amortized) | $0.01 |
+| **Total COGS/User** | **$1.31** |
+| **Blended ARPU** | **$21.00** |
+| **Gross Margin** | **$19.69 (94%)** |
 
 ---
 
@@ -232,9 +227,9 @@ Manages OAuth token refresh for Slack, Outlook, Zoom, Google Meet.
 
 | Metric | 500 Users | 5,000 Users | 50,000 Users |
 |--------|-----------|-------------|--------------|
-| **Blended COGS/user** (assuming 30% Basic, 50% Pro, 20% Team) | ~$1.73 | ~$1.24 | ~$0.79 |
-| **Blended ARPU** | ~$11.00 | ~$11.00 | ~$11.00 |
-| **Blended Gross Margin** | **~84%** | **~89%** | **~93%** |
+| **COGS/user** | ~$2.23 | ~$1.57 | ~$1.31 |
+| **Blended ARPU** | ~$25.00 | ~$22.00 | ~$21.00 |
+| **Gross Margin** | **~91%** | **~93%** | **~94%** |
 
 ---
 
@@ -243,13 +238,13 @@ Manages OAuth token refresh for Slack, Outlook, Zoom, Google Meet.
 The Claude API represents **40-60% of per-user variable costs**. Key risk factors:
 
 ### 5.1 Power Users
-A user with 3x normal Slack volume (~1,500 messages/month) could generate ~$1.50-2.00/month in API costs. This is still well within margin for Pro ($10) and Team ($20), but compresses Basic margins to ~60%.
+A user with 3x normal Slack volume (~1,500 messages/month) could generate ~$1.50-2.00/month in API costs. At $25/user, this still yields 92%+ margin. No risk at this price point.
 
 ### 5.2 Meeting Transcript Volume
-Meeting transcripts are the most token-heavy feature (~2,000-5,000 input tokens each). A heavy user processing 20+ meetings/month could add ~$0.15/month. Minimal risk since this is Pro+ only ($10+).
+Meeting transcripts are the most token-heavy feature (~2,000-5,000 input tokens each). A heavy user processing 20+ meetings/month could add ~$0.15/month. Negligible against $25 ARPU.
 
 ### 5.3 Wren Chat Usage
-Chat is the most unpredictable cost — context-heavy system prompts (~1,500 tokens) on every message. 20 messages/month = ~$0.04, but a power user sending 100+ messages could reach ~$0.20. Still negligible against $10+ plans.
+Chat is the most unpredictable cost — context-heavy system prompts (~1,500 tokens) on every message. 20 messages/month = ~$0.04, but a power user sending 100+ messages could reach ~$0.20. Still negligible against $25 ARPU.
 
 ### 5.4 API Price Reductions
 Anthropic has historically reduced API pricing. Haiku pricing has already dropped significantly. Each future price reduction directly improves margins. This is a tailwind, not a risk.
@@ -278,28 +273,35 @@ Anthropic has historically reduced API pricing. Haiku pricing has already droppe
 
 ---
 
-## 7. Pricing Model Assessment
+## 7. Pricing Model Assessment (Updated — Two-Tier Model)
 
-### Current pricing supports high margins at all scales:
+### New structure: Pro ($25/$20) + Team ($25/$20 with 5-seat min) + Enterprise (custom)
 
 | Question | Answer |
 |----------|--------|
-| Does Basic ($5) cover costs? | Yes. Even at 500 users, gross margin is 72%. At scale, 90%. |
-| Does Pro ($10) support high margins? | Yes. 82-91% gross margin across all scales. Strong. |
-| Does Team ($20) support high margins? | Yes. 90-94% gross margin. Excellent. |
-| Is there room to lower prices? | Pro could go to $8 and still maintain 75%+ margins at scale. Basic is tighter — $5 is the floor. |
-| Should prices increase? | Not necessary for margin. Consider increasing Team to $25 if adding more AI-heavy team features (team-wide analytics, cross-team insights). |
-| Biggest margin risk? | Basic plan power users at small scale. At 100 users a Basic-heavy user mix could push blended margins below 70%. |
+| Does $25/mo (monthly) support high margins? | Yes. 91%+ gross margin even at beta scale. COGS is ~$2.23/user. |
+| Does $20/mo (annual) still support high margins? | Yes. 93-94% gross margin at scale. Annual billing also reduces Stripe fees. |
+| Is the 5-user minimum for Team worth it? | Yes. Guarantees $100/mo minimum revenue per team, covering any fixed overhead. Team features (dashboards, playbooks) are low marginal cost. |
+| Is there room to lower prices later? | Significant room. Could drop to $15/mo annual and still maintain 85%+ margins at scale. Useful for competitive pressure or market expansion. |
+| What about legacy Basic ($5) users? | They are automatically treated as Pro in the new model. These users got a massive upgrade — consider a migration email celebrating the change. |
+| Biggest margin risk? | Nearly none. At $20-25/user, even extreme power users (3x Slack volume + heavy chat) only cost ~$2.50/month. Margins stay above 88%. |
 
-### Recommendations:
-1. **Push Pro as default**: Pro has the best margin/value ratio. The feature set justifies $10 and margins are excellent.
-2. **Consider Basic at $6-7**: The $5 price point is tight at small scale. $7/user maintains psychological affordability while improving early-stage margins by ~15 percentage points.
-3. **Annual billing discount (15-20%)**: Push annual plans aggressively — saves on Stripe fees and improves cash flow.
-4. **Team plan minimum seats**: Consider a minimum of 5 seats ($100/month minimum) for Team tier to cover the fixed cost overhead of team features.
-5. **Implement Anthropic Batch API**: For non-real-time workloads, this is the single highest-impact cost optimization available — estimated 15-25% reduction in total Claude API spend.
+### Key advantages of the new model:
+1. **Simplified pricing**: Two self-serve plans reduces decision paralysis. Same price for Pro and Team — the upgrade trigger is team size (5+), not cost.
+2. **Higher ARPU**: $25 (monthly) / $20 (annual) vs. old blended ~$11. Revenue per user more than doubles.
+3. **Massive margins**: 91-94% gross margins across all scales. No tier has margin pressure.
+4. **Annual push**: 20% discount ($25 -> $20) is compelling. At 80% annual adoption, blended ARPU is ~$21 with lower Stripe overhead.
+5. **Enterprise upside**: Custom pricing for large orgs opens high-ACV deals without cannibalizing self-serve.
+
+### Remaining optimization opportunities:
+1. **Anthropic Batch API**: For non-real-time workloads (daily drafts, email scans), use the Batch API at 50% discount. Estimated ~$0.10-0.15/user/month savings.
+2. **Monitor prompt caching hit rates**: Maximize cache reuse to keep input costs minimal.
+3. **Team minimum enforcement**: Ensure Stripe checkout enforces the 5-seat minimum for Team plans (quantity >= 5).
 
 ---
 
 ## 8. Summary
 
-HeyWren's cost structure is **SaaS-healthy** with strong unit economics across all tiers. The combination of aggressive AI cost optimization (3-tier filtering, Haiku model, prompt caching, batching) and a serverless infrastructure stack means costs scale sub-linearly while revenue scales linearly. At the current beta scale (~500 users), blended gross margins are already ~84%, improving to ~93% at 50K users. The pricing model is well-calibrated and supports the high-margin target.
+HeyWren's cost structure is **exceptional** with the new two-tier pricing model. At $25/mo (monthly) or $20/mo (annual), per-user COGS of ~$1.30-2.23 yields **91-94% gross margins** across all scales. The combination of aggressive AI cost optimization (3-tier filtering, Haiku model, prompt caching, batching) and a serverless infrastructure stack means costs scale sub-linearly while revenue scales linearly.
+
+The simplified Pro/Team/Enterprise structure eliminates the low-margin Basic tier entirely, more than doubles ARPU, and reduces pricing complexity. There is substantial headroom to absorb future feature additions, API cost increases, or competitive price reductions while maintaining 85%+ margins.

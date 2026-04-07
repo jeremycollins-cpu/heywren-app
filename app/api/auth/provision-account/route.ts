@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // ─── 2. EXTRACT METADATA ────────────────────────────────────────────
     const meta = checkoutSession.metadata || {}
     const userId = meta.userId
-    const plan = meta.plan || 'basic'
+    const plan = meta.plan || 'pro'
     const joiningTeamId = meta.joiningTeamId || null
     const companyName = meta.companyName || 'My Team'
 

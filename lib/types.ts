@@ -28,7 +28,7 @@ export interface Team {
   slack_team_id?: string
   stripe_customer_id?: string
   stripe_subscription_id?: string
-  subscription_plan: 'trial' | 'basic' | 'pro' | 'team'
+  subscription_plan: 'trial' | 'basic' | 'pro' | 'team' // 'basic' is legacy — treated as 'pro'
   subscription_status: 'trialing' | 'active' | 'past_due' | 'cancelled' | 'cancelling' | 'incomplete'
   trial_ends_at?: string
   max_users: number
