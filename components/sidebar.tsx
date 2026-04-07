@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
 import { WrenIcon, WrenFullLogo } from '@/components/logo'
 import { usePlan } from '@/lib/contexts/plan-context'
-import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey } from '@/lib/plans'
+import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey, type DisplayablePlan } from '@/lib/plans'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
@@ -281,7 +281,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     if (!feature) return { locked: false, requiredPlan: '' }
     const locked = !hasAccess(plan, feature.minPlan)
     const requiredPlan = locked
-      ? PLAN_DISPLAY[feature.minPlan as Exclude<PlanKey, 'trial'>]?.name || feature.minPlan
+      ? PLAN_DISPLAY[feature.minPlan as DisplayablePlan]?.name || feature.minPlan
       : ''
     return { locked, requiredPlan }
   }
