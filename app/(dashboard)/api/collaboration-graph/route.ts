@@ -50,48 +50,24 @@ export async function GET(request: NextRequest) {
 
     const admin = getAdminClient()
 
-    // Try organization_members first, fall back to team_members
     const { data: callerMembership } = await admin
       .from('organization_members')
-      .select('organization_id, department_id, team_id, role')
+      .select('organization_id, role')
       .eq('user_id', callerId)
       .limit(1)
-      .maybeSingle()
+      .single()
 
-    let members: MemberProfile[]
-
-    if (callerMembership?.organization_id) {
-      // Org-based: get all org members
-      const { data: orgMembers } = await admin
-        .from('organization_members')
-        .select('user_id, department_id, team_id, role, profiles(display_name, avatar_url, job_title)')
-        .eq('organization_id', callerMembership.organization_id) as { data: MemberProfile[] | null }
-      members = orgMembers || []
-    } else {
-      // Fallback: team-based (no org hierarchy — use team_members + profiles)
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('current_team_id')
-        .eq('id', callerId)
-        .single()
-
-      if (!profile?.current_team_id) {
-        return NextResponse.json({ error: 'No team found' }, { status: 404 })
-      }
-
-      const { data: teamMembers } = await admin
-        .from('team_members')
-        .select('user_id, role, team_id, profiles(display_name, avatar_url, job_title)')
-        .eq('team_id', profile.current_team_id)
-
-      members = (teamMembers || []).map((m: any) => ({
-        user_id: m.user_id,
-        department_id: null,
-        team_id: m.team_id,
-        role: m.role || 'member',
-        profiles: m.profiles,
-      }))
+    if (!callerMembership || !MANAGER_ROLES.includes(callerMembership.role)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
+
+    const orgId = callerMembership.organization_id
+
+    // Get org members
+    const { data: members } = await admin
+      .from('organization_members')
+      .select('user_id, department_id, team_id, role, profiles(display_name, avatar_url, job_title)')
+      .eq('organization_id', orgId) as { data: MemberProfile[] | null }
 
     if (!members || members.length === 0) {
       return NextResponse.json({
@@ -113,29 +89,24 @@ export async function GET(request: NextRequest) {
     const memberMap = new Map<string, MemberProfile>()
     for (const m of members) memberMap.set(m.user_id, m)
 
-    // Try pre-computed edges first (only if org-based)
+    // Try pre-computed edges first
+    const now = new Date()
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+      .toISOString().split('T')[0]
+
+    const { data: precomputed } = await admin
+      .from('collaboration_edges')
+      .select('user_a, user_b, email_count, chat_count, meeting_count, commitment_count, strength')
+      .eq('organization_id', orgId)
+      .eq('month_start', monthStart)
+
     let edges: CollabEdge[]
-    const orgId = callerMembership?.organization_id
 
-    if (orgId) {
-      const now = new Date()
-      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-        .toISOString().split('T')[0]
-
-      const { data: precomputed } = await admin
-        .from('collaboration_edges')
-        .select('user_a, user_b, email_count, chat_count, meeting_count, commitment_count, strength')
-        .eq('organization_id', orgId)
-        .eq('month_start', monthStart)
-
-      if (precomputed && precomputed.length > 0) {
-        edges = precomputed as CollabEdge[]
-      } else {
-        edges = await computeLiveEdges(admin, memberIds, memberMap, orgId)
-      }
+    if (precomputed && precomputed.length > 0) {
+      edges = precomputed as CollabEdge[]
     } else {
-      // Team-based: always compute live
-      edges = await computeLiveEdges(admin, memberIds, memberMap, null)
+      // Compute live from last 30 days of data
+      edges = await computeLiveEdges(admin, memberIds, orgId)
     }
 
     // Build nodes
@@ -194,8 +165,7 @@ export async function GET(request: NextRequest) {
 async function computeLiveEdges(
   admin: any, // eslint-disable-line
   memberIds: string[],
-  memberMap: Map<string, MemberProfile>,
-  _orgId: string | null
+  _orgId: string
 ): Promise<CollabEdge[]> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const edgeMap = new Map<string, { email: number; chat: number; meeting: number; commitment: number }>()
@@ -207,22 +177,20 @@ async function computeLiveEdges(
     edgeMap.get(key)![channel]++
   }
 
-  // Query the actual communication data tables (not just missed/flagged items)
-  const [emailsResult, slackResult, meetingsResult, commitmentsResult] = await Promise.all([
-    // outlook_messages: all synced emails (the primary email data source)
+  // Email interactions
+  const [emailsResult, chatsResult, meetingsResult, commitmentsResult] = await Promise.all([
     admin
-      .from('outlook_messages')
-      .select('user_id, from_email, to_recipients')
+      .from('missed_emails')
+      .select('user_id, from_email')
       .in('user_id', memberIds)
       .gte('received_at', thirtyDaysAgo)
-      .limit(2000),
-    // slack_messages: all processed Slack messages
+      .limit(1000),
     admin
-      .from('slack_messages')
-      .select('team_id, user_id, sender_name, metadata')
+      .from('missed_chats')
+      .select('user_id, sender_user_id')
       .in('user_id', memberIds)
-      .gte('created_at', thirtyDaysAgo)
-      .limit(2000),
+      .gte('sent_at', thirtyDaysAgo)
+      .limit(1000),
     admin
       .from('meeting_transcripts')
       .select('user_id, attendees')
@@ -248,58 +216,24 @@ async function computeLiveEdges(
     if (p.email) emailToUser.set(p.email.toLowerCase(), p.id)
   }
 
-  // Process emails from outlook_messages
-  // Edge: from_email sender → user_id (recipient), and also parse to_recipients for reverse edges
-  for (const email of (emailsResult.data || []) as Array<{ user_id: string; from_email: string; to_recipients: string | null }>) {
-    // Sender → recipient
+  // Process emails
+  for (const email of (emailsResult.data || []) as Array<{ user_id: string; from_email: string }>) {
     const senderId = emailToUser.get(email.from_email?.toLowerCase() || '')
     if (senderId) addEdge(email.user_id, senderId, 'email')
-
-    // Also check if any team members are in to_recipients (catches emails the user sent to teammates)
-    if (email.to_recipients) {
-      const recipientEmails = email.to_recipients.toLowerCase().split(',').map(s => s.trim())
-      for (const recipEmail of recipientEmails) {
-        // Match against known member emails (partial match since to_recipients may include names)
-        for (const [knownEmail, uid] of emailToUser) {
-          if (recipEmail.includes(knownEmail) && uid !== email.user_id) {
-            addEdge(email.user_id, uid, 'email')
-          }
-        }
-      }
-    }
   }
 
-  // Process Slack messages
-  // slack_messages has user_id (whose inbox it belongs to) and metadata may have sender info
-  // Also use slack_user_id mappings from profiles or integrations
-  const { data: slackProfiles } = await admin
-    .from('profiles')
-    .select('id, slack_user_id')
-    .in('id', memberIds)
-    .not('slack_user_id', 'is', null)
+  // Process chats — need to map Slack user IDs to our user IDs
+  const { data: slackMappings } = await admin
+    .from('slack_user_mappings')
+    .select('slack_user_id, user_id')
   const slackToUser = new Map<string, string>()
-  for (const p of (slackProfiles || []) as Array<{ id: string; slack_user_id: string | null }>) {
-    if (p.slack_user_id) slackToUser.set(p.slack_user_id, p.id)
+  for (const m of slackMappings || []) {
+    slackToUser.set(m.slack_user_id, m.user_id)
   }
 
-  for (const msg of (slackResult.data || []) as Array<{ user_id: string; sender_name: string; metadata: any }>) {
-    // Try to match sender to a team member via slack_user_id in metadata
-    const senderSlackId = msg.metadata?.sender_slack_id || msg.metadata?.slackUserId
-    if (senderSlackId) {
-      const senderId = slackToUser.get(senderSlackId)
-      if (senderId) addEdge(msg.user_id, senderId, 'chat')
-    }
-    // Also try matching sender_name to profile display_name
-    if (msg.sender_name) {
-      for (const [uid, member] of memberMap) {
-        const profile = member.profiles as { display_name: string } | null
-        if (profile?.display_name && uid !== msg.user_id &&
-            msg.sender_name.toLowerCase().includes(profile.display_name.toLowerCase().split(' ')[0])) {
-          addEdge(msg.user_id, uid, 'chat')
-          break
-        }
-      }
-    }
+  for (const chat of (chatsResult.data || []) as Array<{ user_id: string; sender_user_id: string }>) {
+    const senderId = slackToUser.get(chat.sender_user_id)
+    if (senderId) addEdge(chat.user_id, senderId, 'chat')
   }
 
   // Process meetings (attendees is JSONB array)
@@ -360,19 +294,19 @@ function computeInsights(
   const siloThreshold = Math.max(1, Math.floor(avgConnections * 0.5))
   const siloed = nodes
     .filter(n => n.connectionCount < siloThreshold)
-    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount }))
+    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount }))
 
   // Connectors: most connections (top 10%)
   const sortedByConnections = [...nodes].sort((a, b) => b.connectionCount - a.connectionCount)
   const connectorCount = Math.max(1, Math.ceil(nodes.length * 0.1))
   const connectors = sortedByConnections.slice(0, connectorCount)
-    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount, totalInteractions: n.totalInteractions }))
+    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount, interactions: n.totalInteractions }))
 
   // Bottlenecks: people who appear in many edges with high strength (everyone depends on them)
   const bottleneckThreshold = avgConnections * 1.5
   const bottlenecks = nodes
     .filter(n => n.connectionCount > bottleneckThreshold && n.avgStrength > 0.5)
-    .map(n => ({ userId: n.userId, name: n.name, connectionCount: n.connectionCount, avgStrength: n.avgStrength }))
+    .map(n => ({ userId: n.userId, name: n.name, connections: n.connectionCount, avgStrength: n.avgStrength }))
 
   // Cross-department collaboration: count edges between different departments
   const deptMap = new Map<string, string | null>()
