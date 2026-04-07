@@ -18,7 +18,7 @@ export default function PlanPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<DisplayablePlan | null>(null)
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>('annual')
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly')
   const [joiningTeamName, setJoiningTeamName] = useState<string | null>(null)
   const [joiningTeamId, setJoiningTeamId] = useState<string | null>(null)
 

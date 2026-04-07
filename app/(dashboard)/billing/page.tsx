@@ -70,7 +70,7 @@ export default function BillingPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState<DisplayablePlan | null>(null)
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>('annual')
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly')
   const [promoCode, setPromoCode] = useState('')
   const [promoStatus, setPromoStatus] = useState<{ valid: boolean; message: string; percentOff?: number; amountOff?: number } | null>(null)
   const [promoLoading, setPromoLoading] = useState(false)

@@ -14,14 +14,14 @@ interface CheckoutRequest {
   promoCode?: string
 }
 
-const PRICE_IDS: Record<string, Record<string, string>> = {
+const PRICE_IDS: Record<string, Record<string, string | undefined>> = {
   pro: {
-    monthly: process.env.STRIPE_PRO_MONTHLY_PRICE_ID!,
-    annual: process.env.STRIPE_PRO_ANNUAL_PRICE_ID!,
+    monthly: process.env.STRIPE_PRO_PRICE_ID!,
+    annual: process.env.STRIPE_PRO_ANNUAL_PRICE_ID || undefined,
   },
   team: {
-    monthly: process.env.STRIPE_TEAM_MONTHLY_PRICE_ID!,
-    annual: process.env.STRIPE_TEAM_ANNUAL_PRICE_ID!,
+    monthly: process.env.STRIPE_TEAM_PRICE_ID!,
+    annual: process.env.STRIPE_TEAM_ANNUAL_PRICE_ID || undefined,
   },
 }
 
@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid billing interval' }, { status: 400 })
     }
 
-    const priceId = PRICE_IDS[plan]?.[billingInterval]
+    // Fall back to monthly if annual price isn't configured yet
+    const priceId = PRICE_IDS[plan]?.[billingInterval] || PRICE_IDS[plan]?.monthly
     if (!priceId) {
       return NextResponse.json({ error: 'Price ID not configured for this plan' }, { status: 500 })
     }
