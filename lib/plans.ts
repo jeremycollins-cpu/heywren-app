@@ -89,6 +89,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   calendar_sync:    def('calendar_sync',    'Calendar Sync',      'Sync your calendar for meeting-aware workflows.',                'pro'),
   meeting_transcripts: def('meeting_transcripts', 'Meeting Transcripts', 'Upload meeting transcripts to detect commitments. Say "Hey Wren" in meetings to flag action items.', 'pro', '/meetings'),
   insights:         def('insights',         'Commitment Insights', 'Behavioral pattern analysis and actionable insights from your commitment history.', 'pro',  '/insights'),
+  unsubscribe:      def('unsubscribe',      'Unsubscribe',        'One-click unsubscribe from newsletters and marketing emails.',    'pro',  '/unsubscribe'),
 
   // ── Team (5-user minimum) ──────────────────────────────────────────
   playbooks:        def('playbooks',        'Playbooks',          'Automate workflows with trigger-based playbooks.',               'team', '/playbooks'),
@@ -162,6 +163,7 @@ export const PLAN_DISPLAY: Record<DisplayablePlan, PlanDisplay> = {
       'Commitment insights & patterns',
       'AI coaching recommendations',
       'Missed email surfacing',
+      'One-click unsubscribe',
       'Wren Score reliability index',
       'Weekly review & reflection',
       'Rapid triage mode',

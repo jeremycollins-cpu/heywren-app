@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
 import { WrenIcon, WrenFullLogo } from '@/components/logo'
@@ -10,7 +10,7 @@ import { usePlan } from '@/lib/contexts/plan-context'
 import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey, type DisplayablePlan } from '@/lib/plans'
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
-  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning,
+  Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning, MailX,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network,
@@ -140,13 +140,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           setBadges({
             overdue: overdueCount,
             urgent: urgentCount,
-            draftQueue: draftResult.data?.length || 0,
+            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
             missedEmails: new Set((missedResult.data || []).map((e: any) => {
               const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
               return s || e.id
             })).size,
-            missedChats: missedChatsResult.data?.length || 0,
-            waitingRoom: waitingResult.data?.length || 0,
+            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
+            waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
           })
         }
@@ -159,7 +159,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   }, [supabase])
 
   // Re-fetch badge counts when commitments or action items change in real-time
+  // Throttled: minimum 30s between refetches to reduce Disk IO pressure
+  const lastRefetchRef = useRef(0)
   const refetchBadges = useCallback(() => {
+    const now = Date.now()
+    if (now - lastRefetchRef.current < 30000) return // throttle: max once per 30s
+    lastRefetchRef.current = now
+
     const timer = setTimeout(() => {
       const fetchUserData = async () => {
         try {
@@ -175,10 +181,10 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
 
           const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
             supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
-            supabase.from('drafts').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
+            supabase.from('drafts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('missed_chats').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('awaiting_replies').select('id').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { data: [] } : res),
+            supabase.from('missed_chats').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
+            supabase.from('awaiting_replies').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { count: 0, data: [] } : res),
           ])
 
           const commitments = commitResult.data || []
@@ -186,13 +192,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           setBadges({
             overdue: commitments.filter(c => c.status === 'overdue').length,
             urgent: commitments.filter(c => c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000).length,
-            draftQueue: draftResult.data?.length || 0,
+            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
             missedEmails: new Set((missedResult.data || []).map((e: any) => {
               const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
               return s || e.id
             })).size,
-            missedChats: missedChatsResult.data?.length || 0,
-            waitingRoom: waitingResult.data?.length || 0,
+            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
+            waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
           })
         } catch (err) {
@@ -237,6 +243,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
+        { href: '/unsubscribe', label: 'Unsubscribe', icon: MailX, tourId: 'nav-unsubscribe', badge: 0, badgeColor: '' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
         { href: '/waiting-room', label: 'Waiting Room', icon: Hourglass, tourId: 'nav-waiting-room', badge: badges.waitingRoom, badgeColor: 'bg-amber-500' },
         { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff', badge: 0, badgeColor: '' },
