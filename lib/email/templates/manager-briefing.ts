@@ -19,6 +19,12 @@ export interface ManagerBriefingData {
   burnoutAlerts: number
   unresolvedAlerts: number
   newAchievements: number
+  // Team health
+  healthScore?: number | null
+  healthDelta?: number | null
+  // Workload
+  overloadedMembers?: number
+  lowestPulseEnergy?: number | null
   dashboardUrl: string
   peopleInsightsUrl: string
   unsubscribeUrl: string
@@ -88,11 +94,45 @@ ${sectionHeading('Top Performers')}
 </table>`
     : ''
 
+  // Team health score hero (if available)
+  const healthHtml = data.healthScore != null
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+  <tr>
+    <td style="background:${data.healthScore >= 75 ? 'linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)' : data.healthScore >= 50 ? 'linear-gradient(135deg,#fefce8 0%,#fef3c7 100%)' : 'linear-gradient(135deg,#fef2f2 0%,#fecaca 100%)'};padding:16px 20px;border-radius:12px;border:1px solid ${data.healthScore >= 75 ? '#a7f3d0' : data.healthScore >= 50 ? '#fde68a' : '#fecaca'};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="vertical-align:middle;width:60px;">
+            <div style="font-size:28px;font-weight:800;color:${data.healthScore >= 75 ? '#059669' : data.healthScore >= 50 ? '#d97706' : '#dc2626'};">${data.healthScore}</div>
+          </td>
+          <td style="vertical-align:middle;">
+            <div style="font-size:14px;font-weight:600;color:#1a1a2e;">Team Health Score</div>
+            <div style="font-size:12px;color:#6b7280;">${data.healthScore >= 75 ? 'Performing well' : data.healthScore >= 50 ? 'Some areas need attention' : 'Several signals need action'}${data.healthDelta != null && data.healthDelta !== 0 ? ` · <span style="color:${data.healthDelta > 0 ? '#059669' : '#dc2626'}">${data.healthDelta > 0 ? '↑+' : '↓'}${data.healthDelta} from last week</span>` : ''}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`
+    : ''
+
+  // Workload warning
+  const workloadHtml = (data.overloadedMembers && data.overloadedMembers > 0) || (data.lowestPulseEnergy != null && data.lowestPulseEnergy <= 2)
+    ? `${sectionHeading('Signals to Watch')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:0 12px 12px 0;margin:12px 0;">
+  <tr><td>
+    ${data.overloadedMembers && data.overloadedMembers > 0 ? `<p style="margin:0 0 4px;color:#92400e;font-size:14px;line-height:1.6;"><strong>${data.overloadedMembers}</strong> team member${data.overloadedMembers !== 1 ? 's' : ''} overloaded (2x+ average workload)</p>` : ''}
+    ${data.lowestPulseEnergy != null && data.lowestPulseEnergy <= 2 ? `<p style="margin:0;color:#92400e;font-size:14px;line-height:1.6;">Lowest pulse energy this week: <strong>${data.lowestPulseEnergy}/5</strong> — may need a check-in</p>` : ''}
+  </td></tr>
+</table>`
+    : ''
+
   const body = `
 ${wrenGreeting(data.managerName, `Here's your team briefing for <strong>${data.orgName}</strong> — week of ${data.weekLabel}.`)}
+${healthHtml}
 ${stats}
 ${secondaryStats}
 ${alertsHtml}
+${workloadHtml}
 ${topPerformersHtml}
 ${divider()}
 ${ctaButton('Open Team Dashboard', data.dashboardUrl)}

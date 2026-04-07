@@ -72,6 +72,8 @@ interface BurnoutScore {
   riskScore: number
   riskLevel: 'low' | 'moderate' | 'high' | 'critical'
   signals: BurnoutSignals
+  prevRiskScore: number | null
+  riskDelta: number | null
 }
 
 interface BurnoutData {
@@ -433,7 +435,14 @@ function BurnoutTab({ data }: { data: BurnoutData | null }) {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <p className={`text-lg font-bold ${colors.text}`}>{person.riskScore}</p>
-                    <p className={`text-[10px] font-medium uppercase ${colors.text}`}>{person.riskLevel}</p>
+                    <div className="flex items-center justify-end gap-1">
+                      <p className={`text-[10px] font-medium uppercase ${colors.text}`}>{person.riskLevel}</p>
+                      {person.riskDelta !== null && person.riskDelta !== 0 && (
+                        <span className={`text-[10px] font-semibold ${person.riskDelta > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                          {person.riskDelta > 0 ? '↑' : '↓'}{Math.abs(person.riskDelta)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                 </div>

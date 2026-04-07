@@ -163,6 +163,40 @@ export const emailManagerBriefing = inngest.createFunction(
           const burnoutAlerts = (alerts || []).filter(a => a.alert_type === 'burnout_risk').length
           const unresolvedAlerts = (alerts || []).filter(a => a.status === 'new').length
 
+          // Compute team health score for email
+          const onTimeScore = Math.min(100, avgOnTimeRate) * 0.25
+          const responseScore = Math.min(100, avgResponseRate) * 0.20
+          const overdueRatio = scopedScores.length > 0 ? totalOverdue / scopedScores.length : 0
+          const overdueScore = Math.max(0, 100 - (overdueRatio * 200)) * 0.20
+          const participationPct = scopedScores.length > 0 ? Math.round((scopedScores.length / scopedScores.length) * 100) : 0
+          const participationScore = Math.min(100, participationPct) * 0.15
+          const streakPct = scopedScores.length > 0 ? Math.round((activeStreaks / scopedScores.length) * 100) : 0
+          const streakScore = Math.min(100, streakPct) * 0.10
+          const velocityScore = Math.min(100, totalCompleted > 0 ? Math.round((totalCompleted / scopedScores.length) * 50) : 0) * 0.10
+          const healthScore = Math.round(onTimeScore + responseScore + overdueScore + participationScore + streakScore + velocityScore)
+
+          // Previous week health (simplified)
+          const prevOnTime = scopedPrevScores.length > 0
+            ? Math.round(scopedPrevScores.reduce((s, sc) => s + (sc.total_points || 0), 0) / scopedPrevScores.length)
+            : null
+          const healthDelta = prevOnTime !== null ? healthScore - prevOnTime : null
+
+          // Workload: count overloaded members
+          const { data: openCommitments } = await supabase
+            .from('commitments')
+            .select('assignee_id')
+            .eq('organization_id', org.id)
+            .in('status', ['pending', 'in_progress', 'overdue'])
+            .is('deleted_at', null)
+
+          const loadCounts = new Map<string, number>()
+          for (const c of openCommitments || []) {
+            if (c.assignee_id) loadCounts.set(c.assignee_id, (loadCounts.get(c.assignee_id) || 0) + 1)
+          }
+          const loadValues = [...loadCounts.values()]
+          const avgLoad = loadValues.length > 0 ? loadValues.reduce((a, b) => a + b, 0) / loadValues.length : 0
+          const overloadedMembers = loadValues.filter(v => v > avgLoad * 2).length
+
           const { subject, html } = buildManagerBriefingEmail({
             managerName: profile.full_name?.split(' ')[0] || 'there',
             orgName: org.name,
@@ -179,6 +213,9 @@ export const emailManagerBriefing = inngest.createFunction(
             burnoutAlerts,
             unresolvedAlerts,
             newAchievements: (newAchievements || []).length,
+            healthScore,
+            healthDelta,
+            overloadedMembers,
             dashboardUrl: `${appUrl}/team-dashboard`,
             peopleInsightsUrl: `${appUrl}/people-insights`,
             unsubscribeUrl: `${appUrl}/settings?tab=notifications`,

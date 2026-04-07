@@ -292,6 +292,32 @@ export async function GET(request: NextRequest) {
     // Sort by risk score descending
     scores.sort((a: { riskScore: number }, b: { riskScore: number }) => b.riskScore - a.riskScore)
 
+    // Fetch previous month's burnout scores for trend comparison
+    const prevMonth = new Date()
+    prevMonth.setUTCMonth(prevMonth.getUTCMonth() - 1)
+    prevMonth.setUTCDate(1)
+    const prevMonthStr = prevMonth.toISOString().split('T')[0]
+
+    const { data: prevScores } = await admin
+      .from('burnout_risk_scores')
+      .select('user_id, risk_score')
+      .eq('organization_id', orgId)
+      .eq('month_start', prevMonthStr)
+
+    const prevScoreMap = new Map<string, number>()
+    for (const ps of prevScores || []) {
+      prevScoreMap.set(ps.user_id, ps.risk_score)
+    }
+
+    // Add trend data to each score
+    const scoresWithTrend = scores.map((s: { userId: string; riskScore: number }) => ({
+      ...s,
+      prevRiskScore: prevScoreMap.get(s.userId) ?? null,
+      riskDelta: prevScoreMap.has(s.userId)
+        ? s.riskScore - prevScoreMap.get(s.userId)!
+        : null,
+    }))
+
     // Summary stats
     const riskDistribution = {
       critical: scores.filter((s: { riskLevel: string }) => s.riskLevel === 'critical').length,
@@ -301,7 +327,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      scores,
+      scores: scoresWithTrend,
       riskDistribution,
       orgAvgRisk: scores.length > 0
         ? Math.round(scores.reduce((s: number, r: { riskScore: number }) => s + r.riskScore, 0) / scores.length)
