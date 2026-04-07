@@ -27,6 +27,12 @@ import { detectStaleCommitments } from '@/inngest/functions/detect-stale-commitm
 import { learnResponsePatterns } from '@/inngest/functions/learn-response-patterns'
 import { aggregateMonthlySentiment } from '@/inngest/functions/aggregate-monthly-sentiment'
 import { generateManagerAlerts } from '@/inngest/functions/generate-manager-alerts'
+import { emailWelcomeDrip } from '@/inngest/functions/email-welcome-drip'
+import { emailWeeklyRecap } from '@/inngest/functions/email-weekly-recap'
+import { emailNudgeFallback } from '@/inngest/functions/email-nudge-fallback'
+import { emailAchievement } from '@/inngest/functions/email-achievement'
+import { emailManagerBriefing } from '@/inngest/functions/email-manager-briefing'
+import { emailReengagement } from '@/inngest/functions/email-reengagement'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -53,5 +59,12 @@ export const { GET, POST, PUT } = serve({
     learnResponsePatterns,       // Monday 7 AM PT — learn user response patterns for smarter escalation
     aggregateMonthlySentiment,   // 1st of month 6 AM UTC — aggregate sentiment into culture snapshots
     generateManagerAlerts,       // Monday 7 AM UTC — proactive alerts for managers (burnout, overload, sentiment shifts)
+    // Email engagement
+    emailWelcomeDrip,            // Hourly — welcome drip sequence (Day 0, 1, 3, 7)
+    emailWeeklyRecap,            // Monday 8 AM UTC — personal weekly recap email
+    emailNudgeFallback,          // 10 AM weekdays — email nudge for overdue items (Slack fallback)
+    emailAchievement,            // Monday 9 AM UTC — achievement & streak celebration emails
+    emailManagerBriefing,        // Monday 9 AM UTC — manager weekly briefing email
+    emailReengagement,           // 11 AM daily — re-engagement email for 7+ day inactive users
   ],
 })
