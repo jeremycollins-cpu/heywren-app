@@ -688,6 +688,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
         friendlyName: 'HeyWren Authenticator',
+        issuer: 'HeyWren (heywren.ai)',
       })
       if (error) throw error
       setMfaQrCode(data.totp.qr_code)
