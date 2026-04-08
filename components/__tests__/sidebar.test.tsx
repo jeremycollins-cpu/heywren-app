@@ -91,6 +91,7 @@ jest.mock('lucide-react', () => {
     CalendarDays: createIcon('CalendarDays'),
     ShieldCheck: createIcon('ShieldCheck'),
     ShieldAlert: createIcon('ShieldAlert'),
+    AtSign: createIcon('AtSign'),
   }
 })
 

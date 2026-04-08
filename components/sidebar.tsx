@@ -14,6 +14,7 @@ import {
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
+  AtSign,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -221,6 +222,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/', label: 'Dashboard', icon: BarChart3, tourId: 'nav-dashboard', badge: badges.overdue > 0 ? badges.overdue : 0, badgeColor: 'bg-red-500' },
         { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments', badge: badges.openCommitments, badgeColor: 'bg-indigo-500' },
+        { href: '/wren-mentions', label: 'Wren Mentions', icon: AtSign, tourId: 'nav-wren-mentions', badge: 0, badgeColor: '' },
         { href: '/triage', label: 'Triage', icon: SlidersHorizontal, tourId: 'nav-triage', badge: 0, badgeColor: '' },
         { href: '/todos', label: 'To-Dos', icon: ListChecks, tourId: 'nav-todos', badge: 0, badgeColor: '' },
         { href: '/weekly', label: 'Weekly Review', icon: Calendar, tourId: 'nav-weekly', badge: 0, badgeColor: '' },
