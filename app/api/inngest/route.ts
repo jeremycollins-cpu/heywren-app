@@ -40,6 +40,7 @@ import { generateMeetingFollowups } from '@/inngest/functions/generate-meeting-f
 import { wrenMorningBrief } from '@/inngest/functions/wren-morning-brief'
 import { scanCalendarConflicts } from '@/inngest/functions/scan-calendar-conflicts'
 import { scanEmailThreats } from '@/inngest/functions/scan-email-threats'
+import { processBccEmail } from '@/inngest/functions/process-bcc-email'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -80,5 +81,6 @@ export const { GET, POST, PUT } = serve({
     wrenMorningBrief,            // 8:30 AM PT weekdays — personalized morning briefing via Slack DM
     scanCalendarConflicts,       // 7 AM PT weekdays — detect calendar conflicts against user boundaries
     scanEmailThreats,            // 7:30 AM PT daily — scan emails for phishing, scam, and impersonation
+    processBccEmail,             // On-demand — process emails BCC'd to wren@heywren.ai
   ],
 })

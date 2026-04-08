@@ -348,6 +348,39 @@ export const processSlackMention = inngest.createFunction(
       })
     }
 
+    // ── Step 6b: Record in wren_mentions ──
+    await step.run('record-wren-mention', async () => {
+      // Resolve Slack user → HeyWren user
+      let mentionUserId: string | null = null
+      if (user_id) {
+        const { data: slackProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('slack_user_id', user_id)
+          .maybeSingle()
+        mentionUserId = slackProfile?.id || null
+      }
+      if (!mentionUserId) mentionUserId = connectedBy
+
+      if (mentionUserId) {
+        const permalink = channel_id && ts
+          ? `https://slack.com/archives/${channel_id}/p${ts.replace('.', '')}`
+          : null
+
+        await supabase.from('wren_mentions').insert({
+          team_id: teamId,
+          user_id: mentionUserId,
+          channel: 'slack',
+          source_title: `#${channel_id}`,
+          source_snippet: text?.slice(0, 300) || null,
+          source_url: permalink,
+          participant_name: null, // Slack user names aren't available in the event payload
+          commitments_extracted: stored.length,
+          created_at: new Date().toISOString(),
+        })
+      }
+    })
+
     // ── Step 7: Reply in Slack with confirmation ──
     await step.run('reply-in-slack', async () => {
       const confirmationText = formatConfirmation(

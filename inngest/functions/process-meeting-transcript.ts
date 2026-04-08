@@ -144,6 +144,23 @@ export const processMeetingTranscript = inngest.createFunction(
       })
     }
 
+    // ── Step 2b: Record "Hey Wren" triggers in wren_mentions ──
+    if (heyWrenResults.triggers > 0) {
+      await step.run('record-hey-wren-mentions', async () => {
+        await supabase.from('wren_mentions').insert({
+          team_id: teamId,
+          user_id: userId,
+          channel: 'meeting',
+          source_title: transcript.title || 'Meeting transcript',
+          source_snippet: heyWrenResults.commitments[0]?.originalQuote?.slice(0, 300) || null,
+          source_ref: transcriptId,
+          participant_name: heyWrenResults.commitments[0]?.triggeredBy || null,
+          commitments_extracted: heyWrenCount,
+          created_at: transcript.created_at || new Date().toISOString(),
+        })
+      })
+    }
+
     // ── Step 3: Passive commitment detection on transcript chunks ──
     const passiveResults = await step.run('detect-passive-commitments', async () => {
       const chunks = chunkTranscript(transcript.transcript_text)
