@@ -13,7 +13,7 @@ import {
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning, MailX,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
-  SlidersHorizontal, Star, TrendingUp, Network, ListFilter,
+  SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -236,6 +236,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/wren-score', label: 'Wren Score', icon: Star, tourId: 'nav-wren-score', badge: 0, badgeColor: '' },
         { href: '/insights', label: 'Insights', icon: TrendingUp, tourId: 'nav-insights', badge: 0, badgeColor: '' },
         { href: '/achievements', label: 'Achievements', icon: Trophy, tourId: 'nav-achievements', badge: 0, badgeColor: '' },
+        { href: '/weekly-reflection', label: 'Weekly Reflection', icon: CalendarDays, tourId: 'nav-weekly-reflection', badge: 0, badgeColor: '' },
       ],
     },
     {

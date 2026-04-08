@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import UpgradeGate from '@/components/upgrade-gate'
+import { WrenSuggestionBanner } from '@/components/wren-suggestion-banner'
 
 interface EmailRule {
   id: string
@@ -143,6 +144,8 @@ export default function EmailRulesPage() {
             Refresh
           </button>
         </div>
+
+        <WrenSuggestionBanner page="email-rules" />
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">

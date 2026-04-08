@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import OrganizeEmailPopover from '@/components/organize-email-popover'
+import { WrenSuggestionBanner } from '@/components/wren-suggestion-banner'
 
 interface ThreadEmail {
   id: string
@@ -334,6 +335,8 @@ export default function MissedEmailsPage() {
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
         </div>
       )}
+
+      <WrenSuggestionBanner page="missed-emails" />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
