@@ -4,6 +4,14 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
+export interface SourceEvidence {
+  type: 'email' | 'meeting' | 'chat' | 'commitment'
+  title: string
+  date: string
+  participant: string
+  relevance: string
+}
+
 export interface WorkTheme {
   title: string
   summary: string
@@ -12,6 +20,7 @@ export interface WorkTheme {
   sentiment: 'momentum' | 'steady' | 'needs_attention'
   keyPeople: string[]
   highlights: string[]
+  sourceEvidence: SourceEvidence[]
 }
 
 export interface ThemesResult {
@@ -101,8 +110,39 @@ const themesTool = {
               },
               required: ['emails', 'meetings', 'chats', 'commitments'],
             },
+            sourceEvidence: {
+              type: 'array' as const,
+              items: {
+                type: 'object' as const,
+                properties: {
+                  type: {
+                    type: 'string' as const,
+                    enum: ['email', 'meeting', 'chat', 'commitment'],
+                    description: 'The type of data source',
+                  },
+                  title: {
+                    type: 'string' as const,
+                    description: 'The email subject, meeting name, chat message preview, or commitment title that was used',
+                  },
+                  date: {
+                    type: 'string' as const,
+                    description: 'The date of this data point (ISO 8601 or human-readable)',
+                  },
+                  participant: {
+                    type: 'string' as const,
+                    description: 'The key person involved (sender, organizer, or assignee)',
+                  },
+                  relevance: {
+                    type: 'string' as const,
+                    description: 'A brief explanation of how this data point contributed to the theme (1 sentence)',
+                  },
+                },
+                required: ['type', 'title', 'date', 'participant', 'relevance'],
+              },
+              description: 'The specific data points (emails, meetings, chats, commitments) that informed this theme. Include ALL items that contributed — this is shown to users for transparency.',
+            },
           },
-          required: ['title', 'summary', 'impact', 'sentiment', 'keyPeople', 'highlights', 'sourceBreakdown'],
+          required: ['title', 'summary', 'impact', 'sentiment', 'keyPeople', 'highlights', 'sourceBreakdown', 'sourceEvidence'],
         },
         description: 'Array of 3-5 work themes, ordered by importance/impact',
       },
@@ -151,7 +191,8 @@ Rules:
 - Never fabricate data — only reference what's in the provided activity
 - Write in second person ("You drove..." not "The user drove...")
 - Highlights should start with past-tense action verbs (Delivered, Closed, Aligned, Escalated, etc.)
-- If data is sparse, produce fewer themes rather than weak ones`
+- If data is sparse, produce fewer themes rather than weak ones
+- For sourceEvidence: list EVERY specific email, meeting, chat, or commitment that informed the theme. Users see this for transparency, so be thorough and accurate. Only reference items from the provided data — never invent evidence.`
 
   const userMessage = `Analyze ${data.userName}'s work activity for the period ${periodLabel} and identify the major themes.
 
@@ -171,7 +212,7 @@ Generate the executive theme summary.`
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2000,
+    max_tokens: 4000,
     system: systemPrompt,
     tools: [themesTool],
     tool_choice: { type: 'tool', name: 'generate_themes' },
@@ -196,6 +237,13 @@ Generate the executive theme summary.`
       sentiment: t.sentiment,
       keyPeople: t.keyPeople || [],
       highlights: t.highlights || [],
+      sourceEvidence: (t.sourceEvidence || []).map((e: any) => ({
+        type: e.type,
+        title: e.title,
+        date: e.date,
+        participant: e.participant,
+        relevance: e.relevance,
+      })),
     })),
     periodLabel,
     generatedAt: now.toISOString(),
