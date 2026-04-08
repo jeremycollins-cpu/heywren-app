@@ -73,7 +73,7 @@ export const wrenMorningBrief = inngest.createFunction(
           // Fetch user's data in parallel
           const todayStr = today.toISOString().split('T')[0]
 
-          const [overdueRes, missedRes, draftsRes, meetingsRes, conflictsRes] = await Promise.all([
+          const [overdueRes, missedRes, draftsRes, meetingsRes, conflictsRes, threatsRes] = await Promise.all([
             supabase.from('commitments')
               .select('title, created_at, metadata')
               .eq('team_id', user.teamId)
@@ -108,6 +108,12 @@ export const wrenMorningBrief = inngest.createFunction(
               .eq('status', 'unresolved')
               .eq('conflict_date', todayStr)
               .limit(5),
+            supabase.from('email_threat_alerts')
+              .select('subject, threat_level, threat_type, from_email')
+              .eq('team_id', user.teamId)
+              .eq('user_id', user.userId)
+              .eq('status', 'unreviewed')
+              .limit(3),
           ])
 
           const overdue = overdueRes.data || []
@@ -115,9 +121,10 @@ export const wrenMorningBrief = inngest.createFunction(
           const drafts = draftsRes.data || []
           const meetings = meetingsRes.data || []
           const calConflicts = conflictsRes.data || []
+          const threats = threatsRes.data || []
 
           // Skip if nothing to report
-          if (overdue.length === 0 && missed.length === 0 && drafts.length === 0 && meetings.length === 0 && calConflicts.length === 0) {
+          if (overdue.length === 0 && missed.length === 0 && drafts.length === 0 && meetings.length === 0 && calConflicts.length === 0 && threats.length === 0) {
             return
           }
 
@@ -137,6 +144,10 @@ export const wrenMorningBrief = inngest.createFunction(
             } else {
               sections.push(`*${calConflicts.length} calendar warning${calConflicts.length !== 1 ? 's' : ''} today* — check Calendar Protection.`)
             }
+          }
+
+          if (threats.length > 0) {
+            sections.push(`*:rotating_light: ${threats.length} suspicious email${threats.length !== 1 ? 's' : ''} detected:*\n${threats.map(t => `  "${t.subject}" from ${t.from_email} (${t.threat_level})`).join('\n')}\nReview in Security Alerts before interacting.`)
           }
 
           if (meetings.length > 0) {

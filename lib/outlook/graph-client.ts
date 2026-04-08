@@ -36,7 +36,7 @@ async function refreshToken(
         client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
         grant_type: 'refresh_token',
         refresh_token: refreshTokenValue,
-        scope: 'openid profile email Mail.Read Mail.ReadWrite MailboxSettings.ReadWrite Calendars.Read User.Read offline_access',
+        scope: 'openid profile email Mail.Read Mail.ReadWrite MailboxSettings.ReadWrite Calendars.ReadWrite User.Read offline_access',
       }),
     }
   )

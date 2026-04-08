@@ -74,7 +74,7 @@ async function refreshMicrosoftToken(refreshToken: string): Promise<{ access_tok
       client_secret: clientSecret,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      scope: 'openid profile email Mail.Read Calendars.Read OnlineMeetings.Read User.Read offline_access',
+      scope: 'openid profile email Mail.Read Calendars.ReadWrite OnlineMeetings.Read User.Read offline_access',
     }).toString(),
   })
 

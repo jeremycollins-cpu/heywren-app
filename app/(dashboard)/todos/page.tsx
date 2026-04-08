@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { ListChecks, Plus, Trash2, ChevronRight, Star, ChevronDown, FileText, X, Pencil } from 'lucide-react'
+import { ListChecks, Plus, Trash2, ChevronRight, Star, ChevronDown, FileText, X, Pencil, Calendar, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { TODO_CATEGORIES, getCategoryLabel, getCategoryColor } from '@/components/todo-panel'
@@ -34,6 +34,9 @@ export default function TodosPage() {
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [schedulingId, setSchedulingId] = useState<string | null>(null)
+  const [scheduleDuration, setScheduleDuration] = useState(30)
+  const [scheduling, setScheduling] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const subInputRef = useRef<HTMLInputElement>(null)
 
@@ -209,6 +212,29 @@ export default function TodosPage() {
       }
     } catch {
       setTodos(prev)
+    }
+  }
+
+  const autoSchedule = async (todoId: string, todoTitle: string) => {
+    setScheduling(true)
+    try {
+      const res = await fetch('/api/auto-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ todoId, durationMinutes: scheduleDuration, title: todoTitle }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to schedule')
+        return
+      }
+      toast.success(`Scheduled for ${data.scheduled.day} at ${data.scheduled.time}`)
+      setSchedulingId(null)
+      fetchTodos() // Refresh to show updated notes
+    } catch {
+      toast.error('Failed to auto-schedule')
+    } finally {
+      setScheduling(false)
     }
   }
 
@@ -496,12 +522,55 @@ export default function TodosPage() {
                       <Plus className="w-4 h-4" />
                     </button>
                     <button
+                      onClick={() => { setSchedulingId(schedulingId === todo.id ? null : todo.id); setScheduleDuration(30) }}
+                      className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition"
+                      title="Auto-schedule on calendar"
+                    >
+                      <Calendar className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => deleteTodo(todo.id)}
                       className="p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+
+                  {/* Auto-schedule picker */}
+                  {schedulingId === todo.id && (
+                    <div className="px-6 pb-3 pt-2 bg-indigo-50/50 dark:bg-indigo-900/10 border-t border-indigo-100 dark:border-indigo-800 flex items-center gap-3">
+                      <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Duration:</span>
+                      <div className="flex gap-1">
+                        {[15, 30, 45, 60, 90, 120].map(mins => (
+                          <button
+                            key={mins}
+                            onClick={() => setScheduleDuration(mins)}
+                            className={`px-2 py-1 text-xs rounded-md transition ${
+                              scheduleDuration === mins
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'
+                            }`}
+                          >
+                            {mins < 60 ? `${mins}m` : `${mins / 60}h`}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => autoSchedule(todo.id, todo.title)}
+                        disabled={scheduling}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+                      >
+                        {scheduling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+                        {scheduling ? 'Finding slot...' : 'Schedule'}
+                      </button>
+                      <button
+                        onClick={() => setSchedulingId(null)}
+                        className="p-1 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Notes editor */}
                   {notesOpen === todo.id && (
