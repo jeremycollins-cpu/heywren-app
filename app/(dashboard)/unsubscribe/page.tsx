@@ -29,6 +29,7 @@ interface EmailSubscription {
   status: string
   unsubscribed_at: string | null
   unsubscribe_error: string | null
+  outlook_message_id: string | null
 }
 
 interface Stats {

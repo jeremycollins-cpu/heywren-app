@@ -234,8 +234,8 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
         }
         // 'all' scope applies to all pending emails (no additional filter)
 
-        const { count } = await query.select('*', { count: 'exact', head: true })
-        snoozedCount = count || 0
+        const { data: snoozedRows } = await query.select('id')
+        snoozedCount = snoozedRows?.length || 0
       } catch { /* snooze failed silently */ }
       assistantMessage = assistantMessage.replace(/\[SNOOZE_EMAILS\].*?\[\/SNOOZE_EMAILS\]\n?/, '').trim()
     }
@@ -266,23 +266,23 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
         const cutoff = new Date(Date.now() - olderThan * 86400000).toISOString()
 
         if (dismissData.type === 'emails') {
-          const { count } = await admin.from('missed_emails')
+          const { data: dismissedRows } = await admin.from('missed_emails')
             .update({ status: 'dismissed' })
             .eq('team_id', teamId)
             .eq('user_id', userData.user.id)
             .eq('status', 'pending')
             .lt('received_at', cutoff)
-            .select('*', { count: 'exact', head: true })
-          dismissedCount = count || 0
+            .select('id')
+          dismissedCount = dismissedRows?.length || 0
         } else {
-          const { count } = await admin.from('commitments')
+          const { data: droppedRows } = await admin.from('commitments')
             .update({ status: 'dropped' })
             .eq('team_id', teamId)
             .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
             .eq('status', 'open')
             .lt('created_at', cutoff)
-            .select('*', { count: 'exact', head: true })
-          dismissedCount = count || 0
+            .select('id')
+          dismissedCount = droppedRows?.length || 0
         }
       } catch { /* dismiss failed silently */ }
       assistantMessage = assistantMessage.replace(/\[DISMISS_STALE\].*?\[\/DISMISS_STALE\]\n?/, '').trim()

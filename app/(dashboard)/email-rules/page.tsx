@@ -121,7 +121,7 @@ export default function EmailRulesPage() {
   const disabledRules = rules.filter(r => r.sync_status === 'disabled')
 
   return (
-    <UpgradeGate feature="emailRules">
+    <UpgradeGate featureKey="emailRules">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

@@ -784,7 +784,7 @@ export default function MissedEmailsPage() {
                               fromDomain={email.from_email.split('@')[1] || ''}
                               subject={email.subject}
                               emailIds={email.threadEmailIds || [email.id]}
-                              onComplete={fetchEmails}
+                              onComplete={loadEmails}
                             />
                           </>
                         ) : (
@@ -831,7 +831,7 @@ export default function MissedEmailsPage() {
                               fromDomain={email.from_email.split('@')[1] || ''}
                               subject={email.subject}
                               emailIds={[email.id]}
-                              onComplete={fetchEmails}
+                              onComplete={loadEmails}
                             />
                           </>
                         )}
