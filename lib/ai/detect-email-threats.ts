@@ -334,8 +334,8 @@ export async function tier2Analysis(
       explanation: result.explanation,
       recommendedActions: result.recommended_actions || [],
       doNotActions: result.do_not_actions || [],
-      replyToMismatch: false,
-      senderMismatch: false,
+      replyToMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('reply-to')),
+      senderMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('sender')),
     }
   } catch (error) {
     console.error('[detect-email-threats] AI analysis failed:', (error as Error).message)
