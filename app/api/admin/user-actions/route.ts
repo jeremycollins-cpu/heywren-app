@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
+import { generateThemes } from '@/lib/ai/generate-themes'
 
 function getAdminClient() {
   return createClient(
@@ -517,6 +518,129 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, message: 'Notes saved' })
+  }
+
+  if (action === 'refresh_signal') {
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
+
+    const { data: profile } = await adminDb
+      .from('profiles')
+      .select('current_team_id, email, full_name, display_name, slack_user_id')
+      .eq('id', userId)
+      .single()
+
+    let targetTeamId = profile?.current_team_id
+    if (!targetTeamId) {
+      const { data: membership } = await adminDb
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single()
+      targetTeamId = membership?.team_id || null
+    }
+
+    if (!targetTeamId) {
+      return NextResponse.json({ success: false, message: 'User has no team — cannot generate Signal' })
+    }
+
+    const userEmail = profile?.email?.toLowerCase() || ''
+    const userName = profile?.full_name || profile?.display_name || profile?.email?.split('@')[0] || 'User'
+    const slackUserId = profile?.slack_user_id
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
+
+    const safeQuery = async <T>(fn: () => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> => {
+      try {
+        const { data, error } = await fn()
+        if (error) return []
+        return data || []
+      } catch { return [] }
+    }
+
+    const [commitmentData, emailData, calendarData, slackData] = await Promise.all([
+      safeQuery(() =>
+        adminDb.from('commitments')
+          .select('title, status, source, source_ref, created_at, metadata')
+          .eq('team_id', targetTeamId)
+          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+          .gte('created_at', thirtyDaysAgo)
+          .order('created_at', { ascending: false })
+          .limit(80)
+      ),
+      userEmail
+        ? safeQuery(() =>
+            adminDb.from('outlook_messages')
+              .select('subject, from_name, from_email, to_recipients, received_at')
+              .eq('team_id', targetTeamId)
+              .or(`user_id.eq.${userId},user_id.is.null`)
+              .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+              .gte('received_at', thirtyDaysAgo)
+              .order('received_at', { ascending: false })
+              .limit(100)
+          )
+        : Promise.resolve([]),
+      safeQuery(() =>
+        adminDb.from('outlook_calendar_events')
+          .select('subject, organizer_email, start_time, attendees')
+          .eq('team_id', targetTeamId)
+          .or(`user_id.eq.${userId},user_id.is.null`)
+          .gte('start_time', thirtyDaysAgo)
+          .order('start_time', { ascending: false })
+          .limit(60)
+      ),
+      slackUserId
+        ? safeQuery(() =>
+            adminDb.from('slack_messages')
+              .select('channel_id, message_text, created_at')
+              .eq('team_id', targetTeamId)
+              .eq('user_id', slackUserId)
+              .gte('created_at', thirtyDaysAgo)
+              .order('created_at', { ascending: false })
+              .limit(60)
+          )
+        : Promise.resolve([]),
+    ])
+
+    const userCalendarData = userEmail
+      ? calendarData.filter((evt: any) => {
+          if ((evt.organizer_email || '').toLowerCase() === userEmail) return true
+          return JSON.stringify(evt.attendees || '').toLowerCase().includes(userEmail)
+        })
+      : []
+
+    const totalPoints = commitmentData.length + emailData.length + userCalendarData.length + slackData.length
+    if (totalPoints < 5) {
+      return NextResponse.json({
+        success: false,
+        message: `Not enough data to generate Signal (${totalPoints} data points, need at least 5)`,
+      })
+    }
+
+    const themes = await generateThemes({
+      userName,
+      commitments: commitmentData.map((c: any) => ({
+        title: c.title, status: c.status, source: c.source,
+        created_at: c.created_at, metadata: c.metadata,
+      })),
+      recentEmails: emailData.map((e: any) => ({
+        subject: e.subject || '(no subject)', from_name: e.from_name || e.from_email || 'Unknown',
+        to_recipients: e.to_recipients || '', received_at: e.received_at,
+      })),
+      calendarEvents: userCalendarData.map((e: any) => ({
+        subject: e.subject || '(no subject)', organizer_email: e.organizer_email || '',
+        start_time: e.start_time, attendees_count: Array.isArray(e.attendees) ? e.attendees.length : 0,
+      })),
+      slackMessages: slackData.map((m: any) => ({
+        channel_name: m.channel_id || 'unknown',
+        message_preview: (m.message_text || '').slice(0, 150),
+        created_at: m.created_at,
+      })),
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: `Signal regenerated for ${userName} — ${themes.themes.length} themes from ${totalPoints} data points`,
+    })
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
