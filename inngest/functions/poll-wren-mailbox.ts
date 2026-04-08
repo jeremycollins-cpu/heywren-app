@@ -63,7 +63,8 @@ export const pollWrenMailbox = inngest.createFunction(
 
         try {
           // Search for unseen messages
-          const uids = await client.search({ seen: false })
+          const searchResult = await client.search({ seen: false })
+          const uids = Array.isArray(searchResult) ? searchResult : []
 
           if (uids.length === 0) {
             return results
@@ -83,7 +84,7 @@ export const pollWrenMailbox = inngest.createFunction(
                 from: fromAddr?.address?.toLowerCase() || '',
                 fromName: fromAddr?.name || fromAddr?.address || 'Unknown',
                 subject: parsed.subject || '(no subject)',
-                text: (parsed.text || parsed.html?.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '').slice(0, 5000),
+                text: (parsed.text || (typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : '') || '').slice(0, 5000),
                 date: (parsed.date || new Date()).toISOString(),
               })
 
