@@ -23,9 +23,15 @@ export async function GET(request: NextRequest) {
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('current_team_id, email, full_name, display_name, slack_user_id')
+      .select('current_team_id, email, full_name, display_name, slack_user_id, role')
       .eq('id', userId)
       .single()
+
+    // Only super admins can force-refresh (triggers a new AI generation)
+    const isRefresh = request.nextUrl.searchParams.get('refresh') === 'true'
+    if (isRefresh && profile?.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Only admins can force-refresh signals' }, { status: 403 })
+    }
 
     let teamId = profile?.current_team_id
 
