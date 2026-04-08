@@ -34,6 +34,10 @@ import { emailAchievement } from '@/inngest/functions/email-achievement'
 import { emailManagerBriefing } from '@/inngest/functions/email-manager-briefing'
 import { emailReengagement } from '@/inngest/functions/email-reengagement'
 import { scanEmailSubscriptions } from '@/inngest/functions/scan-email-subscriptions'
+import { syncEmailFolders } from '@/inngest/functions/sync-email-folders'
+import { applyEmailRule } from '@/inngest/functions/apply-email-rule'
+import { generateMeetingFollowups } from '@/inngest/functions/generate-meeting-followups'
+import { wrenMorningBrief } from '@/inngest/functions/wren-morning-brief'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -68,5 +72,9 @@ export const { GET, POST, PUT } = serve({
     emailManagerBriefing,        // Monday 9 AM UTC — manager weekly briefing email
     emailReengagement,           // 11 AM daily — re-engagement email for 7+ day inactive users
     scanEmailSubscriptions,      // 7 AM PT daily — surface marketing emails with unsubscribe links
+    syncEmailFolders,            // Every 6 hours — cache Outlook mail folders for organize feature
+    applyEmailRule,              // On-demand — bulk-move existing emails when a new rule is created
+    generateMeetingFollowups,    // On-demand — generate follow-up email drafts after meeting transcript processing
+    wrenMorningBrief,            // 8:30 AM PT weekdays — personalized morning briefing via Slack DM
   ],
 })

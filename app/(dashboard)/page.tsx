@@ -13,6 +13,7 @@ import { AlertBanner } from '@/components/ui/alert-banner'
 import { PageHeader } from '@/components/ui/page-header'
 import { StatCard } from '@/components/ui/stat-card'
 import { HeroStats } from '@/components/dashboard/hero-stats'
+import { WrenInsightCard } from '@/components/dashboard/wren-insight-card'
 import { ForecastSection } from '@/components/dashboard/forecast-section'
 import { AnalyticsSection } from '@/components/dashboard/analytics-section'
 import { SectionErrorBoundary } from '@/components/ui/error-boundary'
@@ -294,6 +295,8 @@ export default function DashboardPage() {
       />
 
       <HeroStats commitments={commitments} />
+
+      <WrenInsightCard />
 
       <SectionErrorBoundary fallbackTitle="Themes failed to load">
         <ThemesSection />

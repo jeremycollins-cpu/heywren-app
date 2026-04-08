@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import UpgradeGate from '@/components/upgrade-gate'
+import OrganizeEmailPopover from '@/components/organize-email-popover'
 
 interface EmailSubscription {
   id: string
@@ -28,6 +29,7 @@ interface EmailSubscription {
   status: string
   unsubscribed_at: string | null
   unsubscribe_error: string | null
+  outlook_message_id: string | null
 }
 
 interface Stats {
@@ -268,6 +270,18 @@ export default function UnsubscribePage() {
                         )}
                         Keep
                       </button>
+                      <OrganizeEmailPopover
+                        fromEmail={sub.from_email}
+                        fromName={sub.from_name}
+                        fromDomain={sub.sender_domain}
+                        subject={sub.subject}
+                        emailIds={sub.outlook_message_id ? [sub.outlook_message_id] : []}
+                        existingMatchCount={sub.email_count}
+                        onComplete={() => {
+                          handleAction(sub.id, 'keep')
+                          fetchSubscriptions()
+                        }}
+                      />
                       <button
                         onClick={() => handleAction(sub.id, 'unsubscribe')}
                         disabled={!!isActioning || !canOneClick}

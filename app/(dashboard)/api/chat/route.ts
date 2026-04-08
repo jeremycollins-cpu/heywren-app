@@ -142,9 +142,26 @@ CAPABILITIES:
 - Analyze communication patterns and relationships
 - Prep for meetings by pulling relevant commitments/context
 - Answer questions about the user's tracked data
-- CREATE TASKS: When the user asks to add a task, reminder, or commitment, respond with EXACTLY this JSON block on its own line (the system will detect and create it):
+
+ACTIONS — use these JSON tags when the user requests an action. The system will execute them automatically.
+
+1. CREATE TASKS: When the user asks to add a task, reminder, or commitment:
   [CREATE_TASK]{"title":"the task title","urgency":"high|medium|low"}[/CREATE_TASK]
-  Then follow with a brief confirmation message. Examples of task requests: "remind me to...", "add a task to...", "I need to follow up on...", "create a commitment for...", "don't let me forget to..."
+  Examples: "remind me to...", "add a task to...", "don't let me forget to..."
+
+2. SNOOZE EMAILS: When the user asks to snooze missed emails:
+  [SNOOZE_EMAILS]{"scope":"all_medium"|"all"|"email_id","days":3}[/SNOOZE_EMAILS]
+  Examples: "snooze all medium-priority emails for 3 days", "snooze all missed emails until Friday"
+
+3. GENERATE DRAFTS: When the user asks to draft follow-ups:
+  [GENERATE_DRAFTS]{"scope":"all_overdue"|"commitment_title"}[/GENERATE_DRAFTS]
+  Examples: "draft follow-ups for all overdue items", "draft a nudge for the Q3 budget commitment"
+
+4. DISMISS STALE: When the user asks to clean up old items:
+  [DISMISS_STALE]{"older_than_days":14,"type":"commitments"|"emails"}[/DISMISS_STALE]
+  Examples: "dismiss all emails older than 2 weeks", "drop stale commitments"
+
+After each action tag, follow with a brief confirmation message. You can combine multiple actions if the user asks for several things.
 
 When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budget" not "Follow up on emails."`
 
@@ -197,9 +214,88 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
       assistantMessage = assistantMessage.replace(/\[CREATE_TASK\].*?\[\/CREATE_TASK\]\n?/, '').trim()
     }
 
+    // ── Execute SNOOZE_EMAILS commands ──
+    let snoozedCount = 0
+    const snoozeMatch = assistantMessage.match(/\[SNOOZE_EMAILS\](.*?)\[\/SNOOZE_EMAILS\]/)
+    if (snoozeMatch) {
+      try {
+        const snoozeData = JSON.parse(snoozeMatch[1])
+        const days = snoozeData.days || 3
+        const snoozedUntil = new Date(Date.now() + days * 86400000).toISOString()
+
+        let query = admin.from('missed_emails')
+          .update({ status: 'snoozed', snoozed_until: snoozedUntil })
+          .eq('team_id', teamId)
+          .eq('user_id', userData.user.id)
+          .eq('status', 'pending')
+
+        if (snoozeData.scope === 'all_medium') {
+          query = query.eq('urgency', 'medium')
+        }
+        // 'all' scope applies to all pending emails (no additional filter)
+
+        const { data: snoozedRows } = await query.select('id')
+        snoozedCount = snoozedRows?.length || 0
+      } catch { /* snooze failed silently */ }
+      assistantMessage = assistantMessage.replace(/\[SNOOZE_EMAILS\].*?\[\/SNOOZE_EMAILS\]\n?/, '').trim()
+    }
+
+    // ── Execute GENERATE_DRAFTS commands ──
+    let draftsTriggered = false
+    const draftMatch = assistantMessage.match(/\[GENERATE_DRAFTS\](.*?)\[\/GENERATE_DRAFTS\]/)
+    if (draftMatch) {
+      try {
+        // Trigger draft generation via the existing API
+        await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/drafts/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: userData.user.id }),
+        })
+        draftsTriggered = true
+      } catch { /* draft generation failed silently */ }
+      assistantMessage = assistantMessage.replace(/\[GENERATE_DRAFTS\].*?\[\/GENERATE_DRAFTS\]\n?/, '').trim()
+    }
+
+    // ── Execute DISMISS_STALE commands ──
+    let dismissedCount = 0
+    const dismissMatch = assistantMessage.match(/\[DISMISS_STALE\](.*?)\[\/DISMISS_STALE\]/)
+    if (dismissMatch) {
+      try {
+        const dismissData = JSON.parse(dismissMatch[1])
+        const olderThan = dismissData.older_than_days || 14
+        const cutoff = new Date(Date.now() - olderThan * 86400000).toISOString()
+
+        if (dismissData.type === 'emails') {
+          const { data: dismissedRows } = await admin.from('missed_emails')
+            .update({ status: 'dismissed' })
+            .eq('team_id', teamId)
+            .eq('user_id', userData.user.id)
+            .eq('status', 'pending')
+            .lt('received_at', cutoff)
+            .select('id')
+          dismissedCount = dismissedRows?.length || 0
+        } else {
+          const { data: droppedRows } = await admin.from('commitments')
+            .update({ status: 'dropped' })
+            .eq('team_id', teamId)
+            .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+            .eq('status', 'open')
+            .lt('created_at', cutoff)
+            .select('id')
+          dismissedCount = droppedRows?.length || 0
+        }
+      } catch { /* dismiss failed silently */ }
+      assistantMessage = assistantMessage.replace(/\[DISMISS_STALE\].*?\[\/DISMISS_STALE\]\n?/, '').trim()
+    }
+
     return NextResponse.json({
       message: assistantMessage,
       createdTask,
+      actions: {
+        snoozedCount,
+        draftsTriggered,
+        dismissedCount,
+      },
       usage: {
         input_tokens: response.usage?.input_tokens,
         output_tokens: response.usage?.output_tokens,

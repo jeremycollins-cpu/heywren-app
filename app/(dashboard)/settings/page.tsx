@@ -63,6 +63,15 @@ export default function SettingsPage() {
   const [outlookFolders, setOutlookFolders] = useState<Array<{ id: string; name: string; totalCount: number; unreadCount: number }>>([])
   const [foldersLoading, setFoldersLoading] = useState(false)
   const [foldersLoaded, setFoldersLoaded] = useState(false)
+  // Wren AI assistant preferences
+  const [wrenPrefs, setWrenPrefs] = useState({
+    tone: 'balanced' as string,
+    proactivity: 'standard' as string,
+    channel: 'slack_first' as string,
+    morning_brief: true,
+    weekly_reflection: true,
+  })
+  const [savingWrenPrefs, setSavingWrenPrefs] = useState(false)
   // Gamification notification preferences
   const [gamificationPrefs, setGamificationPrefs] = useState({
     achievement_notifications: true,
@@ -561,7 +570,7 @@ export default function SettingsPage() {
         // Fetch profile to get job title and current_team_id
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('role, job_title, current_team_id')
+          .select('role, job_title, current_team_id, wren_preferences')
           .eq('id', user.id)
           .single()
 
@@ -569,6 +578,9 @@ export default function SettingsPage() {
           console.error('Error fetching profile:', profileError)
         } else {
           setRole(profile.job_title || '')
+          if (profile.wren_preferences) {
+            setWrenPrefs(prev => ({ ...prev, ...profile.wren_preferences }))
+          }
 
           // Fetch team name
           if (profile.current_team_id) {
@@ -2061,6 +2073,121 @@ export default function SettingsPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Wren AI Preferences */}
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+          <Star aria-hidden="true" className="w-5 h-5" />
+          Wren AI Assistant
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Customize how Wren communicates with you — tone, proactivity, and features.
+        </p>
+
+        <div className="space-y-5">
+          {/* Tone */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Communication Tone</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'direct', label: 'Direct', desc: 'Blunt and to the point' },
+                { value: 'balanced', label: 'Balanced', desc: 'Warm but efficient' },
+                { value: 'encouraging', label: 'Encouraging', desc: 'Supportive and positive' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setWrenPrefs(p => ({ ...p, tone: opt.value }))}
+                  className={`p-3 rounded-lg border text-left transition ${
+                    wrenPrefs.tone === opt.value
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Proactivity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Proactivity Level</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'minimal', label: 'Minimal', desc: 'Only critical alerts' },
+                { value: 'standard', label: 'Standard', desc: 'Balanced suggestions' },
+                { value: 'proactive', label: 'Proactive', desc: 'Suggest everything' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setWrenPrefs(p => ({ ...p, proactivity: opt.value }))}
+                  className={`p-3 rounded-lg border text-left transition ${
+                    wrenPrefs.proactivity === opt.value
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Feature toggles */}
+          <div className="space-y-3">
+            {[
+              { key: 'morning_brief', label: 'Morning Brief', desc: 'Daily Slack DM with your priority stack' },
+              { key: 'weekly_reflection', label: 'Weekly Reflection', desc: 'End-of-week review prompt' },
+            ].map(toggle => (
+              <div key={toggle.key} className="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-700 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{toggle.label}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{toggle.desc}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={wrenPrefs[toggle.key as keyof typeof wrenPrefs] as boolean}
+                  onClick={() => setWrenPrefs(p => ({ ...p, [toggle.key]: !p[toggle.key as keyof typeof wrenPrefs] }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    wrenPrefs[toggle.key as keyof typeof wrenPrefs]
+                      ? 'bg-indigo-600'
+                      : 'bg-gray-200 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    wrenPrefs[toggle.key as keyof typeof wrenPrefs] ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={async () => {
+              setSavingWrenPrefs(true)
+              try {
+                const { error } = await supabase
+                  .from('profiles')
+                  .update({ wren_preferences: wrenPrefs })
+                  .eq('id', user.id)
+                if (error) throw error
+                toast.success('Wren preferences saved')
+              } catch {
+                toast.error('Failed to save Wren preferences')
+              } finally {
+                setSavingWrenPrefs(false)
+              }
+            }}
+            disabled={savingWrenPrefs}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+          >
+            {savingWrenPrefs ? 'Saving...' : 'Save Wren Preferences'}
+          </button>
+        </div>
       </div>
 
       {/* Gamification Notifications */}
