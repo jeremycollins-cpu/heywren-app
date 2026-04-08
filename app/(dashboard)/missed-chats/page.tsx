@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import {
   MessageSquare, AlertTriangle, Clock, CheckCircle2, X,
   RefreshCw, ChevronDown, ChevronUp, Hash, ExternalLink,
-  ThumbsUp, ThumbsDown, Phone,
+  ThumbsUp, ThumbsDown, Phone, ListChecks,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 interface MissedChat {
   id: string
@@ -65,6 +66,7 @@ const categoryLabels: Record<string, string> = {
 }
 
 export default function MissedChatsPage() {
+  const { addTodoFromPage } = useTodo()
   const [chats, setChats] = useState<MissedChat[]>([])
   const [totalEvaluated, setTotalEvaluated] = useState<number>(0)
   const [loading, setLoading] = useState(true)
@@ -536,6 +538,13 @@ export default function MissedChatsPage() {
                       >
                         <X aria-hidden="true" className="w-4 h-4" />
                         Dismiss
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addTodoFromPage(`Reply to ${chat.sender_name || 'Slack message'}: ${chat.question_summary || chat.reason || 'Follow up'}`) }}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition text-sm font-medium"
+                      >
+                        <ListChecks aria-hidden="true" className="w-4 h-4" />
+                        To-Do
                       </button>
                     </div>
                   </div>

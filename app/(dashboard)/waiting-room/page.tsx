@@ -5,8 +5,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown, CheckCircle2, Phone } from 'lucide-react'
+import { Clock, Send, X, AlertTriangle, Mail, MessageSquare, ExternalLink, Hourglass, RefreshCw, ChevronDown, ChevronUp, Layers, ArrowUpDown, CheckCircle2, Phone, ListChecks } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 interface WaitingItem {
   id: string
@@ -58,6 +59,7 @@ const categoryLabels: Record<string, string> = {
 }
 
 export default function WaitingRoomPage() {
+  const { addTodoFromPage } = useTodo()
   const [items, setItems] = useState<WaitingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
@@ -600,6 +602,13 @@ export default function WaitingRoomPage() {
                       Open original
                     </a>
                   )}
+                  <button
+                    onClick={() => addTodoFromPage(`Follow up with ${item.to_recipients}: ${item.subject || item.wait_reason || 'Awaiting reply'}`)}
+                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition"
+                  >
+                    <ListChecks className="w-3.5 h-3.5" />
+                    To-Do
+                  </button>
                 </div>
               </div>
 

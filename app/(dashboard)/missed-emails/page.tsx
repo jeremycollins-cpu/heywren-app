@@ -5,13 +5,14 @@ import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
   ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone, Forward,
-  MailOpen, Folder
+  MailOpen, Folder, ListChecks
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import OrganizeEmailPopover from '@/components/organize-email-popover'
+import { useTodo } from '@/lib/contexts/todo-context'
 import { WrenSuggestionBanner } from '@/components/wren-suggestion-banner'
 
 interface ThreadEmail {
@@ -86,6 +87,7 @@ const categoryLabels: Record<string, string> = {
 }
 
 export default function MissedEmailsPage() {
+  const { addTodoFromPage } = useTodo()
   const [emails, setEmails] = useState<MissedEmail[]>([])
   const [totalEvaluated, setTotalEvaluated] = useState<number>(0)
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
@@ -778,6 +780,13 @@ export default function MissedEmailsPage() {
                               <X aria-hidden="true" className="w-4 h-4" />
                               Dismiss thread ({email.threadCount})
                             </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); addTodoFromPage(`Reply to: ${email.subject}`) }}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition text-sm font-medium"
+                            >
+                              <ListChecks aria-hidden="true" className="w-4 h-4" />
+                              To-Do
+                            </button>
                             <OrganizeEmailPopover
                               fromEmail={email.from_email}
                               fromName={email.from_name}
@@ -824,6 +833,13 @@ export default function MissedEmailsPage() {
                             >
                               <X aria-hidden="true" className="w-4 h-4" />
                               Dismiss
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); addTodoFromPage(`Reply to: ${email.subject}`) }}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition text-sm font-medium"
+                            >
+                              <ListChecks aria-hidden="true" className="w-4 h-4" />
+                              To-Do
                             </button>
                             <OrganizeEmailPopover
                               fromEmail={email.from_email}
