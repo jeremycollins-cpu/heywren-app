@@ -142,7 +142,7 @@ const themesTool = {
               description: 'The specific data points (emails, meetings, chats, commitments) that informed this theme. Include ALL items that contributed — this is shown to users for transparency.',
             },
           },
-          required: ['title', 'summary', 'impact', 'sentiment', 'keyPeople', 'highlights', 'sourceBreakdown', 'sourceEvidence'],
+          required: ['title', 'summary', 'impact', 'sentiment', 'keyPeople', 'highlights', 'sourceBreakdown'],
         },
         description: 'Array of 3-5 work themes, ordered by importance/impact',
       },
@@ -212,7 +212,7 @@ Generate the executive theme summary.`
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4000,
+    max_tokens: 8000,
     system: systemPrompt,
     tools: [themesTool],
     tool_choice: { type: 'tool', name: 'generate_themes' },

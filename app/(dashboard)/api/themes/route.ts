@@ -175,12 +175,11 @@ export async function GET(request: NextRequest) {
     })
   } catch (err: any) {
     console.error('Themes generation error:', err?.message || err)
-    // Return insufficient instead of 500 so the UI shows a helpful message rather than "Something went wrong"
     return NextResponse.json({
       themes: [], headline: '', periodLabel: '',
       generatedAt: new Date().toISOString(),
-      insufficient: true,
-    })
+      error: 'generation_failed',
+    }, { status: 500 })
   }
 }
 
