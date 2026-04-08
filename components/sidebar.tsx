@@ -13,7 +13,7 @@ import {
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning, MailX,
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
-  SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays,
+  SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -248,6 +248,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/email-rules', label: 'Email Rules', icon: ListFilter, tourId: 'nav-email-rules', badge: 0, badgeColor: '' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
         { href: '/waiting-room', label: 'Waiting Room', icon: Hourglass, tourId: 'nav-waiting-room', badge: badges.waitingRoom, badgeColor: 'bg-amber-500' },
+        { href: '/calendar-protection', label: 'Calendar Protection', icon: ShieldCheck, tourId: 'nav-calendar-protection', badge: 0, badgeColor: '' },
         { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff', badge: 0, badgeColor: '' },
       ],
     },

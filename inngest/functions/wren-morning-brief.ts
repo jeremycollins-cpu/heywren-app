@@ -71,7 +71,9 @@ export const wrenMorningBrief = inngest.createFunction(
           todayEnd.setHours(23, 59, 59, 999)
 
           // Fetch user's data in parallel
-          const [overdueRes, missedRes, draftsRes, meetingsRes] = await Promise.all([
+          const todayStr = today.toISOString().split('T')[0]
+
+          const [overdueRes, missedRes, draftsRes, meetingsRes, conflictsRes] = await Promise.all([
             supabase.from('commitments')
               .select('title, created_at, metadata')
               .eq('team_id', user.teamId)
@@ -99,15 +101,23 @@ export const wrenMorningBrief = inngest.createFunction(
               .lte('start_time', todayEnd.toISOString())
               .order('start_time', { ascending: true })
               .limit(5),
+            supabase.from('calendar_conflicts')
+              .select('description, severity, conflict_type')
+              .eq('team_id', user.teamId)
+              .eq('user_id', user.userId)
+              .eq('status', 'unresolved')
+              .eq('conflict_date', todayStr)
+              .limit(5),
           ])
 
           const overdue = overdueRes.data || []
           const missed = missedRes.data || []
           const drafts = draftsRes.data || []
           const meetings = meetingsRes.data || []
+          const calConflicts = conflictsRes.data || []
 
           // Skip if nothing to report
-          if (overdue.length === 0 && missed.length === 0 && drafts.length === 0 && meetings.length === 0) {
+          if (overdue.length === 0 && missed.length === 0 && drafts.length === 0 && meetings.length === 0 && calConflicts.length === 0) {
             return
           }
 
@@ -119,6 +129,15 @@ export const wrenMorningBrief = inngest.createFunction(
               : `Good morning, ${user.firstName}. Here's your briefing for today.`
 
           const sections: string[] = []
+
+          if (calConflicts.length > 0) {
+            const critical = calConflicts.filter(c => c.severity === 'critical')
+            if (critical.length > 0) {
+              sections.push(`*:warning: ${critical.length} calendar conflict${critical.length !== 1 ? 's' : ''} today:*\n${critical.map(c => `  ${c.description}`).join('\n')}`)
+            } else {
+              sections.push(`*${calConflicts.length} calendar warning${calConflicts.length !== 1 ? 's' : ''} today* — check Calendar Protection.`)
+            }
+          }
 
           if (meetings.length > 0) {
             const meetingLines = meetings.map(m => {
