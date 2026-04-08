@@ -14,7 +14,7 @@ SELECT
   (SELECT COUNT(*) FROM commitments c2 WHERE c2.source_ref = c.source_ref AND c2.source = 'slack'),
   c.created_at
 FROM commitments c
-LEFT JOIN slack_messages sm ON sm.id::text = c.source_ref
+LEFT JOIN slack_messages sm ON CAST(sm.id AS text) = c.source_ref
 WHERE c.source = 'slack'
   AND c.creator_id IS NOT NULL
   AND c.source_ref IS NOT NULL
