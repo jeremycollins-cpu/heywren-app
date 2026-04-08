@@ -1008,6 +1008,14 @@ function AdminContent() {
                   <RotateCcw className="w-3.5 h-3.5" />
                   {actionLoading === 'reset_processed' ? 'Resetting...' : 'Reset Processed Flags'}
                 </button>
+                <button
+                  onClick={() => runAction('refresh_signal', { userId: profile.id })}
+                  disabled={actionLoading === 'refresh_signal'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {actionLoading === 'refresh_signal' ? 'Generating...' : 'Refresh Signal'}
+                </button>
               </div>
 
               {/* Account & Access */}

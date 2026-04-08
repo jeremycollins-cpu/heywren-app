@@ -4,10 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Sparkles, TrendingUp, Minus, AlertCircle,
   Mail, Calendar, MessageSquare, CheckCircle2,
-  RefreshCw, ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp,
   Eye, Clock,
 } from 'lucide-react'
-import { RoleGate } from '@/components/role-gate'
 
 interface SourceEvidence {
   type: 'email' | 'meeting' | 'chat' | 'commitment'
@@ -295,23 +294,18 @@ export function ThemesSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchThemes = useCallback(async (force = false) => {
-    // Check cache first (unless force refresh)
-    if (!force) {
-      const cached = getCachedThemes()
-      if (cached) {
-        setData(cached)
-        setLoading(false)
-        return
-      }
+  const fetchThemes = useCallback(async () => {
+    const cached = getCachedThemes()
+    if (cached) {
+      setData(cached)
+      setLoading(false)
+      return
     }
 
     setLoading(true)
     setError(null)
     try {
-      const url = force ? '/api/themes?refresh=true' : '/api/themes'
-      const res = await fetch(url)
-      if (res.status === 403) throw new Error('Only admins can refresh signals')
+      const res = await fetch('/api/themes')
       if (!res.ok) throw new Error('Failed to generate themes')
       const result = await res.json()
       setData(result)
@@ -369,30 +363,18 @@ export function ThemesSection() {
     )
   }
 
-  // Error state — show retry option
+  // Error state
   if (error || !data || data.themes.length === 0) {
     return (
       <section className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)' }}>
-              <Sparkles className="w-4.5 h-4.5 text-white" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{error ? 'Something went wrong' : 'Generating your executive summary...'}</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)' }}>
+            <Sparkles className="w-4.5 h-4.5 text-white" />
           </div>
-          <RoleGate requiredRole="super_admin">
-            <button
-              onClick={() => fetchThemes(true)}
-              disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              Retry
-            </button>
-          </RoleGate>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">The Signal</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{error ? 'Something went wrong — an admin can retry from the admin panel' : 'Generating your executive summary...'}</p>
+          </div>
         </div>
       </section>
     )
@@ -421,16 +403,6 @@ export function ThemesSection() {
               <p className="text-xs text-gray-500 dark:text-gray-400">{data.periodLabel} &middot; {totalDataPoints} data points &middot; {data.generatedAt ? `Updated ${new Date(data.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}</p>
             </div>
           </div>
-          <RoleGate requiredRole="super_admin">
-            <button
-              onClick={() => fetchThemes(true)}
-              disabled={loading}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              {loading ? 'Updating...' : 'Refresh'}
-            </button>
-          </RoleGate>
         </div>
 
         {/* Headline */}
