@@ -7,18 +7,16 @@ SELECT
   c.team_id,
   c.creator_id,
   'slack',
-  COALESCE(sm.channel_id, 'Slack mention'),
-  LEFT(sm.message_text, 300),
+  'Slack mention',
+  LEFT(c.description, 300),
   c.source_ref,
   c.source_url,
   (SELECT COUNT(*) FROM commitments c2 WHERE c2.source_ref = c.source_ref AND c2.source = 'slack'),
   c.created_at
 FROM commitments c
-LEFT JOIN slack_messages sm ON CAST(sm.id AS text) = c.source_ref
 WHERE c.source = 'slack'
   AND c.creator_id IS NOT NULL
   AND c.source_ref IS NOT NULL
-  -- Deduplicate: only take the first commitment per source message
   AND c.id = (
     SELECT c3.id FROM commitments c3
     WHERE c3.source_ref = c.source_ref AND c3.source = 'slack'
@@ -43,7 +41,6 @@ WHERE c.source = 'recording'
   AND c.metadata->>'heyWrenTrigger' = 'true'
   AND c.creator_id IS NOT NULL
   AND c.source_ref IS NOT NULL
-  -- Deduplicate: only take the first commitment per transcript
   AND c.id = (
     SELECT c3.id FROM commitments c3
     WHERE c3.source_ref = c.source_ref AND c3.source = 'recording' AND c3.metadata->>'heyWrenTrigger' = 'true'
