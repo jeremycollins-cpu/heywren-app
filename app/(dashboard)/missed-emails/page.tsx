@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import OrganizeEmailPopover from '@/components/organize-email-popover'
 
 interface ThreadEmail {
   id: string
@@ -774,6 +775,14 @@ export default function MissedEmailsPage() {
                               <X aria-hidden="true" className="w-4 h-4" />
                               Dismiss thread ({email.threadCount})
                             </button>
+                            <OrganizeEmailPopover
+                              fromEmail={email.from_email}
+                              fromName={email.from_name}
+                              fromDomain={email.from_email.split('@')[1] || ''}
+                              subject={email.subject}
+                              emailIds={email.threadEmailIds || [email.id]}
+                              onComplete={fetchEmails}
+                            />
                           </>
                         ) : (
                           <>
@@ -813,6 +822,14 @@ export default function MissedEmailsPage() {
                               <X aria-hidden="true" className="w-4 h-4" />
                               Dismiss
                             </button>
+                            <OrganizeEmailPopover
+                              fromEmail={email.from_email}
+                              fromName={email.from_name}
+                              fromDomain={email.from_email.split('@')[1] || ''}
+                              subject={email.subject}
+                              emailIds={[email.id]}
+                              onComplete={fetchEmails}
+                            />
                           </>
                         )}
                       </div>
