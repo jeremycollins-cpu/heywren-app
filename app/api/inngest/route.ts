@@ -36,6 +36,7 @@ import { emailReengagement } from '@/inngest/functions/email-reengagement'
 import { scanEmailSubscriptions } from '@/inngest/functions/scan-email-subscriptions'
 import { syncEmailFolders } from '@/inngest/functions/sync-email-folders'
 import { applyEmailRule } from '@/inngest/functions/apply-email-rule'
+import { generateMeetingFollowups } from '@/inngest/functions/generate-meeting-followups'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -72,5 +73,6 @@ export const { GET, POST, PUT } = serve({
     scanEmailSubscriptions,      // 7 AM PT daily — surface marketing emails with unsubscribe links
     syncEmailFolders,            // Every 6 hours — cache Outlook mail folders for organize feature
     applyEmailRule,              // On-demand — bulk-move existing emails when a new rule is created
+    generateMeetingFollowups,    // On-demand — generate follow-up email drafts after meeting transcript processing
   ],
 })

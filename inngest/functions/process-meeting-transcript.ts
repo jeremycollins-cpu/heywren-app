@@ -94,6 +94,7 @@ export const processMeetingTranscript = inngest.createFunction(
 
     // ── Step 2: Insert Hey Wren commitments ──
     let heyWrenCount = 0
+    const heyWrenCommitmentIds: string[] = []
     if (heyWrenResults.commitments.length > 0) {
       heyWrenCount = await step.run('insert-hey-wren-commitments', async () => {
         let count = 0
@@ -110,7 +111,7 @@ export const processMeetingTranscript = inngest.createFunction(
             metadata.stakeholders = [{ name: commitment.assignee, role: 'assignee' }]
           }
 
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('commitments')
             .insert({
               team_id: teamId,
@@ -129,9 +130,15 @@ export const processMeetingTranscript = inngest.createFunction(
               due_date: commitment.dueDate || null,
               metadata,
             })
+            .select('id')
+            .single()
 
-          if (!error) count++
-          else console.error('Failed to insert Hey Wren commitment:', error.message)
+          if (!error && data) {
+            count++
+            heyWrenCommitmentIds.push(data.id)
+          } else if (error) {
+            console.error('Failed to insert Hey Wren commitment:', error.message)
+          }
         }
         return count
       })
@@ -156,6 +163,7 @@ export const processMeetingTranscript = inngest.createFunction(
 
     // ── Step 4: Insert passive commitments ──
     let passiveCount = 0
+    const passiveCommitmentIds: string[] = []
     if (passiveResults.length > 0) {
       passiveCount = await step.run('insert-passive-commitments', async () => {
         let count = 0
@@ -169,7 +177,7 @@ export const processMeetingTranscript = inngest.createFunction(
           if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
           if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
 
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('commitments')
             .insert({
               team_id: teamId,
@@ -183,9 +191,15 @@ export const processMeetingTranscript = inngest.createFunction(
               due_date: commitment.dueDate || null,
               metadata,
             })
+            .select('id')
+            .single()
 
-          if (!error) count++
-          else console.error('Failed to insert passive commitment:', error.message)
+          if (!error && data) {
+            count++
+            passiveCommitmentIds.push(data.id)
+          } else if (error) {
+            console.error('Failed to insert passive commitment:', error.message)
+          }
         }
         return count
       })
@@ -204,6 +218,23 @@ export const processMeetingTranscript = inngest.createFunction(
         })
         .eq('id', transcriptId)
     })
+
+    // ── Step 6: Trigger follow-up draft generation ──
+    const allCommitmentIds = [...heyWrenCommitmentIds, ...passiveCommitmentIds]
+    if (allCommitmentIds.length > 0) {
+      await step.run('trigger-followup-drafts', async () => {
+        await inngest.send({
+          name: 'meeting/followups.generate',
+          data: {
+            transcriptId,
+            teamId,
+            userId,
+            meetingTitle: transcript.title,
+            commitmentIds: allCommitmentIds,
+          },
+        })
+      })
+    }
 
     console.log(
       `Transcript ${transcriptId}: ${heyWrenCount} Hey Wren commitments + ${passiveCount} passive = ${totalCommitments} total`
