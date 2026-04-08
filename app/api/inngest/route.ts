@@ -41,6 +41,7 @@ import { wrenMorningBrief } from '@/inngest/functions/wren-morning-brief'
 import { scanCalendarConflicts } from '@/inngest/functions/scan-calendar-conflicts'
 import { scanEmailThreats } from '@/inngest/functions/scan-email-threats'
 import { processBccEmail } from '@/inngest/functions/process-bcc-email'
+import { pollWrenMailbox } from '@/inngest/functions/poll-wren-mailbox'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -82,5 +83,6 @@ export const { GET, POST, PUT } = serve({
     scanCalendarConflicts,       // 7 AM PT weekdays — detect calendar conflicts against user boundaries
     scanEmailThreats,            // 7:30 AM PT daily — scan emails for phishing, scam, and impersonation
     processBccEmail,             // On-demand — process emails BCC'd to wren@heywren.ai
+    pollWrenMailbox,             // Every 5 min — poll wren@heywren.ai IMAP mailbox for BCC'd emails
   ],
 })
