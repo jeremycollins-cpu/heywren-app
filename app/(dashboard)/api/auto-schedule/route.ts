@@ -257,8 +257,26 @@ export async function POST(request: NextRequest) {
     )
 
     if (createdEvent?.error) {
+      const errorMsg = createdEvent.error.message || ''
+      const errorCode = createdEvent.error.code || ''
+
+      // Detect permission errors — user needs to re-authorize with Calendars.ReadWrite
+      if (
+        errorCode === 'ErrorAccessDenied' ||
+        errorCode === 'Authorization_RequestDenied' ||
+        errorMsg.includes('Access is denied') ||
+        errorMsg.includes('Insufficient privileges') ||
+        errorMsg.includes('MailboxNotEnabledForRESTAPI')
+      ) {
+        return NextResponse.json({
+          error: 'Outlook needs additional permissions to create calendar events. Please disconnect and reconnect Outlook in Settings → Integrations.',
+          needsReauth: true,
+        }, { status: 403 })
+      }
+
+      console.error('[auto-schedule] Graph API error:', createdEvent.error)
       return NextResponse.json({
-        error: createdEvent.error.message || 'Failed to create calendar event',
+        error: errorMsg || 'Failed to create calendar event',
       }, { status: 500 })
     }
 

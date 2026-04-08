@@ -93,6 +93,16 @@ export async function graphFetch(
     return { data: { success: true }, token: currentToken }
   }
 
+  // Handle non-JSON error responses (403, 500 can return HTML)
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const text = await res.text()
+    return {
+      data: { error: { code: `HTTP_${res.status}`, message: text.slice(0, 200) || `HTTP ${res.status}` } },
+      token: currentToken,
+    }
+  }
+
   return { data: await res.json(), token: currentToken }
 }
 

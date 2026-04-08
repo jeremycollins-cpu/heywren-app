@@ -225,7 +225,7 @@ export default function TodosPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        toast.error(data.error || 'Failed to schedule')
+        toast.error(data.error || 'Failed to schedule', { duration: 6000 })
         return
       }
       toast.success(`Scheduled for ${data.scheduled.day} at ${data.scheduled.time}`)
