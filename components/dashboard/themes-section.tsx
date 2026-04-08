@@ -5,7 +5,16 @@ import {
   Sparkles, TrendingUp, Minus, AlertCircle,
   Mail, Calendar, MessageSquare, CheckCircle2,
   RefreshCw, ChevronDown, ChevronUp,
+  Eye, Clock,
 } from 'lucide-react'
+
+interface SourceEvidence {
+  type: 'email' | 'meeting' | 'chat' | 'commitment'
+  title: string
+  date: string
+  participant: string
+  relevance: string
+}
 
 interface WorkTheme {
   title: string
@@ -15,6 +24,7 @@ interface WorkTheme {
   sentiment: 'momentum' | 'steady' | 'needs_attention'
   keyPeople: string[]
   highlights: string[]
+  sourceEvidence?: SourceEvidence[]
 }
 
 interface ThemesData {
@@ -74,10 +84,78 @@ function SourcePills({ sources }: { sources: WorkTheme['sources'] }) {
   )
 }
 
+const evidenceTypeConfig = {
+  email: { icon: Mail, label: 'Email', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20', dot: 'bg-blue-500' },
+  meeting: { icon: Calendar, label: 'Meeting', color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20', dot: 'bg-teal-500' },
+  chat: { icon: MessageSquare, label: 'Chat', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20', dot: 'bg-purple-500' },
+  commitment: { icon: CheckCircle2, label: 'Commitment', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20', dot: 'bg-indigo-500' },
+}
+
+function formatEvidenceDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
+
+function EvidenceTimeline({ evidence }: { evidence: SourceEvidence[] }) {
+  // Sort by date descending
+  const sorted = [...evidence].sort((a, b) => {
+    try {
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    } catch {
+      return 0
+    }
+  })
+
+  return (
+    <div className="space-y-0">
+      {sorted.map((item, i) => {
+        const cfg = evidenceTypeConfig[item.type]
+        const Icon = cfg.icon
+        const isLast = i === sorted.length - 1
+        return (
+          <div key={i} className="flex gap-3">
+            {/* Timeline line + dot */}
+            <div className="flex flex-col items-center">
+              <div className={`w-2 h-2 rounded-full ${cfg.dot} mt-2 flex-shrink-0`} />
+              {!isLast && <div className="w-px flex-1 bg-gray-200 dark:bg-gray-700" />}
+            </div>
+            {/* Content */}
+            <div className={`flex-1 pb-3 ${isLast ? '' : ''}`}>
+              <div className="flex items-start gap-2">
+                <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.color} ${cfg.bg}`}>
+                  <Icon className="w-2.5 h-2.5" />
+                  {cfg.label}
+                </div>
+                <span className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5" />
+                  {formatEvidenceDate(item.date)}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-gray-800 dark:text-gray-200 mt-1 leading-snug">{item.title}</p>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                {item.participant && <span className="font-medium">{item.participant}</span>}
+                {item.participant && item.relevance && <span> &middot; </span>}
+                {item.relevance}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ThemeCard({ theme, index }: { theme: WorkTheme; index: number }) {
   const [expanded, setExpanded] = useState(index === 0)
+  const [showEvidence, setShowEvidence] = useState(false)
   const config = sentimentConfig[theme.sentiment]
   const SentimentIcon = config.icon
+  const hasEvidence = theme.sourceEvidence && theme.sourceEvidence.length > 0
 
   return (
     <div className={`border ${config.border} rounded-xl overflow-hidden transition-all`}>
@@ -151,6 +229,36 @@ function ThemeCard({ theme, index }: { theme: WorkTheme; index: number }) {
             )}
             <SourcePills sources={theme.sources} />
           </div>
+
+          {/* Transparency Details */}
+          {hasEvidence && (
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowEvidence(!showEvidence)
+                }}
+                className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                {showEvidence ? 'Hide details' : 'How Wren determined this'}
+                {!showEvidence && (
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 font-normal ml-1">
+                    {theme.sourceEvidence!.length} data {theme.sourceEvidence!.length === 1 ? 'point' : 'points'}
+                  </span>
+                )}
+              </button>
+
+              {showEvidence && (
+                <div className="mt-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                    Wren analyzed the following activity to generate this signal. All data comes from your connected accounts.
+                  </p>
+                  <EvidenceTimeline evidence={theme.sourceEvidence!} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
