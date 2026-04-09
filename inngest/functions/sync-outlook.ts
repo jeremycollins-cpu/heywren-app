@@ -616,7 +616,7 @@ export async function syncTeamOutlook(
                   userId,
                   source: 'calendar',
                   sourceRef: item.dbId,
-                  category: commitment.commitmentType || null,
+                  category: commitment.commitmentType || undefined,
                   metadata: buildCommitmentMetadata(commitment),
                 },
               )
