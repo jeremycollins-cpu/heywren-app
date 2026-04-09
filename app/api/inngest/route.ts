@@ -42,6 +42,7 @@ import { scanCalendarConflicts } from '@/inngest/functions/scan-calendar-conflic
 import { scanEmailThreats } from '@/inngest/functions/scan-email-threats'
 import { processBccEmail } from '@/inngest/functions/process-bcc-email'
 import { pollWrenMailbox } from '@/inngest/functions/poll-wren-mailbox'
+import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -84,5 +85,6 @@ export const { GET, POST, PUT } = serve({
     scanEmailThreats,            // 7:30 AM PT daily — scan emails for phishing, scam, and impersonation
     processBccEmail,             // On-demand — process emails BCC'd to wren@heywren.ai
     pollWrenMailbox,             // Every 5 min — poll wren@heywren.ai IMAP mailbox for BCC'd emails
+    scanStaleEmails,             // 11 AM + 3 PM PT weekdays — detect read-but-not-acted-on emails
   ],
 })

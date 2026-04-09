@@ -99,6 +99,7 @@ export default function MissedEmailsPage() {
   const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
   const [unreadOnly, setUnreadOnly] = useState(false)
+  const [staleOnly, setStaleOnly] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'valid' | 'invalid'>>({})
   const [feedbackModal, setFeedbackModal] = useState<{ email: MissedEmail; show: boolean } | null>(null)
@@ -317,10 +318,12 @@ export default function MissedEmailsPage() {
   const filteredEmails = emails.filter(e => {
     if (filter !== 'all' && e.urgency !== filter) return false
     if (unreadOnly && e.is_read !== false) return false
+    if (staleOnly && e.is_read !== true) return false
     return true
   })
 
   const unreadCount = emails.filter(e => e.is_read === false).length
+  const staleCount = emails.filter(e => e.is_read === true).length
 
   const criticalCount = emails.filter(e => e.urgency === 'critical').length
   const highCount = emails.filter(e => e.urgency === 'high').length
@@ -347,7 +350,7 @@ export default function MissedEmailsPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Missed Emails</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Emails waiting for your response that may have slipped through the cracks. Sales and automated emails are filtered out.
+            Emails waiting for your response — including ones you read but haven&apos;t replied to. Sales and automated emails are filtered out.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -457,7 +460,7 @@ export default function MissedEmailsPage() {
         )}
         {unreadCount > 0 && (
           <button
-            onClick={() => setUnreadOnly(!unreadOnly)}
+            onClick={() => { setUnreadOnly(!unreadOnly); if (!unreadOnly) setStaleOnly(false) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition ${
               unreadOnly
                 ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300'
@@ -468,6 +471,22 @@ export default function MissedEmailsPage() {
             Unread only
             <span className={`ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${unreadOnly ? 'bg-blue-600' : 'bg-gray-400'} px-1`}>
               {unreadCount}
+            </span>
+          </button>
+        )}
+        {staleCount > 0 && (
+          <button
+            onClick={() => { setStaleOnly(!staleOnly); if (!staleOnly) setUnreadOnly(false) }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition ${
+              staleOnly
+                ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-700 dark:text-rose-300'
+                : 'bg-white dark:bg-surface-dark-secondary border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5'
+            }`}
+          >
+            <Eye aria-hidden="true" className="w-4 h-4" />
+            Read — No Reply
+            <span className={`ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white ${staleOnly ? 'bg-rose-600' : 'bg-gray-400'} px-1`}>
+              {staleCount}
             </span>
           </button>
         )}
@@ -599,6 +618,12 @@ export default function MissedEmailsPage() {
                           <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                             <MailOpen aria-hidden="true" className="w-3 h-3" />
                             Unread
+                          </span>
+                        )}
+                        {email.is_read === true && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                            <Eye aria-hidden="true" className="w-3 h-3" />
+                            Read — No Reply
                           </span>
                         )}
                         {email.folder_name && (

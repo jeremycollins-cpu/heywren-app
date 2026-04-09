@@ -128,12 +128,20 @@ export default function InboxZeroPage() {
       const data = await res.json()
 
       if (res.ok) {
-        const newProcessed = processedCount + group.emailCount
-        setProcessedCount(newProcessed)
+        const marked = data.marked ?? group.emailCount
+        const failed = data.failed ?? 0
+
+        setProcessedCount(prev => prev + marked)
         setCategories(prev => prev.filter(c => c.category !== group.category))
         setExpandedCategory(null)
 
-        toast.success(`Disregarded ${group.emailCount} email${group.emailCount > 1 ? 's' : ''} from "${group.category}"`)
+        if (failed > 0 && marked > 0) {
+          toast.success(`Marked ${marked} as read in Outlook (${failed} failed)`)
+        } else if (failed > 0 && marked === 0) {
+          toast.error(`Failed to mark emails as read in Outlook — check your Outlook connection`)
+        } else {
+          toast.success(`Marked ${marked} email${marked > 1 ? 's' : ''} as read in Outlook`)
+        }
 
         // Check if we're done
         if (categories.length <= 1) {

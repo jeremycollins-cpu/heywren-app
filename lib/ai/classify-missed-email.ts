@@ -89,6 +89,24 @@ const QUESTION_PATTERNS = [
   /\bare (they|the .+) (meeting|aligned|up to)\b/i,
   /\bmeeting your expectations\b/i, /\byour feedback\b/i,
   /\bschedule a (quick |brief )?(call|meeting|chat|sync)\b/i,
+  // Indirect delegation / directive patterns (e.g. "it was suggested that you send...")
+  /\b(it was |we |I )?(suggested|recommended|asked|requested) that you\b/i,
+  /\byou('ll| will) need to\b/i, /\byou should\b/i, /\byou need to\b/i,
+  /\bplease (make sure|ensure|take care of|handle|prepare|complete|submit|draft|create)\b/i,
+  /\bassigned to you\b/i, /\byour action item\b/i, /\byour task\b/i,
+  /\baction required\b/i, /\baction needed\b/i,
+  /\bresponsible for\b/i, /\bowner for\b/i,
+  /\bexpecting you to\b/i, /\bcounting on you\b/i,
+  /\bmake sure (to |you )\b/i,
+  // Deadline / time-sensitive patterns
+  /\bby (tomorrow|monday|tuesday|wednesday|thursday|friday|end of (day|week|month))\b/i,
+  /\b(preferably|ideally) (by |before |tomorrow|today|this week)\b/i,
+  /\bdeadline (is |of |:)\b/i, /\bdue (by |on |date|tomorrow|today)\b/i,
+  /\btime[- ]?sensitive\b/i, /\burgent(ly)?\b/i, /\basap\b/i,
+  /\bbefore (the |our |tomorrow|today|monday|tuesday|wednesday|thursday|friday)\b/i,
+  /\bneeds? to (go out|be sent|be done|be completed|be submitted|happen) (by |before |this |today|tomorrow)\b/i,
+  /\bthis week\b/i, /\btoday\b/i, /\btomorrow\b/i,
+  /\bend of (day|week|business)\b/i, /\bEOD\b/, /\bEOW\b/,
 ]
 
 export interface EmailInput {

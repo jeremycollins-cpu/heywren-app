@@ -142,6 +142,14 @@ export async function POST(request: NextRequest) {
       refreshToken: integration.refresh_token,
     }
 
+    // Get user's timezone from Outlook mailbox settings
+    const { data: mailboxData, token: mbToken } = await graphFetch(
+      'https://graph.microsoft.com/v1.0/me/mailboxSettings',
+      { token: integration.access_token },
+      ctx
+    )
+    const userTimeZone: string = mailboxData?.timeZone || 'Pacific Standard Time'
+
     // Get user's calendar boundaries (or defaults)
     const { data: boundaries } = await admin
       .from('calendar_boundaries')
@@ -159,7 +167,7 @@ export async function POST(request: NextRequest) {
 
     // Search the next SEARCH_DAYS business days
     const now = new Date()
-    let currentToken = integration.access_token
+    let currentToken = mbToken
     let scheduledSlot: TimeSlot | null = null
 
     const searchDate = new Date(now)
@@ -239,11 +247,11 @@ export async function POST(request: NextRequest) {
       },
       start: {
         dateTime: scheduledSlot.start.toISOString().replace('Z', ''),
-        timeZone: 'UTC',
+        timeZone: userTimeZone,
       },
       end: {
         dateTime: scheduledSlot.end.toISOString().replace('Z', ''),
-        timeZone: 'UTC',
+        timeZone: userTimeZone,
       },
       showAs: 'busy',
       isReminderOn: true,
