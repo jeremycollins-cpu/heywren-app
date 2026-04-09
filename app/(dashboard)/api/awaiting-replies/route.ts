@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -113,10 +114,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Use ensureTeamForUser for consistent team resolution (same as integration setup)
-    const { ensureTeamForUser } = await import('@/lib/team/ensure-team')
-    const { teamId: resolvedTeamId } = await ensureTeamForUser(userId)
-    teamId = resolvedTeamId
+    // Resolve team with self-heal fallback
+    const { data: teamProfile } = await admin
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userId)
+      .single()
+
+    teamId = teamProfile?.current_team_id || await resolveTeamId(admin, userId)
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
 
     const { data: userProfile } = await admin
       .from('profiles')
@@ -211,9 +219,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Use ensureTeamForUser for consistent team resolution (same as integration setup)
-    const { ensureTeamForUser } = await import('@/lib/team/ensure-team')
-    const { teamId } = await ensureTeamForUser(userId)
+    // Resolve team with self-heal fallback
+    const { data: postProfile } = await admin
+      .from('profiles')
+      .select('current_team_id')
+      .eq('id', userId)
+      .single()
+
+    const teamId = postProfile?.current_team_id || await resolveTeamId(admin, userId)
+    if (!teamId) {
+      return NextResponse.json({ error: 'No team found' }, { status: 400 })
+    }
 
     const { scanTeamAwaitingReplies } = await import('@/inngest/functions/scan-awaiting-replies')
     const result = await scanTeamAwaitingReplies(admin, teamId, userId)
@@ -250,7 +266,7 @@ export async function PATCH(request: NextRequest) {
       .eq('id', userData.user.id)
       .single()
 
-    const teamId = profile?.current_team_id
+    const teamId = profile?.current_team_id || await resolveTeamId(supabase, userData.user.id)
     if (!teamId) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }

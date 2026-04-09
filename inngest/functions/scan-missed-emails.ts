@@ -1,9 +1,13 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { classifyMissedEmailBatch, getClassificationStats, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { sendProactiveAlert as sendAlert } from '@/lib/notifications/send-proactive-alert'
+import { sendEmail } from '@/lib/email/send'
+import { buildRecipientGapAlertEmail } from '@/lib/email/templates/recipient-gap-alert'
 
 const MAX_EMAILS_PER_RUN = 200
 const TIME_BUDGET_MS = 300000 // 5 minutes
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
 function getAdminClient() {
   return createClient(
@@ -167,7 +171,7 @@ async function scanTeamMissedEmails(
   const userPrefs: UserEmailPreferences = {
     vipContacts: prefsRow?.vip_contacts || [],
     blockedSenders: prefsRow?.blocked_senders || [],
-    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
+    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
     minUrgency: prefsRow?.min_urgency || 'low',
     feedbackBlockedDomains,
     feedbackBlockedEmails,
@@ -366,6 +370,8 @@ async function scanTeamMissedEmails(
         recipientEmail: userEmail,
         recipientName: userName,
         isCcOnly,
+        toRecipients: email.to_recipients || '',
+        ccRecipients: email.cc_recipients || '',
       }
     })
 
@@ -406,6 +412,39 @@ async function scanTeamMissedEmails(
           .upsert(toUpsert, { onConflict: 'team_id,message_id' })
 
         if (!insertErr) totalMissed += toUpsert.length
+
+        // Proactive alerts for recipient_gap detections
+        const recipientGaps = toUpsert.filter(e => e.category === 'recipient_gap')
+        for (const gap of recipientGaps) {
+          const fromName = gap.from_name || 'Someone'
+          const subj = gap.subject || '(no subject)'
+          const summary = gap.question_summary || gap.reason || 'A person was mentioned but not included as a recipient'
+          const { subject: emailSubject, html: emailHtml } = buildRecipientGapAlertEmail({
+            userName: userName || 'there',
+            senderName: fromName,
+            subject: subj,
+            questionSummary: summary,
+            missedEmailsUrl: `${APP_URL}/missed-emails`,
+            unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
+          })
+          try {
+            await sendAlert({
+              teamId,
+              userId,
+              notificationType: 'missed_email',
+              title: `Missing recipient in email from ${fromName}`,
+              body: summary,
+              link: '/missed-emails',
+              slackText: `*Missing recipient detected*\n>*From:* ${fromName}\n>*Subject:* ${subj}\n>\n>${summary}`,
+              emailSubject,
+              emailHtml,
+              emailType: 'recipient_gap_alert',
+              idempotencyKey: `recipient-gap-${userId}-${subj.slice(0, 50)}-${new Date().toISOString().slice(0, 10)}`,
+            })
+          } catch (alertErr) {
+            console.error('Proactive alert failed:', (alertErr as Error).message)
+          }
+        }
       }
     } catch (err) {
       console.error('Batch classification error:', (err as Error).message)

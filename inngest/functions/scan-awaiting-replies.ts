@@ -858,6 +858,53 @@ export const scanAwaitingReplies = inngest.createFunction(
       )
     )
 
+    // Proactive alerts for items waiting 7+ days with no reply
+    await step.run('alert-stale-waiting', async () => {
+      const supabase = getAdminClient()
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+
+      for (const int of integrations) {
+        try {
+          const { data: staleItems } = await supabase
+            .from('awaiting_replies')
+            .select('id, to_name, subject, wait_reason, days_waiting')
+            .eq('team_id', int.team_id)
+            .eq('user_id', int.user_id)
+            .eq('status', 'waiting')
+            .lt('sent_at', sevenDaysAgo)
+            .gte('days_waiting', 7)
+            .is('notified_stale', null)
+            .limit(5)
+
+          if (!staleItems || staleItems.length === 0) continue
+
+          const { sendProactiveAlert } = await import('@/lib/notifications/send-proactive-alert')
+
+          const names = staleItems.slice(0, 3).map(i => i.to_name || 'someone').join(', ')
+          const suffix = staleItems.length > 3 ? ` and ${staleItems.length - 3} more` : ''
+
+          await sendProactiveAlert({
+            teamId: int.team_id,
+            userId: int.user_id,
+            notificationType: 'anomaly',
+            title: `${staleItems.length} email${staleItems.length !== 1 ? 's' : ''} waiting 7+ days for a reply`,
+            body: `No reply from ${names}${suffix}. Consider following up.`,
+            link: '/waiting-room',
+            slackText: `*${staleItems.length} email${staleItems.length !== 1 ? 's' : ''} still waiting for a reply (7+ days):*\n${staleItems.slice(0, 3).map(i => `>  To ${i.to_name || 'someone'}: "${i.subject}"`).join('\n')}${suffix ? `\n>  ${suffix}` : ''}`,
+            idempotencyKey: `stale-waiting-${int.user_id}-${new Date().toISOString().slice(0, 10)}`,
+          })
+
+          // Mark as notified so we don't re-alert
+          await supabase
+            .from('awaiting_replies')
+            .update({ notified_stale: true })
+            .in('id', staleItems.map(i => i.id))
+        } catch {
+          // Best-effort
+        }
+      }
+    })
+
     const results = { teamsProcessed: teamResults.length, results: teamResults }
 
     return results

@@ -15,6 +15,7 @@ import {
   moveMessage,
 } from '@/lib/outlook/graph-client'
 import { inngest } from '@/inngest/client'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -38,14 +39,15 @@ export async function GET() {
       .eq('id', userData.user.id)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team' }, { status: 400 })
     }
 
     const { data: rules, error } = await admin
       .from('email_rules')
       .select('*')
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .eq('user_id', userData.user.id)
       .order('created_at', { ascending: false })
 
@@ -102,11 +104,11 @@ export async function POST(request: NextRequest) {
       .eq('id', userData.user.id)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team' }, { status: 400 })
     }
 
-    const teamId = profile.current_team_id
     const userId = userData.user.id
 
     const integration = await getOutlookIntegration(teamId, userId)
@@ -242,19 +244,22 @@ export async function PATCH(request: NextRequest) {
         .eq('id', userData.user.id)
         .single()
 
-      const integration = await getOutlookIntegration(profile!.current_team_id, userData.user.id)
-      if (integration) {
-        const ctx = {
-          supabase: admin,
-          integrationId: integration.id,
-          refreshToken: integration.refresh_token,
+      const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+      if (teamId) {
+        const integration = await getOutlookIntegration(teamId, userData.user.id)
+        if (integration) {
+          const ctx = {
+            supabase: admin,
+            integrationId: integration.id,
+            refreshToken: integration.refresh_token,
+          }
+          await updateInboxRule(
+            rule.outlook_rule_id,
+            { isEnabled: action === 'enable' },
+            integration.access_token,
+            ctx
+          )
         }
-        await updateInboxRule(
-          rule.outlook_rule_id,
-          { isEnabled: action === 'enable' },
-          integration.access_token,
-          ctx
-        )
       }
     }
 
@@ -309,14 +314,17 @@ export async function DELETE(request: NextRequest) {
         .eq('id', userData.user.id)
         .single()
 
-      const integration = await getOutlookIntegration(profile!.current_team_id, userData.user.id)
-      if (integration) {
-        const ctx = {
-          supabase: admin,
-          integrationId: integration.id,
-          refreshToken: integration.refresh_token,
+      const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+      if (teamId) {
+        const integration = await getOutlookIntegration(teamId, userData.user.id)
+        if (integration) {
+          const ctx = {
+            supabase: admin,
+            integrationId: integration.id,
+            refreshToken: integration.refresh_token,
+          }
+          await deleteInboxRule(rule.outlook_rule_id, integration.access_token, ctx)
         }
-        await deleteInboxRule(rule.outlook_rule_id, integration.access_token, ctx)
       }
     }
 

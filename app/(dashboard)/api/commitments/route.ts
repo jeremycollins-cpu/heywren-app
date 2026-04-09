@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -40,14 +41,15 @@ export async function POST(request: NextRequest) {
       .eq('id', userId)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(admin, userId)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
 
     const { data: commitment, error } = await admin
       .from('commitments')
       .insert({
-        team_id: profile.current_team_id,
+        team_id: teamId,
         creator_id: userId,
         assignee_id: userId,
         title: title.trim(),

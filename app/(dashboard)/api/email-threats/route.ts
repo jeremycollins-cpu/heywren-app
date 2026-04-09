@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -28,21 +29,22 @@ export async function GET() {
       .eq('id', userData.user.id)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team' }, { status: 400 })
     }
 
     const [activeRes, resolvedRes] = await Promise.all([
       admin.from('email_threat_alerts')
         .select('*')
-        .eq('team_id', profile.current_team_id)
+        .eq('team_id', teamId)
         .eq('user_id', userData.user.id)
         .eq('status', 'unreviewed')
         .order('created_at', { ascending: false })
         .limit(20),
       admin.from('email_threat_alerts')
         .select('*')
-        .eq('team_id', profile.current_team_id)
+        .eq('team_id', teamId)
         .eq('user_id', userData.user.id)
         .neq('status', 'unreviewed')
         .order('updated_at', { ascending: false })

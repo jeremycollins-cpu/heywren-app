@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { classifyMissedEmailBatch, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
 import { getOutlookIntegration, markReadAndArchive, markMessageAsRead } from '@/lib/outlook/graph-client'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function normalizeSubject(subject: string | null): string {
   if (!subject) return '(no subject)'
@@ -22,26 +23,27 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    // Get user's team and sensitivity preference
+    // Get user's team (self-heals if current_team_id is null)
     const { data: profile } = await supabase
       .from('profiles')
       .select('current_team_id, wren_preferences')
       .eq('id', user.id)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
 
     // Sensitivity → confidence threshold mapping
-    const sensitivity = (profile.wren_preferences as any)?.sensitivity || 'balanced'
+    const sensitivity = (profile?.wren_preferences as any)?.sensitivity || 'balanced'
     const minConfidence = sensitivity === 'focused' ? 0.8 : sensitivity === 'comprehensive' ? 0.4 : 0.6
 
     // Fetch pending and snoozed missed emails — scoped to THIS user only
     const { data: missedEmails, error } = await supabase
       .from('missed_emails')
       .select('*')
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .eq('user_id', user.id)
       .in('status', ['pending', 'snoozed'])
       .gte('confidence', minConfidence)
@@ -128,14 +130,14 @@ export async function GET() {
     const { count: totalEvaluated } = await supabase
       .from('missed_emails')
       .select('id', { count: 'exact', head: true })
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .eq('user_id', user.id)
 
     // Get the most recent classification timestamp to show when data was last refreshed
     const { data: latestRecord } = await supabase
       .from('missed_emails')
       .select('created_at')
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -166,11 +168,11 @@ export async function POST() {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.current_team_id) {
+  const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+  if (!teamId) {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
-  const teamId = profile.current_team_id
   const adminDb = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -202,7 +204,7 @@ export async function POST() {
   const userPrefs: UserEmailPreferences = {
     vipContacts: prefsRow?.vip_contacts || [],
     blockedSenders: prefsRow?.blocked_senders || [],
-    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
+    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
     minUrgency: prefsRow?.min_urgency || 'low',
     feedbackBlockedDomains: new Set(
       Object.entries(domainCounts).filter(([, c]) => c >= 3).map(([d]) => d)
@@ -429,9 +431,10 @@ async function syncEmailToOutlook(
     .eq('id', userId)
     .single()
 
-  if (!profile?.current_team_id) return
+  const resolvedTeamId = profile?.current_team_id || await resolveTeamId(adminDb, userId)
+  if (!resolvedTeamId) return
 
-  const integration = await getOutlookIntegration(profile.current_team_id, userId)
+  const integration = await getOutlookIntegration(resolvedTeamId, userId)
   if (!integration) return
 
   const ctx = {
