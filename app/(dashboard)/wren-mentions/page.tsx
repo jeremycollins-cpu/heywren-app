@@ -5,8 +5,9 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   AtSign, Mail, MessageSquare, Mic,
   CheckCircle2, ExternalLink, Clock, Filter,
-  ChevronDown, Loader2, Inbox,
+  ChevronDown, Loader2, Inbox, ListChecks,
 } from 'lucide-react'
+import { useTodo } from '@/lib/contexts/todo-context'
 
 interface WrenMention {
   id: string
@@ -64,7 +65,7 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function MentionCard({ mention }: { mention: WrenMention }) {
+function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: (title: string) => void }) {
   const cfg = channelConfig[mention.channel]
   const Icon = cfg.icon
 
@@ -113,23 +114,33 @@ function MentionCard({ mention }: { mention: WrenMention }) {
             </div>
           </div>
         </div>
-        {mention.source_url && (
-          <a
-            href={mention.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition flex-shrink-0"
-            title="Open original"
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => onAddTodo(mention.source_snippet || mention.source_title)}
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30 transition"
+            title="Add to To-Dos"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+            <ListChecks className="w-3.5 h-3.5" />
+          </button>
+          {mention.source_url && (
+            <a
+              href={mention.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition"
+              title="Open original"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 export default function WrenMentionsPage() {
+  const { addTodoFromPage } = useTodo()
   const [mentions, setMentions] = useState<WrenMention[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -257,7 +268,7 @@ export default function WrenMentionsPage() {
       ) : (
         <div className="space-y-2">
           {mentions.map(mention => (
-            <MentionCard key={mention.id} mention={mention} />
+            <MentionCard key={mention.id} mention={mention} onAddTodo={addTodoFromPage} />
           ))}
 
           {hasMore && (

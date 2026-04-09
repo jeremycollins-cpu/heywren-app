@@ -63,11 +63,13 @@ export default function SecurityAlertsPage() {
   const [resolved, setResolved] = useState<ThreatAlert[]>([])
   const [stats, setStats] = useState({ unreviewed: 0, critical: 0, confirmed: 0, falsePositives: 0 })
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [showResolved, setShowResolved] = useState(false)
 
   const fetchAlerts = async () => {
+    setRefreshing(true)
     try {
       const res = await fetch('/api/email-threats')
       if (!res.ok) throw new Error('Failed to fetch')
@@ -79,6 +81,7 @@ export default function SecurityAlertsPage() {
       toast.error('Failed to load security alerts')
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -127,10 +130,11 @@ export default function SecurityAlertsPage() {
         </div>
         <button
           onClick={fetchAlerts}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+          disabled={refreshing}
+          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
         >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
+          {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {refreshing ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
