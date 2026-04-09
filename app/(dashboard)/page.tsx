@@ -4,6 +4,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useRealtime } from '@/lib/hooks/use-realtime'
@@ -47,7 +48,7 @@ function getAvgScore(commitments: { status: string; created_at: string; source: 
 
 export default function DashboardPage() {
   const {
-    commitments, mentions, integrationCount, teamId,
+    commitments, mentions, integrationCount, expiredIntegrations, teamId,
     loading, error,
     fetchDashboard, markDone, snooze, dismiss, clearError,
     addCommitment, updateCommitment, removeCommitment, addMention,
@@ -293,6 +294,22 @@ export default function DashboardPage() {
             : 'Connect your tools to start tracking commitments'
         }
       />
+
+      {expiredIntegrations.length > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            <span className="font-semibold">Connection expired:</span>{' '}
+            Your {expiredIntegrations.map(p => p === 'outlook' ? 'Outlook' : p === 'slack' ? 'Slack' : p).join(' and ')}{' '}
+            {expiredIntegrations.length === 1 ? 'connection has' : 'connections have'} expired. Wren can&apos;t scan new data until you reconnect.
+          </p>
+          <Link
+            href="/integrations"
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 transition"
+          >
+            Reconnect
+          </Link>
+        </div>
+      )}
 
       <HeroStats commitments={commitments} />
 

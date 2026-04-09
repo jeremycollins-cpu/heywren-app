@@ -112,6 +112,7 @@ function setStore(overrides: Partial<typeof storeState> = {}) {
     commitments: [],
     mentions: [],
     integrationCount: 0,
+    expiredIntegrations: [],
     loading: false,
     error: null,
     fetchDashboard: mockFetchDashboard,

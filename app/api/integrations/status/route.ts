@@ -64,8 +64,19 @@ export async function GET() {
       return NextResponse.json({ integrations: [], teamId })
     }
 
+    // Check for expired tokens
+    const now = new Date()
+    const enriched = (integrations || []).map(int => ({
+      id: int.id,
+      provider: int.provider,
+      config: int.config,
+      tokenExpired: int.config?.token_expires_at
+        ? new Date(int.config.token_expires_at) < now
+        : false,
+    }))
+
     return NextResponse.json(
-      { integrations: integrations || [], teamId },
+      { integrations: enriched, teamId },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
     )
   } catch (err) {

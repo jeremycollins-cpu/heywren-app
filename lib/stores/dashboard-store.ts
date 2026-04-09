@@ -28,6 +28,7 @@ interface DashboardState {
   commitments: Commitment[]
   mentions: SlackMention[]
   integrationCount: number
+  expiredIntegrations: string[] // provider names with expired tokens
   teamId: string | null
   loading: boolean
   error: string | null
@@ -49,6 +50,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   commitments: [],
   mentions: [],
   integrationCount: 0,
+  expiredIntegrations: [],
   teamId: null,
   loading: true,
   error: null,
@@ -109,6 +111,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         commitments: commitResult.data || [],
         mentions: mentionResult.data || [],
         integrationCount: intStatusRes.integrations?.length || 0,
+        expiredIntegrations: (intStatusRes.integrations || [])
+          .filter((i: any) => i.tokenExpired)
+          .map((i: any) => i.provider as string),
         teamId,
         loading: false,
       })
