@@ -227,29 +227,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing messageIds array' }, { status: 400 })
     }
 
-    // Mark all as read in Outlook (batch processing)
+    // Mark all as read in Outlook — sequential to avoid token race conditions
+    // (parallel requests + expired token = all try to refresh simultaneously,
+    // but Microsoft rotates refresh tokens, so only the first succeeds)
     let token = integration.access_token
     let successCount = 0
     let failCount = 0
 
-    // Process in parallel batches of 10 to stay within Graph API rate limits
-    const BATCH_SIZE = 10
-    for (let i = 0; i < messageIds.length; i += BATCH_SIZE) {
-      const batch = messageIds.slice(i, i + BATCH_SIZE)
-      const results = await Promise.allSettled(
-        batch.map(async (msgId: string) => {
-          const result = await markMessageAsRead(msgId, token, ctx)
-          token = result.token
-          return result.success
-        })
-      )
-
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
+    for (const msgId of messageIds) {
+      try {
+        const result = await markMessageAsRead(msgId, token, ctx)
+        token = result.token
+        if (result.success) {
           successCount++
         } else {
           failCount++
         }
+      } catch (err) {
+        console.error('[inbox-zero] markAsRead failed for', msgId, err)
+        failCount++
       }
     }
 
