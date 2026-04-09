@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     let syncError: string | null = null
 
     const { rule, token: ruleToken, error: ruleError } = await createInboxRule(
-      { matchType, matchValue, targetFolderId, markAsRead },
+      { matchType, matchValue, targetFolderId, targetFolderName, markAsRead },
       currentToken,
       ctx
     )

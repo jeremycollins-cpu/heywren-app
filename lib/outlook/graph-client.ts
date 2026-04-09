@@ -309,6 +309,7 @@ export async function createInboxRule(
     matchType: 'from_email' | 'from_domain' | 'subject_contains'
     matchValue: string
     targetFolderId: string
+    targetFolderName?: string
     markAsRead?: boolean
   },
   token: string,
@@ -335,7 +336,7 @@ export async function createInboxRule(
     actions.markAsRead = true
   }
 
-  const displayName = `HeyWren: ${params.matchValue} → ${params.targetFolderId}`
+  const displayName = `HeyWren: ${params.matchValue} → ${params.targetFolderName || params.targetFolderId}`
 
   const url = `${GRAPH_BASE}/me/mailFolders/inbox/messageRules`
   const { data, token: newToken } = await graphFetch(

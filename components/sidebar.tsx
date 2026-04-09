@@ -31,6 +31,7 @@ interface BadgeCounts {
   missedChats: number
   waitingRoom: number
   openCommitments: number
+  securityAlerts: number
 }
 
 const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation', 'Community']
@@ -38,7 +39,7 @@ const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation',
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, securityAlerts: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
 
@@ -96,7 +97,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         if (profile?.current_team_id) {
           const teamId = profile.current_team_id
 
-          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
+          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
             supabase
               .from('commitments')
               .select('status, created_at')
@@ -129,6 +130,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .eq('user_id', user.user.id)
               .eq('status', 'waiting')
               .then(res => res.error ? { data: [] } : res),
+            supabase
+              .from('email_threat_alerts')
+              .select('id')
+              .eq('team_id', teamId)
+              .eq('user_id', user.user.id)
+              .eq('status', 'unreviewed')
+              .then(res => res.error ? { data: [] } : res),
           ])
 
           const commitments = commitResult.data || []
@@ -149,6 +157,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
             waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
+            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
           })
         }
       } catch (err) {
@@ -180,12 +189,13 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           if (!profile?.current_team_id) return
           const teamId = profile.current_team_id
 
-          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult] = await Promise.all([
+          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
             supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
             supabase.from('drafts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_chats').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('awaiting_replies').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { count: 0, data: [] } : res),
+            supabase.from('email_threat_alerts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'unreviewed').then(res => res.error ? { count: 0, data: [] } : res),
           ])
 
           const commitments = commitResult.data || []
@@ -201,6 +211,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
             waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
             openCommitments: commitments.filter(c => c.status === 'open').length,
+            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
           })
         } catch (err) {
           console.error('Error refreshing sidebar badges:', err)
@@ -215,6 +226,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   useRealtime({ table: 'drafts', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'email_threat_alerts', onInsert: refetchBadges, onUpdate: refetchBadges })
 
   const sections = useMemo(() => [
     {
@@ -251,7 +263,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
         { href: '/waiting-room', label: 'Waiting Room', icon: Hourglass, tourId: 'nav-waiting-room', badge: badges.waitingRoom, badgeColor: 'bg-amber-500' },
         { href: '/calendar-protection', label: 'Calendar Protection', icon: ShieldCheck, tourId: 'nav-calendar-protection', badge: 0, badgeColor: '' },
-        { href: '/security-alerts', label: 'Security Alerts', icon: ShieldAlert, tourId: 'nav-security-alerts', badge: 0, badgeColor: '' },
+        { href: '/security-alerts', label: 'Security Alerts', icon: ShieldAlert, tourId: 'nav-security-alerts', badge: badges.securityAlerts, badgeColor: 'bg-red-500' },
         { href: '/handoff', label: 'Handoff', icon: Hand, tourId: 'nav-handoff', badge: 0, badgeColor: '' },
       ],
     },
@@ -302,7 +314,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
   const isSuperAdmin = userRole === 'super_admin'
 
-  const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom
+  const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom + badges.securityAlerts
 
   // Sidebar width: full (256px) or collapsed (64px for icon-only)
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
@@ -366,6 +378,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
                 )}
                 {badges.waitingRoom > 0 && (
                   <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">{badges.waitingRoom} waiting</span>
+                )}
+                {badges.securityAlerts > 0 && (
+                  <span className="text-[10px] text-red-600 dark:text-red-400 font-medium">{badges.securityAlerts} threat{badges.securityAlerts !== 1 ? 's' : ''}</span>
                 )}
               </div>
             </div>

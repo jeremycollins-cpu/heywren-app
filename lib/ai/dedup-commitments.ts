@@ -51,7 +51,7 @@ export function buildCommitmentMetadata(commitment: DetectedCommitment): Record<
 interface InsertParams {
   teamId: string
   userId: string
-  source: 'slack' | 'outlook' | 'recording' | 'manual' | 'email'
+  source: 'slack' | 'outlook' | 'recording' | 'manual' | 'email' | 'calendar'
   sourceRef: string
   sourceUrl?: string
   category?: string
@@ -115,6 +115,25 @@ export async function insertCommitmentIfNotDuplicate(
     for (const existing of recentCommitments) {
       if (titleSimilarity(existing.title, title) >= SIMILARITY_THRESHOLD) {
         return null // duplicate — similar title already tracked
+      }
+    }
+  }
+
+  // ── Check 3: Already completed/dismissed commitments (wider lookback) ──
+  // Prevents re-creating commitments that were already handled
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString()
+  const { data: pastCommitments } = await supabase
+    .from('commitments')
+    .select('id, title')
+    .eq('team_id', params.teamId)
+    .eq('creator_id', params.userId)
+    .in('status', ['completed', 'dismissed', 'dropped'])
+    .gte('created_at', ninetyDaysAgo)
+
+  if (pastCommitments) {
+    for (const existing of pastCommitments) {
+      if (titleSimilarity(existing.title, title) >= SIMILARITY_THRESHOLD) {
+        return null // duplicate — already completed or dismissed
       }
     }
   }

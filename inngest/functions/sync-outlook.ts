@@ -608,19 +608,19 @@ export async function syncTeamOutlook(
           for (const item of calBatch) {
             const commitments = batchResults.get(item.id) || []
             for (const commitment of commitments) {
-              const { error: commitErr } = await supabase.from('commitments').insert({
-                team_id: teamId,
-                creator_id: userId,
-                title: commitment.title || 'Untitled commitment',
-                description: commitment.description || null,
-                status: 'open',
-                priority_score: calculatePriorityScore(commitment),
-                source: 'calendar',
-                source_ref: item.dbId,
-                category: commitment.commitmentType || null,
-                metadata: buildCommitmentMetadata(commitment),
-              })
-              if (!commitErr) {
+              const insertedId = await insertCommitmentIfNotDuplicate(
+                supabase,
+                commitment,
+                {
+                  teamId,
+                  userId,
+                  source: 'calendar',
+                  sourceRef: item.dbId,
+                  category: commitment.commitmentType || undefined,
+                  metadata: buildCommitmentMetadata(commitment),
+                },
+              )
+              if (insertedId) {
                 calendarCommitments++
                 totalCommitments++
               }
