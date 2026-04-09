@@ -337,7 +337,7 @@ export default function CommitmentsPage() {
     })
   }
 
-  const openCommitments = commitments.filter(c => c.status !== 'completed' && c.status !== 'dismissed')
+  const openCommitments = commitments.filter(c => c.status !== 'completed' && c.status !== 'dismissed' && c.status !== 'dropped')
   const likelyCompleteCommitments = commitments.filter(c => c.status === 'likely_complete')
   const completedCommitments = commitments.filter(c => c.status === 'completed')
   const forYouCommitments = openCommitments.filter(isPersonallyRelevant)
