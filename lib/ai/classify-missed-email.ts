@@ -10,7 +10,7 @@ export interface MissedEmailClassification {
   urgency: 'critical' | 'high' | 'medium' | 'low'
   reason: string
   questionSummary: string | null
-  category: 'question' | 'request' | 'decision' | 'follow_up' | 'introduction'
+  category: 'question' | 'request' | 'decision' | 'follow_up' | 'introduction' | 'recipient_gap'
   confidence: number
   expectedResponseTime?: 'same_day' | 'next_day' | 'this_week' | 'no_rush' | null
   isVip?: boolean
@@ -100,6 +100,8 @@ export interface EmailInput {
   recipientEmail?: string  // The user's email — helps detect when they're directly addressed
   recipientName?: string   // The user's name — helps detect @mentions
   isCcOnly?: boolean       // True if user is only on CC, not TO — deprioritize unless @mentioned
+  toRecipients?: string    // Comma-separated TO recipients
+  ccRecipients?: string    // Comma-separated CC recipients
 }
 
 // ============================================================
@@ -202,7 +204,7 @@ const EMAIL_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
       urgency: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
       reason: { type: 'string', description: 'Brief explanation' },
       questionSummary: { type: 'string', description: 'The specific question/request, or null' },
-      category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
+      category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'] },
       confidence: { type: 'number' },
       expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
       sentimentScore: { type: 'number', description: 'Sender sentiment from -1 (very negative) to 1 (very positive). 0 is neutral.' },
@@ -229,7 +231,7 @@ const BATCH_EMAIL_TOOL: Anthropic.Messages.Tool = {
             urgency: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
             reason: { type: 'string' },
             questionSummary: { type: 'string' },
-            category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction'] },
+            category: { type: 'string', enum: ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'] },
             confidence: { type: 'number' },
             expectedResponseTime: { type: 'string', enum: ['same_day', 'next_day', 'this_week', 'no_rush'] },
             sentimentScore: { type: 'number' },
@@ -267,6 +269,12 @@ IMPLICIT SIGNALS (upgrade even without deadline words):
 - "This week" / "earliest convenience" -> high
 - Direct personalized emails -> medium minimum
 - Multi-recipient email but question is directed at the Recipient specifically -> high+
+
+MISSING RECIPIENT DETECTION (category: recipient_gap):
+- If the email body mentions someone by name AND directs a question or request at them, BUT that person is NOT in the To or CC recipients — flag it as category "recipient_gap" with high urgency.
+- Example: Sender writes "Can Janaki and Christine review this?" but Janaki and Christine are not on the To/CC line. The question will go unanswered because they never received the email.
+- Compare names mentioned in the body against the To/CC recipients provided. If a name is mentioned with a question/request but missing from recipients, set needsResponse=true, category="recipient_gap", and explain who was mentioned but not included.
+- The questionSummary should note who is missing, e.g. "Sharath asked Janaki and Christine a question but they are not on this email"
 
 expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" -> this_week; open-ended -> no_rush
 
@@ -319,7 +327,9 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
   const recipientCtx = email.recipientName || email.recipientEmail
     ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
     : ''
-  const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
+  const toCtx = email.toRecipients ? `\nTo: ${email.toRecipients}` : ''
+  const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
+  const emailText = `From: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
 
   const communityBlock = communityPatterns && communityPatterns.length > 0
     ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
@@ -574,7 +584,9 @@ export async function classifyMissedEmailBatch(
       const recipientCtx = email.recipientName || email.recipientEmail
         ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
         : ''
-      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
+      const toCtx = email.toRecipients ? `\nTo: ${email.toRecipients}` : ''
+      const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
+      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
     })
     .join('\n\n---\n\n')
 

@@ -167,7 +167,7 @@ async function scanTeamMissedEmails(
   const userPrefs: UserEmailPreferences = {
     vipContacts: prefsRow?.vip_contacts || [],
     blockedSenders: prefsRow?.blocked_senders || [],
-    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
+    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
     minUrgency: prefsRow?.min_urgency || 'low',
     feedbackBlockedDomains,
     feedbackBlockedEmails,
@@ -366,6 +366,8 @@ async function scanTeamMissedEmails(
         recipientEmail: userEmail,
         recipientName: userName,
         isCcOnly,
+        toRecipients: email.to_recipients || '',
+        ccRecipients: email.cc_recipients || '',
       }
     })
 

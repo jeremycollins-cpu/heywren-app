@@ -202,7 +202,7 @@ export async function POST() {
   const userPrefs: UserEmailPreferences = {
     vipContacts: prefsRow?.vip_contacts || [],
     blockedSenders: prefsRow?.blocked_senders || [],
-    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
+    enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
     minUrgency: prefsRow?.min_urgency || 'low',
     feedbackBlockedDomains: new Set(
       Object.entries(domainCounts).filter(([, c]) => c >= 3).map(([d]) => d)

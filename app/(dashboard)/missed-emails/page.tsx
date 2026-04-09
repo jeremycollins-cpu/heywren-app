@@ -84,6 +84,7 @@ const categoryLabels: Record<string, string> = {
   decision: 'Decision needed',
   follow_up: 'Follow-up',
   introduction: 'Introduction',
+  recipient_gap: 'Missing recipient',
 }
 
 export default function MissedEmailsPage() {
