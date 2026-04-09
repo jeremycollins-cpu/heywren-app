@@ -360,6 +360,15 @@ async function scanTeamMissedEmails(
       const isInCc = userEmail ? ccStr.includes(userEmail) : false
       const isCcOnly = !isInTo && isInCc
 
+      // Skip read CC-only emails — if you're just copied and already read it,
+      // it's noise unless you're specifically addressed by name
+      if (isCcOnly && email.is_read) {
+        const bodyLower = (email.body_preview || '').toLowerCase()
+        const nameLower = userName?.toLowerCase() || ''
+        const isMentioned = nameLower.length > 2 && (bodyLower.includes(nameLower) || bodyLower.includes(`@${nameLower}`))
+        if (!isMentioned) return null
+      }
+
       return {
         id: email.message_id,
         fromEmail: email.from_email || '',
@@ -373,7 +382,9 @@ async function scanTeamMissedEmails(
         toRecipients: email.to_recipients || '',
         ccRecipients: email.cc_recipients || '',
       }
-    })
+    }).filter((x): x is NonNullable<typeof x> => x !== null)
+
+    if (batchInput.length === 0) continue
 
     try {
       const classifications = await classifyMissedEmailBatch(batchInput, userPrefs)
