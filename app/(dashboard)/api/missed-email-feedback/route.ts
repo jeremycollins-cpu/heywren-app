@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -17,7 +18,8 @@ export async function POST(req: Request) {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.current_team_id) {
+  const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+  if (!teamId) {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
   const { error } = await supabase
     .from('missed_email_feedback')
     .insert({
-      team_id: profile.current_team_id,
+      team_id: teamId,
       user_id: user.id,
       missed_email_id: missed_email_id || null,
       from_email,
@@ -51,13 +53,43 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // If marked invalid, also dismiss the missed email
-  if (feedback === 'invalid' && missed_email_id) {
+  // If marked invalid, dismiss this email AND all other pending emails from the same sender
+  if (feedback === 'invalid') {
+    if (missed_email_id) {
+      await supabase
+        .from('missed_emails')
+        .update({ status: 'dismissed' })
+        .eq('id', missed_email_id)
+        .eq('user_id', user.id)
+    }
+
+    // Auto-dismiss all other pending emails from this sender
     await supabase
       .from('missed_emails')
       .update({ status: 'dismissed' })
-      .eq('id', missed_email_id)
+      .eq('team_id', teamId)
       .eq('user_id', user.id)
+      .eq('from_email', from_email)
+      .eq('status', 'pending')
+
+    // Check if this domain now has 2+ rejections — if so, dismiss ALL pending from that domain
+    const { data: domainFeedback } = await supabase
+      .from('missed_email_feedback')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('user_id', user.id)
+      .eq('from_domain', from_domain)
+      .eq('feedback', 'invalid')
+
+    if ((domainFeedback?.length || 0) >= 2) {
+      await supabase
+        .from('missed_emails')
+        .update({ status: 'dismissed' })
+        .eq('team_id', teamId)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .ilike('from_email', `%@${from_domain}`)
+    }
   }
 
   return NextResponse.json({ success: true })
@@ -78,7 +110,8 @@ export async function GET() {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.current_team_id) {
+  const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+  if (!teamId) {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
@@ -86,7 +119,7 @@ export async function GET() {
   const { data: feedback } = await supabase
     .from('missed_email_feedback')
     .select('feedback, from_domain')
-    .eq('team_id', profile.current_team_id)
+    .eq('team_id', teamId)
     .eq('user_id', user.id)
 
   const validCount = (feedback || []).filter(f => f.feedback === 'valid').length
