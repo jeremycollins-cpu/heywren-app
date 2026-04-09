@@ -540,7 +540,7 @@ export default function MissedChatsPage() {
                         Dismiss
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); addTodoFromPage(`Reply to ${chat.sender_name || 'Slack message'}: ${chat.question_summary || chat.reason || 'Follow up'}`) }}
+                        onClick={(e) => { e.stopPropagation(); addTodoFromPage(`Reply to ${chat.sender_name || 'Slack message'}: ${chat.question_summary || chat.reason || 'Follow up'}`, { type: 'missed_chat', id: chat.id }) }}
                         className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition text-sm font-medium"
                       >
                         <ListChecks aria-hidden="true" className="w-4 h-4" />

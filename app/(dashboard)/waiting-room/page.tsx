@@ -603,7 +603,7 @@ export default function WaitingRoomPage() {
                     </a>
                   )}
                   <button
-                    onClick={() => addTodoFromPage(`Follow up with ${item.to_recipients}: ${item.subject || item.wait_reason || 'Awaiting reply'}`)}
+                    onClick={() => addTodoFromPage(`Follow up with ${item.to_recipients}: ${item.subject || item.wait_reason || 'Awaiting reply'}`, { type: 'waiting_room', id: item.id })}
                     className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition"
                   >
                     <ListChecks className="w-3.5 h-3.5" />

@@ -65,7 +65,7 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: (title: string) => void }) {
+function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: (title: string, source?: { type: string; id?: string }) => void }) {
   const cfg = channelConfig[mention.channel]
   const Icon = cfg.icon
 
@@ -116,7 +116,7 @@ function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: 
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={() => onAddTodo(mention.source_snippet || mention.source_title)}
+            onClick={() => onAddTodo(mention.source_snippet || mention.source_title, { type: 'mention', id: mention.id })}
             className="flex items-center justify-center w-7 h-7 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30 transition"
             title="Add to To-Dos"
           >
