@@ -12,6 +12,7 @@ import {
   type EmailForThreatAnalysis,
   type ThreatAssessment,
 } from '@/lib/ai/detect-email-threats'
+import { graphFetch as graphFetchWithRefresh, getOutlookIntegration } from '@/lib/outlook/graph-client'
 
 function getAdminClient() {
   return createClient(
@@ -24,16 +25,13 @@ const MAX_EMAILS_PER_USER = 50
 const MIN_CONFIDENCE_TO_ALERT = 0.75
 const TIME_BUDGET_MS = 240000 // 4 minutes
 
-// Graph API helper (reuses pattern from sync-outlook)
-async function graphFetch(
+// Thin wrapper around the graph-client's token-refreshing graphFetch
+async function fetchFromGraph(
   url: string,
-  token: string
-): Promise<any> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return null
-  return res.json()
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ data: any; token: string }> {
+  return graphFetchWithRefresh(url, { token }, ctx)
 }
 
 export const scanEmailThreats = inngest.createFunction(
@@ -61,6 +59,14 @@ export const scanEmailThreats = inngest.createFunction(
 
       await step.run(`scan-${integration.user_id}`, async () => {
         const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString()
+
+        // Build token refresh context for Graph API calls
+        const ctx = {
+          supabase,
+          integrationId: integration.id,
+          refreshToken: integration.refresh_token,
+        }
+        let currentToken = integration.access_token
 
         // Fetch recent emails from our cached table
         const { data: emails } = await supabase
@@ -99,14 +105,18 @@ export const scanEmailThreats = inngest.createFunction(
             ccRecipients: email.cc_recipients,
           }
 
-          // Fetch headers from Graph API for this email
+          // Fetch headers from Graph API (with automatic token refresh on 401)
+          let headersLoaded = false
           try {
-            const headerData = await graphFetch(
+            const { data: headerData, token: newToken } = await fetchFromGraph(
               `https://graph.microsoft.com/v1.0/me/messages/${email.message_id}?$select=internetMessageHeaders,replyTo,sender,hasAttachments`,
-              integration.access_token
+              currentToken,
+              ctx
             )
+            currentToken = newToken
 
-            if (headerData) {
+            if (headerData && !headerData.error) {
+              headersLoaded = true
               emailInput.headers = headerData.internetMessageHeaders || []
               emailInput.hasAttachments = headerData.hasAttachments || false
               if (headerData.replyTo?.length > 0) {
@@ -117,15 +127,17 @@ export const scanEmailThreats = inngest.createFunction(
               }
             }
           } catch {
-            // Continue without headers — tier 1 will have fewer signals but tier 2 still works
+            // Continue without headers
           }
 
           // ── Tier 1: Header & pattern analysis ──
           const tier1 = tier1Analysis(emailInput)
           totalScanned++
 
-          // If tier 1 found nothing suspicious, skip tier 2
-          if (tier1.skipTier2) continue
+          // If tier 1 found nothing AND we had full header data, skip tier 2.
+          // But if headers failed to load, run tier 2 anyway since we can't
+          // trust that the email is clean without authentication checks.
+          if (tier1.skipTier2 && headersLoaded) continue
 
           // ── Tier 2: AI content analysis ──
           const assessment = await tier2Analysis(emailInput, tier1.signals)
