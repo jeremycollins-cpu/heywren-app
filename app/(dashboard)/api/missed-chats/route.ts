@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('current_team_id')
+    .select('current_team_id, wren_preferences')
     .eq('id', user.id)
     .single()
 
@@ -22,12 +22,16 @@ export async function GET() {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
+  const sensitivity = (profile.wren_preferences as any)?.sensitivity || 'balanced'
+  const minConfidence = sensitivity === 'focused' ? 0.8 : sensitivity === 'comprehensive' ? 0.4 : 0.6
+
   const { data: missedChats, error } = await supabase
     .from('missed_chats')
     .select('*')
     .eq('team_id', profile.current_team_id)
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
+    .gte('confidence', minConfidence)
     .order('sent_at', { ascending: false })
     .limit(200)
 

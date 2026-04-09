@@ -167,7 +167,7 @@ export const detectCommitmentCompletion = inngest.createFunction(
           })
           .eq('id', match.commitmentId)
 
-        // Add activity record
+        // Add activity record + notify user
         if (existing?.creator_id) {
           await supabase.from('activities').insert({
             team_id: teamId,
@@ -180,6 +180,23 @@ export const detectCommitmentCompletion = inngest.createFunction(
               confidence: match.confidence,
               source: `Auto-completed: detected from ${source} message`,
             },
+          })
+
+          // Get the commitment title for the notification
+          const { data: commitData } = await supabase
+            .from('commitments')
+            .select('title')
+            .eq('id', match.commitmentId)
+            .single()
+
+          await supabase.from('notifications').insert({
+            user_id: existing.creator_id,
+            team_id: teamId,
+            type: 'auto_complete',
+            title: `Auto-closed: ${commitData?.title || 'Commitment'}`,
+            body: `Wren detected this was completed from a ${source === 'slack' ? 'Slack message' : 'follow-up email'}. Evidence: "${match.evidence}"`,
+            link: '/commitments',
+            read: false,
           })
         }
 

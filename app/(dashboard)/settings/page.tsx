@@ -70,6 +70,7 @@ export default function SettingsPage() {
     channel: 'slack_first' as string,
     morning_brief: true,
     weekly_reflection: true,
+    sensitivity: 'balanced' as string, // 'focused' | 'balanced' | 'comprehensive'
   })
   const [savingWrenPrefs, setSavingWrenPrefs] = useState(false)
   // Gamification notification preferences
@@ -2125,6 +2126,32 @@ export default function SettingsPage() {
                   onClick={() => setWrenPrefs(p => ({ ...p, proactivity: opt.value }))}
                   className={`p-3 rounded-lg border text-left transition ${
                     wrenPrefs.proactivity === opt.value
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{opt.label}</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sensitivity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Detection Sensitivity</label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Controls how much Wren surfaces across missed emails, commitments, and alerts.</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'focused', label: 'Focused', desc: 'Only high-confidence, high-urgency items' },
+                { value: 'balanced', label: 'Balanced', desc: 'Smart defaults for most users' },
+                { value: 'comprehensive', label: 'Comprehensive', desc: 'Show everything Wren detects' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setWrenPrefs(p => ({ ...p, sensitivity: opt.value }))}
+                  className={`p-3 rounded-lg border text-left transition ${
+                    wrenPrefs.sensitivity === opt.value
                       ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
                       : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
                   }`}
