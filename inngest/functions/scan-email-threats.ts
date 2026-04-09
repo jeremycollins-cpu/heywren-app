@@ -13,6 +13,7 @@ import {
   type ThreatAssessment,
 } from '@/lib/ai/detect-email-threats'
 import { graphFetch as graphFetchWithRefresh, getOutlookIntegration } from '@/lib/outlook/graph-client'
+import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
 
 function getAdminClient() {
   return createClient(
@@ -181,7 +182,27 @@ export const scanEmailThreats = inngest.createFunction(
               { onConflict: 'team_id,user_id,outlook_message_id' }
             )
 
-          if (!error) totalThreats++
+          if (!error) {
+            totalThreats++
+
+            // Proactive alert for high/critical threats
+            if (assessment.threatLevel === 'critical' || assessment.threatLevel === 'high') {
+              try {
+                await sendProactiveAlert({
+                  teamId: integration.team_id,
+                  userId: integration.user_id,
+                  notificationType: 'security_alert',
+                  title: `${assessment.threatLevel === 'critical' ? 'CRITICAL' : 'High'} security threat: "${email.subject}"`,
+                  body: assessment.explanation || `Suspicious email from ${email.from_email} detected as ${assessment.threatType}`,
+                  link: '/security-alerts',
+                  slackText: `*:rotating_light: ${assessment.threatLevel.toUpperCase()} security threat detected*\n>*From:* ${email.from_name || email.from_email}\n>*Subject:* ${email.subject}\n>\n>${assessment.explanation || 'Review this email in Security Alerts before interacting.'}`,
+                  idempotencyKey: `threat-${integration.user_id}-${email.message_id}`,
+                })
+              } catch {
+                // Alert is best-effort
+              }
+            }
+          }
         }
       })
     }

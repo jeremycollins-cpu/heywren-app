@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
+import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 // GET — Fetch pending/snoozed missed chats for current user's team
 export async function GET() {
@@ -18,17 +20,18 @@ export async function GET() {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.current_team_id) {
+  const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+  if (!teamId) {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
-  const sensitivity = (profile.wren_preferences as any)?.sensitivity || 'balanced'
+  const sensitivity = (profile?.wren_preferences as any)?.sensitivity || 'balanced'
   const minConfidence = sensitivity === 'focused' ? 0.8 : sensitivity === 'comprehensive' ? 0.4 : 0.6
 
   const { data: missedChats, error } = await supabase
     .from('missed_chats')
     .select('*')
-    .eq('team_id', profile.current_team_id)
+    .eq('team_id', teamId)
     .eq('user_id', user.id)
     .in('status', ['pending', 'snoozed'])
     .gte('confidence', minConfidence)
@@ -44,7 +47,7 @@ export async function GET() {
   const { data: teamProfiles } = await supabase
     .from('profiles')
     .select('display_name, slack_user_id')
-    .eq('current_team_id', profile.current_team_id)
+    .eq('current_team_id', teamId)
     .not('slack_user_id', 'is', null)
 
   for (const p of teamProfiles || []) {
@@ -92,7 +95,7 @@ export async function GET() {
     const { count: dmCount } = await adminDb
       .from('slack_messages')
       .select('id', { count: 'exact', head: true })
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .eq('user_id', slackUserId)
       .or('channel_id.like.D%,channel_id.like.G%')
 
@@ -100,7 +103,7 @@ export async function GET() {
     const { count: channelCount } = await adminDb
       .from('slack_messages')
       .select('id', { count: 'exact', head: true })
-      .eq('team_id', profile.current_team_id)
+      .eq('team_id', teamId)
       .not('channel_id', 'like', 'D%')
       .not('channel_id', 'like', 'G%')
       .or(`user_id.eq.${slackUserId},message_text.ilike.%<@${slackUserId}>%`)
@@ -126,11 +129,11 @@ export async function POST() {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.current_team_id) {
+  const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
+  if (!teamId) {
     return NextResponse.json({ error: 'No team found' }, { status: 400 })
   }
 
-  const teamId = profile.current_team_id
   const adminDb = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -384,6 +387,27 @@ export async function POST() {
       console.error('Failed to insert missed chats:', insertError)
     } else {
       insertedCount = toInsert.length
+
+      // Proactive alerts for high/critical urgency missed chats
+      const urgent = toInsert.filter((c: any) => c.urgency === 'critical' || c.urgency === 'high')
+      if (urgent.length > 0) {
+        try {
+          const names = urgent.slice(0, 3).map((c: any) => c.sender_name || 'Someone').join(', ')
+          const preview = urgent[0].question_summary || urgent[0].message_text?.slice(0, 80) || 'Needs your reply'
+          await sendProactiveAlert({
+            teamId: urgent[0].team_id,
+            userId: user.id,
+            notificationType: 'missed_chat',
+            title: `${urgent.length} Slack message${urgent.length !== 1 ? 's' : ''} need your reply`,
+            body: `From ${names}: "${preview}"`,
+            link: '/missed-chats',
+            slackText: `*${urgent.length} Slack message${urgent.length !== 1 ? 's' : ''} need your reply:*\n${urgent.slice(0, 3).map((c: any) => `>  *${c.sender_name || 'Someone'}* in #${c.channel_name || 'DM'}: "${(c.question_summary || c.message_text || '').slice(0, 60)}"`).join('\n')}`,
+            idempotencyKey: `missed-chats-${user.id}-${new Date().toISOString().slice(0, 10)}`,
+          })
+        } catch {
+          // Alert is best-effort
+        }
+      }
     }
   }
 
