@@ -3,12 +3,13 @@
 // Uses Microsoft Graph API to read calendar and create events.
 //
 // Algorithm:
-// 1. Fetch all events for the next 5 business days
-// 2. Find gaps between events (respecting 15-min buffer)
-// 3. Only schedule within work hours (from calendar_boundaries or default 9-5)
-// 4. Pick the first gap that fits the requested duration
-// 5. Create the calendar event via Graph API
-// 6. Update the todo with the scheduled time
+// 1. Fetch user's timezone from Outlook mailbox settings
+// 2. Fetch all events for the next 5 business days (in true UTC)
+// 3. Find gaps between events (respecting 15-min buffer)
+// 4. Only schedule within work hours (converted to UTC from user's timezone)
+// 5. Pick the first gap that fits the requested duration
+// 6. Create the calendar event via Graph API in the user's timezone
+// 7. Update the todo with the scheduled time
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
@@ -33,25 +34,141 @@ interface TimeSlot {
   end: Date
 }
 
-function isBusinessDay(date: Date, workDays: number[]): boolean {
-  return workDays.includes(date.getDay())
+// ── Timezone helpers ────────────────────────────────────────────────────
+
+// Map common Windows timezone names → IANA timezone names
+const WINDOWS_TO_IANA: Record<string, string> = {
+  'Pacific Standard Time': 'America/Los_Angeles',
+  'Mountain Standard Time': 'America/Denver',
+  'US Mountain Standard Time': 'America/Phoenix',
+  'Central Standard Time': 'America/Chicago',
+  'Eastern Standard Time': 'America/New_York',
+  'Atlantic Standard Time': 'America/Halifax',
+  'Hawaiian Standard Time': 'Pacific/Honolulu',
+  'Alaskan Standard Time': 'America/Anchorage',
+  'UTC': 'UTC',
+  'GMT Standard Time': 'Europe/London',
+  'W. Europe Standard Time': 'Europe/Berlin',
+  'Romance Standard Time': 'Europe/Paris',
+  'Central European Standard Time': 'Europe/Warsaw',
+  'E. Europe Standard Time': 'Europe/Bucharest',
+  'FLE Standard Time': 'Europe/Helsinki',
+  'GTB Standard Time': 'Europe/Athens',
+  'Russian Standard Time': 'Europe/Moscow',
+  'India Standard Time': 'Asia/Kolkata',
+  'China Standard Time': 'Asia/Shanghai',
+  'Tokyo Standard Time': 'Asia/Tokyo',
+  'Korea Standard Time': 'Asia/Seoul',
+  'AUS Eastern Standard Time': 'Australia/Sydney',
+  'New Zealand Standard Time': 'Pacific/Auckland',
+  'Singapore Standard Time': 'Asia/Singapore',
+  'Arabian Standard Time': 'Asia/Dubai',
+  'Israel Standard Time': 'Asia/Jerusalem',
+  'South Africa Standard Time': 'Africa/Johannesburg',
+  'SA Pacific Standard Time': 'America/Bogota',
+  'E. South America Standard Time': 'America/Sao_Paulo',
+  'SE Asia Standard Time': 'Asia/Bangkok',
+  'Taipei Standard Time': 'Asia/Taipei',
+  'West Pacific Standard Time': 'Pacific/Port_Moresby',
 }
 
-function getWorkHoursForDay(
+function toIana(windowsTz: string): string {
+  return WINDOWS_TO_IANA[windowsTz] || 'America/Los_Angeles'
+}
+
+/**
+ * Get the UTC offset in milliseconds for a given IANA timezone at a specific date.
+ * Positive = UTC is ahead of local (e.g., +25200000 for PDT = UTC+7h ahead of Pacific).
+ */
+function getUtcOffsetMs(ianaTimeZone: string, date: Date): number {
+  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' })
+  const tzStr = date.toLocaleString('en-US', { timeZone: ianaTimeZone })
+  return new Date(utcStr).getTime() - new Date(tzStr).getTime()
+}
+
+/**
+ * Convert a "local time" (hour:minute in user's timezone) on a given date to a UTC Date.
+ */
+function localTimeToUtc(date: Date, hours: number, minutes: number, ianaTimeZone: string): Date {
+  // Create a date at the specified hours/minutes in "server local" (UTC on Vercel)
+  const local = new Date(date)
+  local.setHours(hours, minutes, 0, 0)
+  // Shift from user-local → UTC
+  const offsetMs = getUtcOffsetMs(ianaTimeZone, local)
+  return new Date(local.getTime() + offsetMs)
+}
+
+/**
+ * Convert a UTC Date to a local datetime string (no Z suffix) for Graph API.
+ */
+function utcToLocalString(utcDate: Date, ianaTimeZone: string): string {
+  // Format as YYYY-MM-DDTHH:mm:ss.000 in the user's timezone
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ianaTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(utcDate)
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value || '00'
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000`
+}
+
+/**
+ * Format a UTC Date as a display string in the user's timezone.
+ */
+function formatLocalTime(utcDate: Date, ianaTimeZone: string): string {
+  return utcDate.toLocaleTimeString('en-US', {
+    timeZone: ianaTimeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatLocalDate(utcDate: Date, ianaTimeZone: string): string {
+  return utcDate.toLocaleDateString('en-US', {
+    timeZone: ianaTimeZone,
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatLocalDateShort(utcDate: Date, ianaTimeZone: string): string {
+  return utcDate.toLocaleDateString('en-US', {
+    timeZone: ianaTimeZone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+// ── Scheduling helpers ──────────────────────────────────────────────────
+
+function isBusinessDay(date: Date, workDays: number[], ianaTimeZone: string): boolean {
+  // Get the day-of-week in the user's timezone
+  const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: ianaTimeZone, weekday: 'short' }).format(date)
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return workDays.includes(dayMap[dayStr] ?? -1)
+}
+
+function getWorkHoursUtc(
   date: Date,
   workStart: string,
-  workEnd: string
+  workEnd: string,
+  ianaTimeZone: string
 ): { start: Date; end: Date } {
   const [startH, startM] = workStart.split(':').map(Number)
   const [endH, endM] = workEnd.split(':').map(Number)
 
-  const start = new Date(date)
-  start.setHours(startH, startM, 0, 0)
-
-  const end = new Date(date)
-  end.setHours(endH, endM, 0, 0)
-
-  return { start, end }
+  return {
+    start: localTimeToUtc(date, startH, startM, ianaTimeZone),
+    end: localTimeToUtc(date, endH, endM, ianaTimeZone),
+  }
 }
 
 function findGaps(
@@ -148,7 +265,8 @@ export async function POST(request: NextRequest) {
       { token: integration.access_token },
       ctx
     )
-    const userTimeZone: string = mailboxData?.timeZone || 'Pacific Standard Time'
+    const windowsTimeZone: string = mailboxData?.timeZone || 'Pacific Standard Time'
+    const ianaTimeZone = toIana(windowsTimeZone)
 
     // Get user's calendar boundaries (or defaults)
     const { data: boundaries } = await admin
@@ -170,29 +288,32 @@ export async function POST(request: NextRequest) {
     let currentToken = mbToken
     let scheduledSlot: TimeSlot | null = null
 
+    // Start from "today" in the user's timezone
+    // We iterate by shifting a reference date by 1 day at a time
     const searchDate = new Date(now)
     let daysChecked = 0
 
     while (daysChecked < SEARCH_DAYS && !scheduledSlot) {
-      // Skip to next business day if today is done or not a work day
-      if (searchDate.toDateString() === now.toDateString()) {
-        const { end: todayWorkEnd } = getWorkHoursForDay(searchDate, workStart, workEnd)
-        if (now >= todayWorkEnd || !isBusinessDay(searchDate, effectiveWorkDays)) {
-          searchDate.setDate(searchDate.getDate() + 1)
-          continue
-        }
-      } else if (!isBusinessDay(searchDate, effectiveWorkDays)) {
+      if (!isBusinessDay(searchDate, effectiveWorkDays, ianaTimeZone)) {
+        searchDate.setDate(searchDate.getDate() + 1)
+        continue
+      }
+
+      // Get work hours in true UTC for this day
+      const { start: dayWorkStart, end: dayWorkEnd } = getWorkHoursUtc(searchDate, workStart, workEnd, ianaTimeZone)
+
+      // If today and work hours are already over, skip
+      if (now >= dayWorkEnd) {
         searchDate.setDate(searchDate.getDate() + 1)
         continue
       }
 
       // Fetch events for this day from Graph API
-      const dayStart = new Date(searchDate)
-      dayStart.setHours(0, 0, 0, 0)
-      const dayEnd = new Date(searchDate)
-      dayEnd.setHours(23, 59, 59, 999)
+      // Use a wider UTC window to ensure we capture all events for the user's local day
+      const queryStart = new Date(dayWorkStart.getTime() - 2 * 3600000) // 2h before work start
+      const queryEnd = new Date(dayWorkEnd.getTime() + 2 * 3600000)     // 2h after work end
 
-      const calUrl = `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${dayStart.toISOString()}&endDateTime=${dayEnd.toISOString()}&$select=id,subject,start,end,isCancelled&$top=50`
+      const calUrl = `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${queryStart.toISOString()}&endDateTime=${queryEnd.toISOString()}&$select=id,subject,start,end,isAllDay,isCancelled&$top=100`
 
       const { data: calData, token } = await graphFetch(
         calUrl,
@@ -201,20 +322,28 @@ export async function POST(request: NextRequest) {
       )
       currentToken = token
 
+      // Parse events into true UTC TimeSlots
       const events: TimeSlot[] = (calData?.value || [])
         .filter((e: any) => !e.isCancelled)
-        .map((e: any) => ({
-          start: new Date(e.start.dateTime + 'Z'),
-          end: new Date(e.end.dateTime + 'Z'),
-        }))
+        .map((e: any) => {
+          // All-day events: block the entire work day
+          if (e.isAllDay || !e.start?.dateTime) {
+            return { start: dayWorkStart, end: dayWorkEnd }
+          }
 
-      // Get work hours for this day
-      const { start: dayWorkStart, end: dayWorkEnd } = getWorkHoursForDay(searchDate, workStart, workEnd)
+          // Graph API returns dateTime in the user's mailbox timezone (no Z suffix).
+          // Convert from user-local to true UTC by applying the offset.
+          const rawStart = new Date(e.start.dateTime) // parsed as UTC on server (wrong absolute time)
+          const rawEnd = new Date(e.end.dateTime)
+          const offsetMs = getUtcOffsetMs(ianaTimeZone, rawStart)
+          return {
+            start: new Date(rawStart.getTime() + offsetMs),
+            end: new Date(rawEnd.getTime() + offsetMs),
+          }
+        })
 
       // For today, don't schedule in the past
-      const effectiveStart = searchDate.toDateString() === now.toDateString()
-        ? new Date(Math.max(now.getTime(), dayWorkStart.getTime()))
-        : dayWorkStart
+      const effectiveStart = now > dayWorkStart ? now : dayWorkStart
 
       // Find gaps
       const gaps = findGaps(events, effectiveStart, dayWorkEnd, durationMinutes, BUFFER_MINUTES)
@@ -239,6 +368,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create calendar event via Graph API
+    // Convert the scheduled UTC slot to the user's local timezone for Graph
     const eventBody = {
       subject: `[Todo] ${title}`,
       body: {
@@ -246,12 +376,12 @@ export async function POST(request: NextRequest) {
         content: `Focus time scheduled by HeyWren for your todo: "${title}"`,
       },
       start: {
-        dateTime: scheduledSlot.start.toISOString().replace('Z', ''),
-        timeZone: userTimeZone,
+        dateTime: utcToLocalString(scheduledSlot.start, ianaTimeZone),
+        timeZone: windowsTimeZone,
       },
       end: {
-        dateTime: scheduledSlot.end.toISOString().replace('Z', ''),
-        timeZone: userTimeZone,
+        dateTime: utcToLocalString(scheduledSlot.end, ianaTimeZone),
+        timeZone: windowsTimeZone,
       },
       showAs: 'busy',
       isReminderOn: true,
@@ -276,11 +406,15 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Update the todo with scheduled info
+    // Update the todo with scheduled info (displayed in user's timezone)
+    const displayStart = formatLocalTime(scheduledSlot.start, ianaTimeZone)
+    const displayEnd = formatLocalTime(scheduledSlot.end, ianaTimeZone)
+    const displayDate = formatLocalDateShort(scheduledSlot.start, ianaTimeZone)
+
     await admin
       .from('todos')
       .update({
-        notes: `Scheduled: ${scheduledSlot.start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${scheduledSlot.start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} – ${scheduledSlot.end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}${boundaries ? '' : '\n(Set Calendar Protection boundaries for better scheduling)'}`,
+        notes: `Scheduled: ${displayDate} ${displayStart} – ${displayEnd}${boundaries ? '' : '\n(Set Calendar Protection boundaries for better scheduling)'}`,
         updated_at: new Date().toISOString(),
       })
       .eq('id', todoId)
@@ -292,8 +426,8 @@ export async function POST(request: NextRequest) {
         start: scheduledSlot.start.toISOString(),
         end: scheduledSlot.end.toISOString(),
         eventId: createdEvent?.id,
-        day: scheduledSlot.start.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
-        time: `${scheduledSlot.start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} – ${scheduledSlot.end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+        day: formatLocalDate(scheduledSlot.start, ianaTimeZone),
+        time: `${displayStart} – ${displayEnd}`,
       },
     })
   } catch (err) {
