@@ -895,7 +895,7 @@ export default function CommitmentsPage() {
                   ) : null}
                   {c.status !== 'completed' && (
                     <button
-                      onClick={() => addTodoFromPage(c.title)}
+                      onClick={() => addTodoFromPage(c.title, { type: 'commitment', id: c.id })}
                       className="text-xs px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 font-medium transition-colors flex items-center gap-1"
                       title="Add to To-Dos"
                     >

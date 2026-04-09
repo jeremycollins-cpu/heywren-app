@@ -48,11 +48,13 @@ interface TodoPanelProps {
 }
 
 export default function TodoPanel({ open, onClose }: TodoPanelProps) {
-  const { pendingTitle, clearPendingTitle } = useTodo()
+  const { pendingTitle, pendingSource, clearPendingTitle } = useTodo()
   const [todos, setTodos] = useState<Todo[]>([])
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
   const [newCategory, setNewCategory] = useState<string>('')
+  const [newSourceType, setNewSourceType] = useState<string | undefined>(undefined)
+  const [newSourceId, setNewSourceId] = useState<string | undefined>(undefined)
   const [adding, setAdding] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [addingSubFor, setAddingSubFor] = useState<string | null>(null)
@@ -88,9 +90,11 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   useEffect(() => {
     if (open && pendingTitle) {
       setNewTitle(pendingTitle)
+      setNewSourceType(pendingSource?.type)
+      setNewSourceId(pendingSource?.id)
       clearPendingTitle()
     }
-  }, [open, pendingTitle, clearPendingTitle])
+  }, [open, pendingTitle, pendingSource, clearPendingTitle])
 
   useEffect(() => {
     if (addingSubFor) {
@@ -110,6 +114,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
           title: title.trim(),
           parent_id: parentId || undefined,
           category: !parentId && newCategory ? newCategory : undefined,
+          source_type: !parentId && newSourceType ? newSourceType : undefined,
+          source_id: !parentId && newSourceId ? newSourceId : undefined,
         }),
       })
       if (res.ok) {
@@ -121,6 +127,8 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
         } else {
           setNewTitle('')
           setNewCategory('')
+          setNewSourceType(undefined)
+          setNewSourceId(undefined)
           inputRef.current?.focus()
         }
       }

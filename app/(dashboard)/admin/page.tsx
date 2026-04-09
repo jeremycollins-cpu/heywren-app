@@ -1016,6 +1016,14 @@ function AdminContent() {
                   <Sparkles className="w-3.5 h-3.5" />
                   {actionLoading === 'refresh_signal' ? 'Generating...' : 'Refresh Signal'}
                 </button>
+                <button
+                  onClick={() => runAction('dedup_commitments', { teamId: profile.current_team_id, userId: profile.id })}
+                  disabled={actionLoading === 'dedup_commitments'}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  {actionLoading === 'dedup_commitments' ? 'Deduping...' : 'Dedup Commitments'}
+                </button>
               </div>
 
               {/* Account & Access */}
