@@ -14,7 +14,7 @@ import {
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
-  AtSign,
+  AtSign, Inbox,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -256,6 +256,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     {
       label: 'Action Queue',
       links: [
+        { href: '/inbox-zero', label: 'Inbox Zero', icon: Inbox, tourId: 'nav-inbox-zero', badge: 0, badgeColor: 'bg-indigo-500' },
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
         { href: '/unsubscribe', label: 'Unsubscribe', icon: MailX, tourId: 'nav-unsubscribe', badge: 0, badgeColor: '' },
