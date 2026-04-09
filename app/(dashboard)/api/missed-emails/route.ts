@@ -207,10 +207,10 @@ export async function POST() {
     enabledCategories: prefsRow?.enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
     minUrgency: prefsRow?.min_urgency || 'low',
     feedbackBlockedDomains: new Set(
-      Object.entries(domainCounts).filter(([, c]) => c >= 3).map(([d]) => d)
+      Object.entries(domainCounts).filter(([, c]) => c >= 2).map(([d]) => d)
     ),
     feedbackBlockedEmails: new Set(
-      Object.entries(emailCounts).filter(([, c]) => c >= 3).map(([e]) => e)
+      Object.entries(emailCounts).filter(([, c]) => c >= 1).map(([e]) => e)
     ),
   }
 

@@ -154,6 +154,21 @@ function isLikelyAutomated(email: EmailInput): boolean {
   return false
 }
 
+const INTRODUCTION_PATTERNS = [
+  /\bintro(duction|ducing)?\b/i,
+  /\bwelcome\b/i,
+  /\bmeet\b.*\b(team|group|everyone)\b/i,
+  /\bgreat to have you\b/i,
+  /\bnice to (meet|e-?meet|connect)\b/i,
+  /\bwanted to (introduce|connect)\b/i,
+  /\bi('d| would) like (to |you to )?(introduce|connect|meet)\b/i,
+  /\bputting you (two |both )?in touch\b/i,
+  /\bloop(ing)? you in\b/i,
+  /\bconnecting you\b/i,
+  /\bpleasure (to |of )?(meet|work|connect)\b/i,
+  /\bonboar(d|ding)\b/i,
+]
+
 function likelyNeedsResponse(email: EmailInput): boolean {
   // CC-only emails don't need a response unless the user is @mentioned
   if (email.isCcOnly) {
@@ -166,6 +181,8 @@ function likelyNeedsResponse(email: EmailInput): boolean {
   }
   const text = email.subject + ' ' + email.bodyPreview
   if (QUESTION_PATTERNS.some(p => p.test(text))) return true
+  // Introduction/welcome emails from real people typically need a response
+  if (INTRODUCTION_PATTERNS.some(p => p.test(text))) return true
   // If the user is @mentioned by name in the body, it likely needs their response
   if (email.recipientName && email.recipientName.length > 2) {
     const nameLower = email.recipientName.toLowerCase()
@@ -531,8 +548,13 @@ export async function classifyMissedEmailBatch(
 
     if (!vip) {
       if (isLikelyAutomated(email)) {
-        _stats.tier1_automated++
-        continue
+        // Don't auto-reject if it matches introduction patterns — personal
+        // intros (e.g. "Welcome and intro!") can look like automated emails
+        const text = email.subject + ' ' + email.bodyPreview
+        if (!INTRODUCTION_PATTERNS.some(p => p.test(text))) {
+          _stats.tier1_automated++
+          continue
+        }
       }
 
       if (!likelyNeedsResponse(email)) {

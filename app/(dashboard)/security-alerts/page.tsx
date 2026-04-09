@@ -64,6 +64,7 @@ export default function SecurityAlertsPage() {
   const [stats, setStats] = useState({ unreviewed: 0, critical: 0, confirmed: 0, falsePositives: 0 })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [showResolved, setShowResolved] = useState(false)
@@ -128,14 +129,38 @@ export default function SecurityAlertsPage() {
             Wren scans your emails for phishing, scams, and impersonation attempts.
           </p>
         </div>
-        <button
-          onClick={fetchAlerts}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
-        >
-          {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          {refreshing ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setScanning(true)
+              try {
+                const res = await fetch('/api/email-threats', { method: 'POST' })
+                if (res.ok) {
+                  toast.success('Security scan started — results will appear in a minute or two.')
+                  setTimeout(() => fetchAlerts(), 30000)
+                  setTimeout(() => fetchAlerts(), 90000)
+                } else {
+                  toast.error('Failed to start scan')
+                }
+              } catch { toast.error('Failed to start scan') }
+              finally { setScanning(false) }
+            }}
+            disabled={scanning}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white rounded-lg transition disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' }}
+          >
+            {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+            {scanning ? 'Starting...' : 'Scan Now'}
+          </button>
+          <button
+            onClick={fetchAlerts}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
+          >
+            {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
