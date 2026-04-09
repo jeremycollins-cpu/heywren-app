@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { classifyMissedEmailBatch, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { getOutlookIntegration, markReadAndArchive, markMessageAsRead } from '@/lib/outlook/graph-client'
 
 function normalizeSubject(subject: string | null): string {
   if (!subject) return '(no subject)'
@@ -394,7 +395,72 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // ── Sync action to Outlook (mark as read / archive) ──
+  // Fire-and-forget so we don't block the UI response
+  if (status === 'replied' || status === 'dismissed') {
+    syncEmailToOutlook(user.id, id, status, threadEmailIds).catch(err =>
+      console.warn('[missed-emails] Outlook sync failed:', err)
+    )
+  }
+
   return NextResponse.json({ success: true })
+}
+
+async function syncEmailToOutlook(
+  userId: string,
+  missedEmailId: string,
+  status: string,
+  threadEmailIds?: string[],
+) {
+  const adminDb = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
+  // Get the user's profile and integration
+  const { data: profile } = await adminDb
+    .from('profiles')
+    .select('current_team_id')
+    .eq('id', userId)
+    .single()
+
+  if (!profile?.current_team_id) return
+
+  const integration = await getOutlookIntegration(profile.current_team_id, userId)
+  if (!integration) return
+
+  const ctx = {
+    supabase: adminDb,
+    integrationId: integration.id,
+    refreshToken: integration.refresh_token,
+  }
+
+  // Get Graph message IDs from the missed_emails records
+  const ids = threadEmailIds?.length ? threadEmailIds : [missedEmailId]
+  const { data: emails } = await adminDb
+    .from('missed_emails')
+    .select('message_id')
+    .in('id', ids)
+
+  if (!emails?.length) return
+
+  let token = integration.access_token
+  for (const email of emails) {
+    if (!email.message_id) continue
+    try {
+      if (status === 'dismissed') {
+        // Dismissed → mark as read and archive
+        const result = await markReadAndArchive(email.message_id, token, ctx)
+        token = result.token
+      } else {
+        // Replied → just mark as read (user already responded)
+        const result = await markMessageAsRead(email.message_id, token, ctx)
+        token = result.token
+      }
+    } catch {
+      // Non-critical — don't fail the HeyWren action if Outlook sync fails
+    }
+  }
 }
 
 export const dynamic = 'force-dynamic'
