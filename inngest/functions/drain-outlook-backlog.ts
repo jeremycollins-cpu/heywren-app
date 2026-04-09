@@ -28,9 +28,18 @@ const SKIP_SUBJECT_PATTERNS = [
   /\breceipt for\b/i, /\binvoice #/i, /\border confirm/i,
 ]
 
-function shouldSkipEmail(fromEmail: string, subject: string): boolean {
+// Distribution list / company-wide recipient patterns
+const DISTRIBUTION_LIST_PATTERNS = [
+  /\ball@/i, /\beveryone@/i, /\bcompany@/i, /\bstaff@/i,
+  /\bteam@/i, /\ball[-_]staff@/i, /\ball[-_]employees@/i, /\ball[-_]hands@/i,
+  /\ball[-_]company@/i, /\boffice@/i, /\borgwide@/i, /\borg[-_]wide@/i,
+  /\bentire[-_]?company@/i, /\bglobal[-_]?team@/i,
+]
+
+function shouldSkipEmail(fromEmail: string, subject: string, toRecipients?: string): boolean {
   if (SKIP_SENDER_PATTERNS.some(p => p.test(fromEmail))) return true
   if (SKIP_SUBJECT_PATTERNS.some(p => p.test(subject))) return true
+  if (toRecipients && DISTRIBUTION_LIST_PATTERNS.some(p => p.test(toRecipients))) return true
   return false
 }
 
@@ -124,7 +133,7 @@ export const drainOutlookBacklog = inngest.createFunction(
 
             for (const msg of unprocessed) {
               const preview = msg.body_preview || ''
-              if (preview.length < 20 || shouldSkipEmail(msg.from_email || '', msg.subject || '')) {
+              if (preview.length < 20 || shouldSkipEmail(msg.from_email || '', msg.subject || '', msg.to_recipients || '')) {
                 await supabase
                   .from('outlook_messages')
                   .update({ processed: true, commitments_found: 0 })

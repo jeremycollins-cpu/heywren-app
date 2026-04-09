@@ -165,10 +165,25 @@ function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
   return (order[urgency] ?? 3) <= (order[minUrgency] ?? 3)
 }
 
+// Distribution list / company-wide recipient patterns — broadcast emails
+// aren't personally directed and shouldn't trigger missed email alerts
+const DISTRIBUTION_LIST_PATTERNS = [
+  /\ball@/i, /\beveryone@/i, /\bcompany@/i, /\bstaff@/i,
+  /\bteam@/i, /\ball[-_]staff@/i, /\ball[-_]employees@/i, /\ball[-_]hands@/i,
+  /\ball[-_]company@/i, /\boffice@/i, /\borgwide@/i, /\borg[-_]wide@/i,
+  /\bentire[-_]?company@/i, /\bglobal[-_]?team@/i,
+]
+
+function isSentToDistributionList(email: EmailInput): boolean {
+  const recipients = (email.toRecipients || '') + ' ' + (email.ccRecipients || '')
+  return DISTRIBUTION_LIST_PATTERNS.some(p => p.test(recipients))
+}
+
 function isLikelyAutomated(email: EmailInput): boolean {
   if (AUTOMATED_SENDER_PATTERNS.some(p => p.test(email.fromEmail))) return true
   if (AUTOMATED_SUBJECT_PATTERNS.some(p => p.test(email.subject))) return true
   if (email.bodyPreview.length < 30 && !email.bodyPreview.includes('?')) return true
+  if (isSentToDistributionList(email)) return true
   return false
 }
 
