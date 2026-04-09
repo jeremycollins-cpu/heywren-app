@@ -185,6 +185,18 @@ export async function syncTeamOutlook(
       msToken = newToken
     } else {
       console.error(`Team ${teamId}: Token expired, skipping`)
+
+      // Notify the user their Outlook connection needs re-authorization
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        team_id: teamId,
+        type: 'integration_error',
+        title: 'Outlook connection expired',
+        body: 'Your Outlook token has expired. Please reconnect your account so Wren can continue scanning your emails and calendar.',
+        link: '/integrations',
+        read: false,
+      })
+
       return { success: false, error: 'token_expired' }
     }
   }
