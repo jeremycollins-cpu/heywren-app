@@ -146,7 +146,7 @@ async function scanTeamMissedEmails(
     .eq('team_id', teamId)
     .maybeSingle()
 
-  // Load feedback history — domains/emails with 3+ invalid marks get auto-blocked
+  // Load feedback history — single invalid mark blocks sender, 2+ blocks entire domain
   const { data: feedbackRows } = await supabase
     .from('missed_email_feedback')
     .select('from_email, from_domain, feedback')
@@ -162,10 +162,10 @@ async function scanTeamMissedEmails(
   }
 
   const feedbackBlockedDomains = new Set(
-    Object.entries(domainCounts).filter(([, c]) => c >= 3).map(([d]) => d)
+    Object.entries(domainCounts).filter(([, c]) => c >= 2).map(([d]) => d)
   )
   const feedbackBlockedEmails = new Set(
-    Object.entries(emailCounts).filter(([, c]) => c >= 3).map(([e]) => e)
+    Object.entries(emailCounts).filter(([, c]) => c >= 1).map(([e]) => e)
   )
 
   const userPrefs: UserEmailPreferences = {
