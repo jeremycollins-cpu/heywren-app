@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff, ListChecks, Bell, Check } from 'lucide-react'
+import { Menu, LogOut, Settings, CreditCard, Moon, Sun, Wifi, WifiOff, ListChecks, Bell, Check, CheckCircle2, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTodo } from '@/lib/contexts/todo-context'
 
@@ -24,7 +24,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
   const router = useRouter()
-  const { toggleTodoPanel } = useTodo()
+  const { toggleTodoPanel, addTodoFromPage } = useTodo()
   const [user, setUser] = useState<any>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
@@ -275,36 +275,62 @@ export default function Header({ onMenuClick }: HeaderProps) {
                       <p className="text-xs text-gray-400 mt-1">We&apos;ll let you know when something needs your attention</p>
                     </div>
                   ) : (
-                    notifications.map(n => (
-                      <div
-                        key={n.id}
-                        className={`px-4 py-3 border-b border-gray-50 dark:border-border-dark last:border-b-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition ${
-                          !n.read ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''
-                        }`}
-                        onClick={() => {
-                          if (!n.read) markRead(n.id)
-                          if (n.link) {
-                            router.push(n.link)
-                            setShowNotifications(false)
-                          }
-                        }}
-                      >
-                        <div className="flex items-start gap-3">
-                          {!n.read && (
-                            <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
-                          )}
-                          <div className={`flex-1 min-w-0 ${n.read ? 'ml-5' : ''}`}>
-                            <p className={`text-sm ${n.read ? 'text-gray-600 dark:text-gray-400' : 'text-gray-900 dark:text-white font-medium'}`}>
-                              {n.title}
-                            </p>
-                            {n.body && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
+                    notifications.map(n => {
+                      const isActionable = ['missed_email', 'stale_commitment', 'auto_complete'].includes(n.type)
+                      return (
+                        <div
+                          key={n.id}
+                          className={`px-4 py-3 border-b border-gray-50 dark:border-border-dark last:border-b-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition ${
+                            !n.read ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''
+                          }`}
+                          onClick={() => {
+                            if (!n.read) markRead(n.id)
+                            if (n.link) {
+                              router.push(n.link)
+                              setShowNotifications(false)
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            {!n.read && (
+                              <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
                             )}
-                            <p className="text-[10px] text-gray-400 mt-1">{formatNotifTime(n.created_at)}</p>
+                            <div className={`flex-1 min-w-0 ${n.read ? 'ml-5' : ''}`}>
+                              <p className={`text-sm ${n.read ? 'text-gray-600 dark:text-gray-400' : 'text-gray-900 dark:text-white font-medium'}`}>
+                                {n.title}
+                              </p>
+                              {n.body && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[10px] text-gray-400">{formatNotifTime(n.created_at)}</span>
+                                {isActionable && !n.read && (
+                                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => {
+                                        addTodoFromPage(n.title.replace(/^Auto-closed:\s*/, ''))
+                                        markRead(n.id)
+                                      }}
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition"
+                                    >
+                                      <ListChecks className="w-2.5 h-2.5" />
+                                      To-Do
+                                    </button>
+                                    <button
+                                      onClick={() => markRead(n.id)}
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+                                    >
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      Got it
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>

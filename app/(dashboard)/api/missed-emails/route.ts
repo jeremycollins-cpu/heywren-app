@@ -22,16 +22,20 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    // Get user's team
+    // Get user's team and sensitivity preference
     const { data: profile } = await supabase
       .from('profiles')
-      .select('current_team_id')
+      .select('current_team_id, wren_preferences')
       .eq('id', user.id)
       .single()
 
     if (!profile?.current_team_id) {
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
+
+    // Sensitivity → confidence threshold mapping
+    const sensitivity = (profile.wren_preferences as any)?.sensitivity || 'balanced'
+    const minConfidence = sensitivity === 'focused' ? 0.8 : sensitivity === 'comprehensive' ? 0.4 : 0.6
 
     // Fetch pending and snoozed missed emails — scoped to THIS user only
     const { data: missedEmails, error } = await supabase
@@ -40,6 +44,7 @@ export async function GET() {
       .eq('team_id', profile.current_team_id)
       .eq('user_id', user.id)
       .in('status', ['pending', 'snoozed'])
+      .gte('confidence', minConfidence)
       .order('received_at', { ascending: false })
       .limit(200)
 
