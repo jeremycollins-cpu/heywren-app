@@ -51,6 +51,8 @@ export default function OrganizeEmailPopover({
   const [done, setDone] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null)
 
   // Close on click outside
   useEffect(() => {
@@ -92,6 +94,13 @@ export default function OrganizeEmailPopover({
 
   const handleOpen = (e: React.MouseEvent) => {
     e.stopPropagation()
+    // Calculate position from the button so the popover renders in a portal-like fixed position
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      const left = Math.max(16, Math.min(rect.right - 384, window.innerWidth - 400))
+      const top = rect.bottom + 8
+      setPopoverPos({ top, left })
+    }
     setIsOpen(true)
     setDone(false)
     fetchFolders()
@@ -182,6 +191,7 @@ export default function OrganizeEmailPopover({
   if (!isOpen) {
     return (
       <button
+        ref={buttonRef}
         onClick={handleOpen}
         className="flex items-center gap-2 px-4 py-2 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition text-sm font-medium"
         title="Organize emails from this sender into a folder"
@@ -193,10 +203,10 @@ export default function OrganizeEmailPopover({
   }
 
   // Done state
-  if (done) {
+  if (done && popoverPos) {
     return (
-      <div ref={popoverRef} className="relative z-50">
-        <div className="absolute right-0 top-0 w-80 bg-white dark:bg-surface-dark-secondary rounded-xl border border-gray-200 dark:border-border-dark shadow-xl p-5">
+      <div ref={popoverRef} className="fixed z-[100]" style={{ top: popoverPos.top, left: popoverPos.left }}>
+        <div className="w-80 bg-white dark:bg-surface-dark-secondary rounded-xl border border-gray-200 dark:border-border-dark shadow-xl p-5">
           <div className="flex flex-col items-center gap-2 py-4">
             <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
@@ -213,8 +223,8 @@ export default function OrganizeEmailPopover({
   const systemFolders = folders.filter(f => !f.is_custom)
 
   return (
-    <div ref={popoverRef} className="relative z-50" onClick={e => e.stopPropagation()}>
-      <div className="absolute right-0 top-0 w-96 bg-white dark:bg-surface-dark-secondary rounded-xl border border-gray-200 dark:border-border-dark shadow-xl">
+    <div ref={popoverRef} className="fixed z-[100]" style={popoverPos ? { top: popoverPos.top, left: popoverPos.left } : {}} onClick={e => e.stopPropagation()}>
+      <div className="w-96 bg-white dark:bg-surface-dark-secondary rounded-xl border border-gray-200 dark:border-border-dark shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
