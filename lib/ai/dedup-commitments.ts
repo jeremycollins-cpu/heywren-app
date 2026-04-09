@@ -5,10 +5,8 @@
 import type { DetectedCommitment } from './detect-commitments'
 import { calculatePriorityScore } from './detect-commitments'
 
-// Use `any` for the Supabase client type — the admin client created with
-// service role key doesn't carry schema types, and we query across tables.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SupabaseAdmin = any
+// The admin client created with service role key doesn't carry schema types
+type SupabaseAdmin = any // eslint-disable-line
 
 // ── Title normalization ─────────────────────────────────────────────────────
 
