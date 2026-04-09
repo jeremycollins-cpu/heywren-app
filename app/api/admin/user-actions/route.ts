@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
 import { generateThemes } from '@/lib/ai/generate-themes'
+import { mergeDuplicateCommitments, findDuplicateCommitments } from '@/lib/ai/dedup-commitments'
 
 function getAdminClient() {
   return createClient(
@@ -640,6 +641,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `Signal regenerated for ${userName} — ${themes.themes.length} themes from ${totalPoints} data points`,
+    })
+  }
+
+  if (action === 'dedup_commitments') {
+    if (!teamId && !userId) return NextResponse.json({ error: 'Missing teamId or userId' }, { status: 400 })
+
+    // If userId provided, get their team
+    let targetTeamId = teamId
+    if (!targetTeamId && userId) {
+      const { data: profile } = await adminDb
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', userId)
+        .single()
+      targetTeamId = profile?.current_team_id
+    }
+
+    if (!targetTeamId) {
+      return NextResponse.json({ success: false, message: 'No team found' })
+    }
+
+    const { groups, totalDuplicates } = await findDuplicateCommitments(adminDb, targetTeamId)
+
+    if (totalDuplicates === 0) {
+      return NextResponse.json({ success: true, message: 'No duplicate commitments found' })
+    }
+
+    const result = await mergeDuplicateCommitments(adminDb, targetTeamId)
+    return NextResponse.json({
+      success: true,
+      message: `Merged ${result.merged} duplicate commitments across ${result.groups} groups`,
     })
   }
 

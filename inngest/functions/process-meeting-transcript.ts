@@ -6,8 +6,9 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { findHeyWrenTriggers, extractHeyWrenCommitments } from '@/lib/ai/detect-hey-wren'
+import { insertCommitmentIfNotDuplicate } from '@/lib/ai/dedup-commitments'
 
 function getAdminClient() {
   return createClient(
@@ -100,7 +101,7 @@ export const processMeetingTranscript = inngest.createFunction(
         let count = 0
         for (const commitment of heyWrenResults.commitments) {
           const metadata: Record<string, unknown> = {
-            urgency: 'high', // Explicit triggers are high urgency by default
+            urgency: 'high',
             commitmentType: 'follow_up',
             originalQuote: commitment.originalQuote,
             heyWrenTrigger: true,
@@ -111,33 +112,22 @@ export const processMeetingTranscript = inngest.createFunction(
             metadata.stakeholders = [{ name: commitment.assignee, role: 'assignee' }]
           }
 
-          const { data, error } = await supabase
-            .from('commitments')
-            .insert({
-              team_id: teamId,
-              creator_id: userId,
-              title: commitment.title,
-              description: commitment.description || null,
-              status: 'open',
-              priority_score: Math.max(70, calculatePriorityScore({
-                ...commitment,
-                urgency: 'high',
-                tone: 'professional',
-                commitmentType: 'follow_up',
-              })),
-              source: 'recording',
-              source_ref: transcriptId,
-              due_date: commitment.dueDate || null,
-              metadata,
-            })
-            .select('id')
-            .single()
+          const id = await insertCommitmentIfNotDuplicate(supabase, {
+            ...commitment,
+            urgency: 'high',
+            tone: 'professional',
+            commitmentType: 'follow_up',
+          }, {
+            teamId,
+            userId,
+            source: 'recording',
+            sourceRef: transcriptId,
+            metadata,
+          })
 
-          if (!error && data) {
+          if (id) {
             count++
-            heyWrenCommitmentIds.push(data.id)
-          } else if (error) {
-            console.error('Failed to insert Hey Wren commitment:', error.message)
+            heyWrenCommitmentIds.push(id)
           }
         }
         return count
@@ -194,28 +184,17 @@ export const processMeetingTranscript = inngest.createFunction(
           if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
           if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
 
-          const { data, error } = await supabase
-            .from('commitments')
-            .insert({
-              team_id: teamId,
-              creator_id: userId,
-              title: commitment.title,
-              description: commitment.description || null,
-              status: 'open',
-              priority_score: calculatePriorityScore(commitment as any),
-              source: 'recording',
-              source_ref: transcriptId,
-              due_date: commitment.dueDate || null,
-              metadata,
-            })
-            .select('id')
-            .single()
+          const id = await insertCommitmentIfNotDuplicate(supabase, commitment as any, {
+            teamId,
+            userId,
+            source: 'recording',
+            sourceRef: transcriptId,
+            metadata,
+          })
 
-          if (!error && data) {
+          if (id) {
             count++
-            passiveCommitmentIds.push(data.id)
-          } else if (error) {
-            console.error('Failed to insert passive commitment:', error.message)
+            passiveCommitmentIds.push(id)
           }
         }
         return count

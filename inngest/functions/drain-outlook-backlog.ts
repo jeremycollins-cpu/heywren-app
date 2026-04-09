@@ -160,6 +160,7 @@ export const drainOutlookBacklog = inngest.createFunction(
                     const ok = await insertCommitmentIfNotDuplicate(supabase, commitment, {
                       teamId: user.teamId,
                       userId: user.userId,
+                      source: 'outlook',
                       sourceRef: item.dbId,
                       sourceUrl: item.webLink,
                       conversationId: item.conversationId,

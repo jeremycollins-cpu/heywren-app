@@ -4,8 +4,9 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { detectCompletions } from '@/lib/ai/detect-completion'
+import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
 
 // ─── Admin Supabase client (bypasses RLS) ───────────────────────────────────
 
@@ -293,42 +294,17 @@ export const processSlackMention = inngest.createFunction(
 
       const results = await Promise.all(
         detected.map(async (commitment) => {
-          const metadata: Record<string, unknown> = {}
-          if (commitment.urgency) metadata.urgency = commitment.urgency
-          if (commitment.tone) metadata.tone = commitment.tone
-          if (commitment.commitmentType) metadata.commitmentType = commitment.commitmentType
-          if (commitment.stakeholders?.length) metadata.stakeholders = commitment.stakeholders
-          if (commitment.originalQuote) metadata.originalQuote = commitment.originalQuote
+          const id = await insertCommitmentIfNotDuplicate(supabase, commitment, {
+            teamId,
+            userId: creatorId!,
+            source: 'slack',
+            sourceRef: messageRecord?.id || ts,
+            sourceUrl: slackPermalink || undefined,
+            metadata: buildCommitmentMetadata(commitment),
+          })
 
-          // Full insert with correct columns and enum values
-          const { data, error } = await supabase
-            .from('commitments')
-            .insert({
-              team_id: teamId,
-              creator_id: creatorId,
-              title: commitment.title,
-              description: commitment.description || null,
-              status: 'open', // NOT 'pending' — matches commitment_status enum
-              priority_score: calculatePriorityScore(commitment),
-              source: 'slack', // matches commitment_source enum
-              source_ref: messageRecord?.id || ts, // NOT 'source_message_id'
-              source_url: slackPermalink,
-              category: commitment.commitmentType || null,
-              metadata,
-            })
-            .select('id, title')
-            .single()
-
-          if (error) {
-            console.error('Failed to insert commitment:', JSON.stringify({
-              error: error.message,
-              code: error.code,
-              details: error.details,
-              title: commitment.title,
-            }))
-            return null
-          }
-          return data
+          if (!id) return null // duplicate or insert error
+          return { id, title: commitment.title }
         })
       )
 
