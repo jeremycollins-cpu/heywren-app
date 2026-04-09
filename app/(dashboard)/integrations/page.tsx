@@ -403,9 +403,11 @@ function IntegrationsContent() {
 
     fetchIntegrations()
 
-    // Show success toast if just connected
+    // Show toasts from URL params
     if (searchParams.get('status') === 'success') {
       toast.success('Integration connected successfully!')
+    } else if (searchParams.get('status') === 'error') {
+      toast.error('Connection failed. Please try again or check with your IT admin.')
     }
   }, [])
 
