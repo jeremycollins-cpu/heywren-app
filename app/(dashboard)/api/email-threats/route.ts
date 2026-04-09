@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveTeamId } from '@/lib/team/resolve-team'
+import { inngest } from '@/inngest/client'
 
 function getAdminClient() {
   return createClient(
@@ -100,6 +101,27 @@ export async function PATCH(request: NextRequest) {
   } catch (err) {
     console.error('Email threats PATCH error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+// POST: Trigger an on-demand security scan for the current user
+export async function POST() {
+  try {
+    const supabase = await createSessionClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    await inngest.send({
+      name: 'security/scan-threats',
+      data: { userId: userData.user.id, daysBack: 7 },
+    })
+
+    return NextResponse.json({ success: true, message: 'Security scan triggered. Results will appear shortly.' })
+  } catch (err) {
+    console.error('Email threats POST error:', err)
+    return NextResponse.json({ error: 'Failed to trigger scan' }, { status: 500 })
   }
 }
 

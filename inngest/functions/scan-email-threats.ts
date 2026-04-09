@@ -37,18 +37,28 @@ async function fetchFromGraph(
 
 export const scanEmailThreats = inngest.createFunction(
   { id: 'scan-email-threats', retries: 2, concurrency: { limit: 3 } },
-  { cron: 'TZ=America/Los_Angeles 30 7 * * *' }, // 7:30 AM PT daily
-  async ({ step }) => {
+  [
+    { cron: 'TZ=America/Los_Angeles 30 7 * * *' },
+    { event: 'security/scan-threats' },
+  ],
+  async ({ step, event }) => {
     const supabase = getAdminClient()
     const startTime = Date.now()
 
-    // Get all users with Outlook integration
+    // On-demand scans can target a specific user and use a wider window
+    const targetUserId = (event as any)?.data?.userId || null
+    const daysBack = (event as any)?.data?.daysBack || 2
+
+    // Get users with Outlook integration (optionally filtered to one user)
     const integrations = await step.run('fetch-integrations', async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('integrations')
         .select('id, team_id, user_id, access_token, refresh_token')
         .eq('provider', 'outlook')
 
+      if (targetUserId) query = query.eq('user_id', targetUserId)
+
+      const { data } = await query
       return data || []
     })
 
@@ -59,7 +69,7 @@ export const scanEmailThreats = inngest.createFunction(
       if (Date.now() - startTime > TIME_BUDGET_MS) break
 
       await step.run(`scan-${integration.user_id}`, async () => {
-        const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString()
+        const lookbackDate = new Date(Date.now() - daysBack * 86400000).toISOString()
 
         // Build token refresh context for Graph API calls
         const ctx = {
@@ -75,7 +85,7 @@ export const scanEmailThreats = inngest.createFunction(
           .select('message_id, from_name, from_email, subject, body_preview, received_at, to_recipients, cc_recipients')
           .eq('team_id', integration.team_id)
           .eq('user_id', integration.user_id)
-          .gte('received_at', twoDaysAgo)
+          .gte('received_at', lookbackDate)
           .order('received_at', { ascending: false })
           .limit(MAX_EMAILS_PER_USER)
 
