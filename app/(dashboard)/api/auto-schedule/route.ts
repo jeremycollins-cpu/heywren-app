@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { getOutlookIntegration, graphFetch } from '@/lib/outlook/graph-client'
+import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -123,11 +124,10 @@ export async function POST(request: NextRequest) {
       .eq('id', userData.user.id)
       .single()
 
-    if (!profile?.current_team_id) {
+    const teamId = profile?.current_team_id || await resolveTeamId(admin, userData.user.id)
+    if (!teamId) {
       return NextResponse.json({ error: 'No team' }, { status: 400 })
     }
-
-    const teamId = profile.current_team_id
     const userId = userData.user.id
 
     // Get Outlook integration
@@ -257,8 +257,14 @@ export async function POST(request: NextRequest) {
     )
 
     if (createdEvent?.error) {
+      console.error('Graph calendar event creation failed:', JSON.stringify(createdEvent.error))
+      const graphMsg = createdEvent.error.message || ''
+      // If scope/permission error, give actionable message
+      const isPermissionError = graphMsg.includes('Authorization') || graphMsg.includes('Access') || graphMsg.includes('Forbidden') || graphMsg.includes('MailboxNotEnabledForRESTAPI')
       return NextResponse.json({
-        error: createdEvent.error.message || 'Failed to create calendar event',
+        error: isPermissionError
+          ? 'Calendar permission denied. Please disconnect and reconnect Outlook to grant calendar access.'
+          : `Failed to create calendar event: ${graphMsg}`,
       }, { status: 500 })
     }
 

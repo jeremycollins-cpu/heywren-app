@@ -5,7 +5,7 @@ import {
   Mail, AlertTriangle, Clock, CheckCircle2, X, Eye, EyeOff,
   MailWarning, RefreshCw, ArrowRight, ChevronDown, ChevronUp,
   ThumbsUp, ThumbsDown, Star, Settings, MessageSquare, Phone, Forward,
-  MailOpen, Folder, ListChecks
+  MailOpen, Folder, ListChecks, ExternalLink
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -44,6 +44,7 @@ interface MissedEmail {
   is_vip?: boolean
   is_read?: boolean
   folder_name?: string | null
+  web_link?: string | null
   // Thread grouping fields from API
   threadCount?: number
   threadEmailIds?: string[]
@@ -796,6 +797,18 @@ export default function MissedEmailsPage() {
                               emailIds={email.threadEmailIds || [email.id]}
                               onComplete={loadEmails}
                             />
+                            {email.web_link && (
+                              <a
+                                href={email.web_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                              >
+                                <ExternalLink aria-hidden="true" className="w-4 h-4" />
+                                View in Outlook
+                              </a>
+                            )}
                           </>
                         ) : (
                           <>
@@ -850,6 +863,18 @@ export default function MissedEmailsPage() {
                               emailIds={[email.id]}
                               onComplete={loadEmails}
                             />
+                            {email.web_link && (
+                              <a
+                                href={email.web_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-border-dark text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition text-sm"
+                              >
+                                <ExternalLink aria-hidden="true" className="w-4 h-4" />
+                                View in Outlook
+                              </a>
+                            )}
                           </>
                         )}
                       </div>

@@ -42,7 +42,7 @@ export async function GET() {
     // Fetch pending and snoozed missed emails — scoped to THIS user only
     const { data: missedEmails, error } = await supabase
       .from('missed_emails')
-      .select('*')
+      .select('*, outlook_messages!outlook_message_id(web_link)')
       .eq('team_id', teamId)
       .eq('user_id', user.id)
       .in('status', ['pending', 'snoozed'])
@@ -54,10 +54,17 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Group emails by normalized subject line
-    const threadMap = new Map<string, Array<typeof missedEmails[number]>>()
+    // Flatten web_link from the join into the email object
+    const emailsWithLinks = (missedEmails || []).map((email: any) => ({
+      ...email,
+      web_link: email.outlook_messages?.web_link || null,
+      outlook_messages: undefined,
+    }))
 
-    for (const email of missedEmails || []) {
+    // Group emails by normalized subject line
+    const threadMap = new Map<string, Array<any>>()
+
+    for (const email of emailsWithLinks) {
       const key = normalizeSubject(email.subject)
       const group = threadMap.get(key)
       if (group) {
