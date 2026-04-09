@@ -261,6 +261,7 @@ function IntegrationsSetupContent() {
       'profile',
       'email',
       'Mail.Read',
+      'Mail.ReadWrite',
       'Calendars.ReadWrite',
       'User.Read',
       'offline_access',

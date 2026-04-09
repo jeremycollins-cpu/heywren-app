@@ -195,6 +195,48 @@ export async function moveMessage(
   return { success: true, token: newToken }
 }
 
+/** Mark a single email as read in Outlook. */
+export async function markMessageAsRead(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ success: boolean; token: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${messageId}`
+  const { data, token: newToken } = await graphFetch(
+    url,
+    { method: 'PATCH', body: { isRead: true }, token },
+    ctx
+  )
+  return { success: !data.error, token: newToken }
+}
+
+/** Archive a single email (move to Archive folder). */
+export async function archiveMessage(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ success: boolean; token: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${messageId}/move`
+  const { data, token: newToken } = await graphFetch(
+    url,
+    { method: 'POST', body: { destinationId: 'archive' }, token },
+    ctx
+  )
+  return { success: !data.error, token: newToken }
+}
+
+/** Mark a single email as read AND archive it. */
+export async function markReadAndArchive(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ success: boolean; token: string }> {
+  // Mark as read first, then archive
+  const readResult = await markMessageAsRead(messageId, token, ctx)
+  const archiveResult = await archiveMessage(messageId, readResult.token, ctx)
+  return archiveResult
+}
+
 /** Search inbox for messages matching a sender email. */
 export async function searchMessagesBySender(
   senderEmail: string,
