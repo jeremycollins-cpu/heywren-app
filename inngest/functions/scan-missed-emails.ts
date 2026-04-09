@@ -1,15 +1,119 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { WebClient } from '@slack/web-api'
 import { classifyMissedEmailBatch, getClassificationStats, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { sendEmail } from '@/lib/email/send'
+import { buildRecipientGapAlertEmail } from '@/lib/email/templates/recipient-gap-alert'
 
 const MAX_EMAILS_PER_RUN = 200
 const TIME_BUDGET_MS = 300000 // 5 minutes
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+}
+
+// ── Proactive multi-channel alert for high-value detections ──
+
+interface ProactiveAlertParams {
+  teamId: string
+  userId: string
+  userEmail: string
+  userName: string
+  fromName: string
+  subject: string
+  questionSummary: string
+}
+
+async function sendProactiveAlert(
+  supabase: ReturnType<typeof getAdminClient>,
+  params: ProactiveAlertParams
+) {
+  const { teamId, userId, userEmail, userName, fromName, subject, questionSummary } = params
+
+  // 1. In-app notification (always)
+  await supabase.from('notifications').insert({
+    user_id: userId,
+    team_id: teamId,
+    type: 'missed_email',
+    title: `Missing recipient in email from ${fromName}`,
+    body: questionSummary,
+    link: '/missed-emails',
+  })
+
+  // 2. Slack DM (if connected)
+  try {
+    const { data: slackIntegration } = await supabase
+      .from('integrations')
+      .select('access_token, config')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .eq('provider', 'slack')
+      .single()
+
+    const slackUserId = slackIntegration?.config?.slack_user_id
+    if (slackIntegration?.access_token && slackUserId) {
+      const slack = new WebClient(slackIntegration.access_token)
+      const { channel } = await slack.conversations.open({ users: slackUserId })
+      if (channel?.id) {
+        await slack.chat.postMessage({
+          channel: channel.id,
+          text: `Wren spotted a missing recipient in an email from ${fromName}: "${subject}"`,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `*Missing recipient detected*\n>*From:* ${fromName}\n>*Subject:* ${subject}\n>\n>${questionSummary}`,
+              },
+            },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: 'View in HeyWren' },
+                  url: `${APP_URL}/missed-emails`,
+                  action_id: 'view_missed_emails',
+                },
+              ],
+            },
+          ],
+          unfurl_links: false,
+        })
+      }
+    }
+  } catch {
+    // Slack DM is best-effort
+  }
+
+  // 3. Email (if user has an email address)
+  if (userEmail) {
+    try {
+      const { subject: emailSubject, html } = buildRecipientGapAlertEmail({
+        userName: userName || 'there',
+        senderName: fromName,
+        subject,
+        questionSummary,
+        missedEmailsUrl: `${APP_URL}/missed-emails`,
+        unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
+      })
+
+      await sendEmail({
+        to: userEmail,
+        subject: emailSubject,
+        html,
+        emailType: 'recipient_gap_alert',
+        userId,
+        idempotencyKey: `recipient-gap-${userId}-${subject.slice(0, 50)}-${new Date().toISOString().slice(0, 10)}`,
+      })
+    } catch {
+      // Email is best-effort
+    }
+  }
 }
 
 async function refreshMicrosoftToken(
@@ -408,6 +512,24 @@ async function scanTeamMissedEmails(
           .upsert(toUpsert, { onConflict: 'team_id,message_id' })
 
         if (!insertErr) totalMissed += toUpsert.length
+
+        // Proactive alerts for recipient_gap detections
+        const recipientGaps = toUpsert.filter(e => e.category === 'recipient_gap')
+        for (const gap of recipientGaps) {
+          try {
+            await sendProactiveAlert(supabase, {
+              teamId,
+              userId,
+              userEmail,
+              userName,
+              fromName: gap.from_name || 'Someone',
+              subject: gap.subject || '(no subject)',
+              questionSummary: gap.question_summary || gap.reason || 'A person was mentioned but not included as a recipient',
+            })
+          } catch (alertErr) {
+            console.error('Proactive alert failed:', (alertErr as Error).message)
+          }
+        }
       }
     } catch (err) {
       console.error('Batch classification error:', (err as Error).message)
