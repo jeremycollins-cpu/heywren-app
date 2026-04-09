@@ -42,7 +42,7 @@ export async function GET() {
     // Fetch pending and snoozed missed emails — scoped to THIS user only
     const { data: missedEmails, error } = await supabase
       .from('missed_emails')
-      .select('*, outlook_messages!outlook_message_id(web_link)')
+      .select('*')
       .eq('team_id', teamId)
       .eq('user_id', user.id)
       .in('status', ['pending', 'snoozed'])
@@ -54,11 +54,12 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Flatten web_link from the join into the email object
+    // Add Outlook web link for each email using the Graph message_id
     const emailsWithLinks = (missedEmails || []).map((email: any) => ({
       ...email,
-      web_link: email.outlook_messages?.web_link || null,
-      outlook_messages: undefined,
+      web_link: email.message_id
+        ? `https://outlook.office365.com/mail/inbox/id/${encodeURIComponent(email.message_id)}`
+        : null,
     }))
 
     // Group emails by normalized subject line
