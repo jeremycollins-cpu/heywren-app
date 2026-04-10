@@ -71,14 +71,23 @@ export async function createBot(options: RecallBotOptions): Promise<RecallBot> {
   const body: Record<string, unknown> = {
     meeting_url: options.meetingUrl,
     bot_name: options.botName || 'HeyWren Notetaker',
-    transcription_options: {
-      provider: 'default',
+    recording_config: {
+      transcript: {
+        provider: {
+          recallai_streaming: {},
+        },
+        diarization: {
+          use_separate_streams_when_available: true,
+        },
+      },
+      realtime_endpoints: [
+        {
+          type: 'webhook',
+          url: `${process.env.NEXT_PUBLIC_APP_URL}/api/recall/webhook`,
+          events: ['transcript.data'],
+        },
+      ],
     },
-    real_time_transcription: {
-      destination_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/recall/webhook`,
-      partial_results: false,
-    },
-    recording_mode: 'speaker_view',
   }
 
   // Schedule bot to join at a specific time (e.g., meeting start)
@@ -86,7 +95,7 @@ export async function createBot(options: RecallBotOptions): Promise<RecallBot> {
     body.join_at = options.joinAt
   }
 
-  const res = await recallFetch('/bot', {
+  const res = await recallFetch('/bot/', {
     method: 'POST',
     body: JSON.stringify(body),
   })
@@ -98,7 +107,7 @@ export async function createBot(options: RecallBotOptions): Promise<RecallBot> {
  * Get the current status of a bot.
  */
 export async function getBot(botId: string): Promise<RecallBot> {
-  const res = await recallFetch(`/bot/${botId}`)
+  const res = await recallFetch(`/bot/${botId}/`)
   return res.json()
 }
 
@@ -106,7 +115,7 @@ export async function getBot(botId: string): Promise<RecallBot> {
  * Retrieve the full transcript for a completed bot session.
  */
 export async function getBotTranscript(botId: string): Promise<RecallTranscript> {
-  const res = await recallFetch(`/bot/${botId}/transcript`)
+  const res = await recallFetch(`/bot/${botId}/transcript/`)
   return res.json()
 }
 
@@ -114,7 +123,7 @@ export async function getBotTranscript(botId: string): Promise<RecallTranscript>
  * Remove a bot from a meeting (cancel or leave early).
  */
 export async function removeBot(botId: string): Promise<void> {
-  await recallFetch(`/bot/${botId}/leave_call`, {
+  await recallFetch(`/bot/${botId}/leave_call/`, {
     method: 'POST',
   })
 }
@@ -123,7 +132,7 @@ export async function removeBot(botId: string): Promise<void> {
  * Cancel a scheduled bot that hasn't joined yet.
  */
 export async function cancelBot(botId: string): Promise<void> {
-  await recallFetch(`/bot/${botId}`, {
+  await recallFetch(`/bot/${botId}/`, {
     method: 'DELETE',
   })
 }
