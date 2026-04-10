@@ -113,9 +113,31 @@ export async function getBot(botId: string): Promise<RecallBot> {
 
 /**
  * Retrieve the full transcript for a completed bot session.
+ * Flow: GET bot → find transcript download_url in recordings → download transcript.
  */
 export async function getBotTranscript(botId: string): Promise<RecallTranscript> {
-  const res = await recallFetch(`/bot/${botId}/transcript/`)
+  // Step 1: Get bot details to find the transcript download URL
+  const bot = await getBot(botId)
+  const recordings = (bot as any).recordings || []
+  const transcriptShortcut = recordings[0]?.media_shortcuts?.transcript
+
+  if (!transcriptShortcut?.data?.download_url) {
+    throw new Error('No transcript download URL found for this bot')
+  }
+
+  // Step 2: Download the transcript from the provided URL
+  const downloadUrl = transcriptShortcut.data.download_url
+  const res = await fetch(downloadUrl, {
+    headers: {
+      Authorization: `Token ${getApiKey()}`,
+    },
+  })
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Transcript download failed ${res.status}: ${body}`)
+  }
+
   return res.json()
 }
 
