@@ -5,13 +5,14 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Users, Mail, Crown, Shield, UserPlus, BarChart3,
   CheckCircle2, AlertTriangle, Building2, Layers,
-  ChevronDown, ChevronRight, Star, Eye, EyeOff,
+  ChevronDown, ChevronRight, Star, Eye,
   Ghost, Moon, Clock, TrendingDown, AlertCircle,
-  X, MessageSquare, Settings, Save,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import TeamMemberSidebar from './team-member-sidebar'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ export default function TeamManagementPage() {
   const [anomalySummary, setAnomalySummary] = useState<AnomalySummary | null>(null)
   const [showAnomalies, setShowAnomalies] = useState(true)
   const [anomalyFilter, setAnomalyFilter] = useState<string>('all')
-  const [expandedMember, setExpandedMember] = useState<string | null>(null)
+  const [selectedMember, setSelectedMember] = useState<OrgMember | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -496,13 +497,7 @@ export default function TeamManagementPage() {
                                 key={member.id}
                                 member={member}
                                 anomalyCount={memberAnomalyCount.get(member.user_id) || 0}
-                                isExpanded={expandedMember === member.user_id}
-                                onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
-                                memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
-                                isManager={isManager}
-                                callerRole={callerRole}
-                                departments={departments}
-                                onMemberUpdated={loadTeamData}
+                                onSelect={() => setSelectedMember(member)}
                               />
                             ))}
                           </div>
@@ -531,18 +526,27 @@ export default function TeamManagementPage() {
                   key={member.id}
                   member={member}
                   anomalyCount={memberAnomalyCount.get(member.user_id) || 0}
-                  isExpanded={expandedMember === member.user_id}
-                  onToggle={() => setExpandedMember(expandedMember === member.user_id ? null : member.user_id)}
-                  memberAnomalies={undismissedAnomalies.filter(a => a.userId === member.user_id)}
-                  isManager={isManager}
-                  callerRole={callerRole}
-                  departments={departments}
-                  onMemberUpdated={loadTeamData}
+                  onSelect={() => setSelectedMember(member)}
                 />
               ))
             )}
           </div>
         </div>
+      )}
+      {/* ── Team Member Detail Sidebar ───────────────────────────────── */}
+      {selectedMember && (
+        <TeamMemberSidebar
+          member={selectedMember}
+          isOpen={!!selectedMember}
+          onClose={() => setSelectedMember(null)}
+          anomalies={undismissedAnomalies.filter(a => a.userId === selectedMember.user_id)}
+          isManager={isManager}
+          callerRole={callerRole}
+          departments={departments}
+          teams={teams}
+          onMemberUpdated={loadTeamData}
+          onDismissAnomaly={dismissAnomaly}
+        />
       )}
     </div>
     </UpgradeGate>
@@ -630,130 +634,11 @@ function AnomalyRow({ anomaly, onDismiss }: { anomaly: Anomaly; onDismiss: (a: A
   )
 }
 
-const DAY_LABELS = [
-  { day: 0, label: 'S' },
-  { day: 1, label: 'M' },
-  { day: 2, label: 'T' },
-  { day: 3, label: 'W' },
-  { day: 4, label: 'T' },
-  { day: 5, label: 'F' },
-  { day: 6, label: 'S' },
-]
-
-function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies, isManager, callerRole, departments, onMemberUpdated }: {
+function MemberRow({ member, anomalyCount, onSelect }: {
   member: OrgMember
   anomalyCount: number
-  isExpanded: boolean
-  onToggle: () => void
-  memberAnomalies: Anomaly[]
-  isManager: boolean
-  callerRole: string
-  departments: Department[]
-  onMemberUpdated: () => void
+  onSelect: () => void
 }) {
-  const [showScheduleEditor, setShowScheduleEditor] = useState(false)
-  const [showMemberEditor, setShowMemberEditor] = useState(false)
-  const [editRole, setEditRole] = useState(member.role)
-  const [editJobTitle, setEditJobTitle] = useState(member.job_title || '')
-  const [editDeptId, setEditDeptId] = useState(member.department_id || '')
-  const [editSystemRole, setEditSystemRole] = useState<string>('')
-  const [systemRoleLoaded, setSystemRoleLoaded] = useState(false)
-  const [savingMember, setSavingMember] = useState(false)
-  const [schedule, setSchedule] = useState({
-    work_days: [1, 2, 3, 4, 5] as number[],
-    start_time: '08:00',
-    end_time: '17:00',
-    timezone: null as string | null,
-    idle_threshold_minutes: 60,
-    after_hours_alert: true,
-  })
-  const [scheduleLoaded, setScheduleLoaded] = useState(false)
-  const [savingSchedule, setSavingSchedule] = useState(false)
-
-  const loadSchedule = async () => {
-    if (scheduleLoaded) { setShowScheduleEditor(true); return }
-    try {
-      const res = await fetch(`/api/work-schedule?targetUserId=${member.user_id}`)
-      const data = await res.json()
-      if (data.schedule) setSchedule(data.schedule)
-      setScheduleLoaded(true)
-      setShowScheduleEditor(true)
-    } catch {
-      toast.error('Failed to load schedule')
-    }
-  }
-
-  const saveSchedule = async () => {
-    setSavingSchedule(true)
-    try {
-      const res = await fetch('/api/work-schedule', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...schedule, targetUserId: member.user_id }),
-      })
-      if (!res.ok) throw new Error()
-      toast.success(`Schedule updated for ${member.full_name}`)
-      setShowScheduleEditor(false)
-    } catch {
-      toast.error('Failed to save schedule')
-    }
-    setSavingSchedule(false)
-  }
-
-  const toggleDay = (day: number) => {
-    const updated = schedule.work_days.includes(day)
-      ? schedule.work_days.filter(d => d !== day)
-      : [...schedule.work_days, day].sort()
-    setSchedule({ ...schedule, work_days: updated })
-  }
-
-  const openMemberEditor = async () => {
-    setShowMemberEditor(true)
-    setEditRole(member.role)
-    setEditJobTitle(member.job_title || '')
-    setEditDeptId(member.department_id || '')
-    if (!systemRoleLoaded && callerRole === 'org_admin') {
-      try {
-        const supabase = (await import('@/lib/supabase/client')).createClient()
-        const { data } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', member.user_id)
-          .single()
-        if (data) setEditSystemRole(data.role || 'user')
-        setSystemRoleLoaded(true)
-      } catch { /* non-fatal */ }
-    }
-  }
-
-  const saveMemberChanges = async () => {
-    setSavingMember(true)
-    try {
-      const body: Record<string, string | undefined> = { userId: member.user_id }
-      if (editRole !== member.role) body.orgRole = editRole
-      if (editJobTitle !== (member.job_title || '')) body.jobTitle = editJobTitle
-      if (editDeptId !== (member.department_id || '')) body.departmentId = editDeptId
-      if (callerRole === 'org_admin' && editSystemRole && systemRoleLoaded) body.systemRole = editSystemRole
-
-      const res = await fetch('/api/manage-member', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (data.error) {
-        toast.error(data.error)
-      } else {
-        toast.success(`${member.full_name} updated`)
-        setShowMemberEditor(false)
-        onMemberUpdated()
-      }
-    } catch {
-      toast.error('Failed to update member')
-    }
-    setSavingMember(false)
-  }
-
   const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.member
   const RoleIcon = roleConfig.icon
   const bgColor = AVATAR_COLORS[member.full_name.charCodeAt(0) % AVATAR_COLORS.length]
@@ -761,304 +646,70 @@ function MemberRow({ member, anomalyCount, isExpanded, onToggle, memberAnomalies
   const followThrough = totalCommitments > 0 ? Math.round(member.commitments_completed / totalCommitments * 100) : 0
 
   return (
-    <div>
-      <button
-        onClick={onToggle}
-        className="w-full bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-3 sm:p-4 hover:shadow-sm transition text-left"
-      >
-        <div className="flex items-center gap-3">
-          {/* Avatar */}
-          <div className="relative flex-shrink-0">
-            {member.avatar_url ? (
-              <img src={member.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
-            ) : (
-              <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white font-bold text-sm`}>
-                {getInitials(member.full_name)}
-              </div>
-            )}
-            {anomalyCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                {anomalyCount}
-              </span>
-            )}
-          </div>
-
-          {/* Name + Role */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="font-semibold text-sm text-gray-900 dark:text-white truncate">{member.full_name}</h3>
-              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${roleConfig.bg} ${roleConfig.color}`}>
-                <RoleIcon className="w-2.5 h-2.5" />
-                {roleConfig.label}
-              </span>
+    <button
+      onClick={onSelect}
+      className="w-full bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-3 sm:p-4 hover:shadow-sm hover:border-indigo-200 dark:hover:border-indigo-800/50 transition text-left"
+    >
+      <div className="flex items-center gap-3">
+        {/* Avatar */}
+        <div className="relative flex-shrink-0">
+          {member.avatar_url ? (
+            <img src={member.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+          ) : (
+            <div className={`w-10 h-10 ${bgColor} rounded-full flex items-center justify-center text-white font-bold text-sm`}>
+              {getInitials(member.full_name)}
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-              {member.job_title || member.email}
+          )}
+          {anomalyCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+              {anomalyCount}
+            </span>
+          )}
+        </div>
+
+        {/* Name + Role */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="font-semibold text-sm text-gray-900 dark:text-white truncate">{member.full_name}</h3>
+            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${roleConfig.bg} ${roleConfig.color}`}>
+              <RoleIcon className="w-2.5 h-2.5" />
+              {roleConfig.label}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            {member.job_title || member.email}
+          </p>
+        </div>
+
+        {/* Stats — desktop */}
+        <div className="hidden sm:grid grid-cols-3 gap-4 flex-shrink-0 text-center">
+          <div>
+            <p className="text-sm font-bold text-gray-900 dark:text-white">{member.commitments_open}</p>
+            <p className="text-[9px] text-gray-400 font-medium">Open</p>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-green-600">{member.commitments_completed}</p>
+            <p className="text-[9px] text-gray-400 font-medium">Done</p>
+          </div>
+          <div>
+            <p className={`text-sm font-bold ${followThrough >= 50 ? 'text-green-600' : followThrough > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+              {followThrough}%
             </p>
-          </div>
-
-          {/* Stats — responsive grid instead of flex row */}
-          <div className="hidden sm:grid grid-cols-3 gap-4 flex-shrink-0 text-center">
-            <div>
-              <p className="text-sm font-bold text-gray-900 dark:text-white">{member.commitments_open}</p>
-              <p className="text-[9px] text-gray-400 font-medium">Open</p>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-green-600">{member.commitments_completed}</p>
-              <p className="text-[9px] text-gray-400 font-medium">Done</p>
-            </div>
-            <div>
-              <p className={`text-sm font-bold ${followThrough >= 50 ? 'text-green-600' : followThrough > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {followThrough}%
-              </p>
-              <p className="text-[9px] text-gray-400 font-medium">Follow-thru</p>
-            </div>
-          </div>
-
-          {/* Mobile: compact stats */}
-          <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">{followThrough}%</span>
-            {member.missed_emails > 0 && (
-              <span className="text-xs font-medium text-amber-600">{member.missed_emails} missed</span>
-            )}
+            <p className="text-[9px] text-gray-400 font-medium">Follow-thru</p>
           </div>
         </div>
-      </button>
 
-      {/* Expanded Detail */}
-      {isExpanded && (
-        <div className="mx-2 -mt-1 mb-1 p-3 bg-gray-50 dark:bg-gray-800/50 border border-t-0 border-gray-200 dark:border-border-dark rounded-b-xl">
-          {/* Mobile stats */}
-          <div className="grid grid-cols-4 gap-3 text-center sm:hidden mb-3">
-            <div>
-              <p className="text-lg font-bold text-gray-900 dark:text-white">{member.commitments_open}</p>
-              <p className="text-[10px] text-gray-500">Open</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-green-600">{member.commitments_completed}</p>
-              <p className="text-[10px] text-gray-500">Done</p>
-            </div>
-            <div>
-              <p className={`text-lg font-bold ${followThrough >= 50 ? 'text-green-600' : followThrough > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {followThrough}%
-              </p>
-              <p className="text-[10px] text-gray-500">Follow-thru</p>
-            </div>
-            <div>
-              <p className={`text-lg font-bold ${member.missed_emails > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {member.missed_emails}
-              </p>
-              <p className="text-[10px] text-gray-500">Missed</p>
-            </div>
-          </div>
-
-          {/* Desktop missed emails (not shown in grid above) */}
+        {/* Mobile: compact stats */}
+        <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs font-bold text-gray-900 dark:text-white">{followThrough}%</span>
           {member.missed_emails > 0 && (
-            <div className="hidden sm:flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-              <span className="text-xs text-amber-600 font-medium">{member.missed_emails} missed email{member.missed_emails !== 1 ? 's' : ''} pending</span>
-            </div>
-          )}
-
-          {/* Member-specific anomalies */}
-          {memberAnomalies.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Activity Insights</p>
-              {memberAnomalies.slice(0, 5).map((a, i) => {
-                const config = ANOMALY_CONFIG[a.type] || ANOMALY_CONFIG.idle
-                const Icon = config.icon
-                return (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <Icon className={`w-3 h-3 ${config.color} flex-shrink-0`} />
-                    <span className="text-gray-600 dark:text-gray-400">{formatDate(a.date)}</span>
-                    <span className="text-gray-500 dark:text-gray-400 truncate">{a.detail}</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {memberAnomalies.length === 0 && member.missed_emails === 0 && (
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <CheckCircle2 className="w-3 h-3 text-green-500" />
-              No concerns detected
-            </div>
-          )}
-
-          {/* Manager: Edit Member */}
-          {isManager && (
-            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3 flex-wrap">
-                {!showMemberEditor && (
-                  <button
-                    onClick={openMemberEditor}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
-                  >
-                    <Crown className="w-3 h-3" />
-                    Manage Member
-                  </button>
-                )}
-                {!showScheduleEditor && !showMemberEditor && (
-                  <button
-                    onClick={loadSchedule}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition"
-                  >
-                    <Settings className="w-3 h-3" />
-                    Edit Work Schedule
-                  </button>
-                )}
-              </div>
-
-              {showMemberEditor && (
-                <div className="space-y-3 mt-2">
-                  <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Manage Member</p>
-
-                  {/* Org Role */}
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Organization Role</label>
-                    <select
-                      value={editRole}
-                      onChange={e => setEditRole(e.target.value)}
-                      className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                    >
-                      <option value="member">Member</option>
-                      <option value="team_lead">Team Lead</option>
-                      <option value="dept_manager">Department Manager</option>
-                      {callerRole === 'org_admin' && <option value="org_admin">Org Admin</option>}
-                    </select>
-                  </div>
-
-                  {/* Job Title */}
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Job Title</label>
-                    <input
-                      type="text"
-                      value={editJobTitle}
-                      onChange={e => setEditJobTitle(e.target.value)}
-                      placeholder="e.g. Senior Engineer"
-                      className="w-full sm:w-64 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  {/* Department */}
-                  {departments.length > 0 && (
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">Department</label>
-                      <select
-                        value={editDeptId}
-                        onChange={e => setEditDeptId(e.target.value)}
-                        className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                      >
-                        <option value="">No department</option>
-                        {departments.map(d => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* System Role (org_admin only) */}
-                  {callerRole === 'org_admin' && systemRoleLoaded && (
-                    <div>
-                      <label className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        System Access
-                        <span className="ml-1 text-gray-400 font-normal">Controls admin dashboard visibility</span>
-                      </label>
-                      <select
-                        value={editSystemRole}
-                        onChange={e => setEditSystemRole(e.target.value)}
-                        className="w-full sm:w-48 px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                      >
-                        <option value="user">Standard User</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={saveMemberChanges}
-                      disabled={savingMember}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 transition"
-                    >
-                      <Save className="w-3 h-3" />
-                      {savingMember ? 'Saving...' : 'Save Changes'}
-                    </button>
-                    <button
-                      onClick={() => setShowMemberEditor(false)}
-                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {showScheduleEditor && (
-                <div className="space-y-3 mt-2">
-                  <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Work Schedule</p>
-
-                  {/* Day toggles */}
-                  <div className="flex gap-1">
-                    {DAY_LABELS.map(({ day, label }) => {
-                      const isActive = schedule.work_days.includes(day)
-                      return (
-                        <button
-                          key={day}
-                          onClick={() => toggleDay(day)}
-                          className={`w-7 h-7 rounded-md text-[11px] font-semibold transition ${
-                            isActive
-                              ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-400'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Time inputs */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="time"
-                      value={schedule.start_time}
-                      onChange={e => setSchedule({ ...schedule, start_time: e.target.value })}
-                      className="px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                    />
-                    <span className="text-xs text-gray-400">to</span>
-                    <input
-                      type="time"
-                      value={schedule.end_time}
-                      onChange={e => setSchedule({ ...schedule, end_time: e.target.value })}
-                      className="px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-md text-xs bg-white dark:bg-surface-dark text-gray-900 dark:text-white"
-                    />
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={saveSchedule}
-                      disabled={savingSchedule}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-50 transition"
-                    >
-                      <Save className="w-3 h-3" />
-                      {savingSchedule ? 'Saving...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={() => setShowScheduleEditor(false)}
-                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <span className="text-xs font-medium text-amber-600">{member.missed_emails} missed</span>
           )}
         </div>
-      )}
-    </div>
+
+        {/* Chevron hint */}
+        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0 hidden sm:block" />
+      </div>
+    </button>
   )
 }
