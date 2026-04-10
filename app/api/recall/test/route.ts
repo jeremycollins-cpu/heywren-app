@@ -160,7 +160,7 @@ async function recoverBot(botId: string, meetingTitle: string | undefined, userI
         transcript_status: 'pending',
         metadata: {
           recall_bot_id: botId,
-          meeting_platform: botDetails?.meeting_url?.includes('teams') ? 'teams' : 'other',
+          meeting_platform: String(botDetails?.meeting_url || '').includes('teams') ? 'teams' : 'other',
           synced_via: 'manual_recovery',
         },
       })
