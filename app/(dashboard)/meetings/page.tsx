@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Mic, Upload, FileText, Clock, AlertCircle, CheckCircle2, Loader2, Bird, Video, Monitor, Chrome, RefreshCw } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  Mic, Upload, FileText, Clock, AlertCircle, CheckCircle2, Loader2,
+  Bird, Video, Monitor, Chrome, RefreshCw, Sparkles, Link2,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface TranscriptRecord {
@@ -12,10 +16,12 @@ interface TranscriptRecord {
   transcript_status: string
   commitments_found: number
   hey_wren_triggers: number
+  summary_json: any
   created_at: string
 }
 
 export default function MeetingsPage() {
+  const router = useRouter()
   const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -23,6 +29,12 @@ export default function MeetingsPage() {
   const [showUpload, setShowUpload] = useState(false)
   const [title, setTitle] = useState('')
   const [transcriptText, setTranscriptText] = useState('')
+
+  // Manual record state
+  const [showRecord, setShowRecord] = useState(false)
+  const [meetingUrl, setMeetingUrl] = useState('')
+  const [meetingTitle, setMeetingTitle] = useState('')
+  const [recording, setRecording] = useState(false)
 
   useEffect(() => {
     fetchTranscripts()
@@ -75,7 +87,6 @@ export default function MeetingsPage() {
         setTitle('')
         setTranscriptText('')
         setShowUpload(false)
-        // Refresh list after a brief delay for processing
         setTimeout(fetchTranscripts, 2000)
       } else {
         toast.error(data.error || 'Upload failed')
@@ -84,6 +95,40 @@ export default function MeetingsPage() {
       toast.error('Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function handleRecord() {
+    if (!meetingUrl.trim()) {
+      toast.error('Please paste a meeting link')
+      return
+    }
+
+    setRecording(true)
+    try {
+      const res = await fetch('/api/recall/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_url: meetingUrl.trim(),
+          meeting_title: meetingTitle || undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        toast.success(data.message || 'HeyWren Notetaker is joining your meeting!')
+        setMeetingUrl('')
+        setMeetingTitle('')
+        setShowRecord(false)
+      } else {
+        toast.error(data.error || 'Failed to start recording')
+      }
+    } catch {
+      toast.error('Failed to start recording')
+    } finally {
+      setRecording(false)
     }
   }
 
@@ -100,6 +145,49 @@ export default function MeetingsPage() {
     }
   }
 
+  const providerBadge = (provider: string) => {
+    switch (provider) {
+      case 'recall_bot':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium">
+            <Bird className="w-3 h-3" /> HeyWren Notetaker
+          </span>
+        )
+      case 'zoom':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full font-medium">
+            <Video className="w-3 h-3" /> Zoom
+          </span>
+        )
+      case 'google_meet':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-full font-medium">
+            <Monitor className="w-3 h-3" /> Google Meet
+          </span>
+        )
+      case 'teams':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium">
+            <Monitor className="w-3 h-3" /> Teams
+          </span>
+        )
+      case 'chrome_extension':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full font-medium">
+            <Chrome className="w-3 h-3" /> Live capture
+          </span>
+        )
+      case 'manual':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+            <Upload className="w-3 h-3" /> Manual upload
+          </span>
+        )
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -108,56 +196,116 @@ export default function MeetingsPage() {
             Meetings
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Upload meeting transcripts to detect commitments and action items
+            AI meeting notes, action items, and follow-up drafts — automatically
           </p>
         </div>
-        <button
-          onClick={() => setShowUpload(!showUpload)}
-          className="flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition"
-          style={{
-            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-            boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
-          }}
-        >
-          <Upload className="w-4 h-4" />
-          Upload Transcript
-        </button>
-      </div>
-
-      {/* Platform Sync Callout */}
-      <div className="bg-gradient-to-r from-blue-50 to-teal-50 border border-blue-200 rounded-xl p-5 mb-0">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-            <RefreshCw className="w-5 h-5 text-blue-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-blue-900 text-sm">Auto-sync from Zoom, Google Meet &amp; Teams</h3>
-            <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-              Connect your meeting platforms in <a href="/integrations" className="underline font-medium">Integrations</a> to automatically pull recording transcripts. Or install the <strong>HeyWren Chrome Extension</strong> to capture live captions from any browser meeting.
-            </p>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowRecord(!showRecord); setShowUpload(false) }}
+            className="flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition"
+            style={{
+              background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+              boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
+            }}
+          >
+            <Bird className="w-4 h-4" />
+            Record Meeting
+          </button>
+          <button
+            onClick={() => { setShowUpload(!showUpload); setShowRecord(false) }}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-50 transition"
+          >
+            <Upload className="w-4 h-4" />
+            Upload Transcript
+          </button>
         </div>
       </div>
 
-      {/* Hey Wren Feature Callout */}
+      {/* HeyWren Notetaker Callout */}
       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-5">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
             <Bird className="w-5 h-5 text-indigo-600" />
           </div>
-          <div>
-            <h3 className="font-semibold text-indigo-900 text-sm">Say &quot;Hey Wren&quot; in your meetings</h3>
+          <div className="flex-1">
+            <h3 className="font-semibold text-indigo-900 text-sm">HeyWren Notetaker</h3>
             <p className="text-xs text-indigo-700 mt-1 leading-relaxed">
-              During any meeting, say <strong>&quot;Hey Wren&quot;</strong> followed by a commitment or action item, and we&apos;ll automatically flag it with high priority. Examples:
+              Your AI notetaker automatically joins meetings with <strong>3+ attendees</strong>, generates meeting summaries, extracts action items, and drafts follow-up emails. Say <strong>&quot;Hey Wren&quot;</strong> during any recorded meeting to flag high-priority commitments.
             </p>
-            <ul className="text-xs text-indigo-700 mt-2 space-y-1">
-              <li>&quot;Hey Wren, I&apos;ll send the budget report by Friday&quot;</li>
-              <li>&quot;Hey Wren, Sarah committed to reviewing the designs by next week&quot;</li>
-              <li>&quot;Hey Wren, remind me to follow up with the vendor&quot;</li>
-            </ul>
+            <p className="text-xs text-indigo-500 mt-2">
+              Configure auto-recording in <a href="/settings/notetaker" className="underline font-medium">Notetaker Settings</a>. 1:1 meetings are skipped by default — use &quot;Record Meeting&quot; to manually add the bot to any call.
+            </p>
           </div>
         </div>
       </div>
+
+      {/* Manual Record Form */}
+      {showRecord && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+            <Bird className="w-4 h-4 text-indigo-600" /> Send HeyWren Notetaker to a Meeting
+          </h2>
+          <p className="text-xs text-gray-500">
+            Paste a Zoom, Google Meet, Teams, or Webex meeting link. The bot will join as &quot;HeyWren Notetaker&quot;.
+          </p>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Meeting Link</label>
+            <div className="flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-gray-400" />
+              <input
+                type="url"
+                value={meetingUrl}
+                onChange={(e) => setMeetingUrl(e.target.value)}
+                placeholder="https://zoom.us/j/123456789 or https://meet.google.com/abc-defg-hij"
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Meeting Title <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={meetingTitle}
+              onChange={(e) => setMeetingTitle(e.target.value)}
+              placeholder="e.g., Q3 Planning Sync"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleRecord}
+              disabled={recording || !meetingUrl.trim()}
+              className="flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition disabled:opacity-50"
+              style={{
+                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+              }}
+            >
+              {recording ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Joining...
+                </>
+              ) : (
+                <>
+                  <Bird className="w-4 h-4" />
+                  Send Notetaker
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setShowRecord(false)}
+              className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Upload Form */}
       {showUpload && (
@@ -233,49 +381,29 @@ export default function MeetingsPage() {
       ) : transcripts.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="font-semibold text-gray-900 text-sm">No meeting transcripts yet</h3>
+          <h3 className="font-semibold text-gray-900 text-sm">No meeting notes yet</h3>
           <p className="text-xs text-gray-500 mt-1">
-            Upload a transcript to start detecting commitments from your meetings.
+            Record a meeting or upload a transcript to get AI-powered meeting notes.
           </p>
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-sm font-semibold text-gray-700">Recent Transcripts</h2>
+            <h2 className="text-sm font-semibold text-gray-700">Recent Meetings</h2>
           </div>
           <div className="divide-y divide-gray-100">
             {transcripts.map((t) => (
-              <div key={t.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition">
+              <div
+                key={t.id}
+                onClick={() => router.push(`/meetings/${t.id}`)}
+                className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition cursor-pointer"
+              >
                 <div className="flex items-center gap-3">
                   {statusIcon(t.transcript_status)}
                   <div>
                     <p className="font-medium text-gray-900 text-sm">{t.title || 'Untitled Meeting'}</p>
                     <div className="flex items-center gap-2 mt-0.5">
-                      {t.provider === 'manual' && (
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                          <Upload className="w-3 h-3" /> Manual upload
-                        </span>
-                      )}
-                      {t.provider === 'zoom' && (
-                        <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full font-medium">
-                          <Video className="w-3 h-3" /> Zoom
-                        </span>
-                      )}
-                      {t.provider === 'google_meet' && (
-                        <span className="inline-flex items-center gap-1 text-xs text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-full font-medium">
-                          <Monitor className="w-3 h-3" /> Google Meet
-                        </span>
-                      )}
-                      {t.provider === 'teams' && (
-                        <span className="inline-flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-medium">
-                          <Monitor className="w-3 h-3" /> Teams
-                        </span>
-                      )}
-                      {t.provider === 'chrome_extension' && (
-                        <span className="inline-flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full font-medium">
-                          <Chrome className="w-3 h-3" /> Live capture
-                        </span>
-                      )}
+                      {providerBadge(t.provider)}
                       {t.start_time && (
                         <span className="text-xs text-gray-400">
                           {new Date(t.start_time).toLocaleDateString()}
@@ -284,7 +412,12 @@ export default function MeetingsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-3 text-xs">
+                  {t.summary_json && (
+                    <span className="flex items-center gap-1 text-indigo-600">
+                      <Sparkles className="w-3 h-3" /> Summary
+                    </span>
+                  )}
                   {t.hey_wren_triggers > 0 && (
                     <span className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full font-medium">
                       <Bird className="w-3 h-3" />

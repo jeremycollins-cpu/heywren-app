@@ -1,14 +1,16 @@
 // inngest/functions/process-meeting-transcript.ts
-// Processes meeting transcripts for commitments.
-// Two detection modes:
+// Processes meeting transcripts for commitments and generates AI summaries.
+// Three processing steps:
 //   1. "Hey Wren" triggers — explicit, high-confidence (user said the wake word)
 //   2. Passive commitment detection — same 3-tier pipeline as Slack/email
+//   3. AI meeting summary — structured notes (topics, decisions, open questions)
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { findHeyWrenTriggers, extractHeyWrenCommitments } from '@/lib/ai/detect-hey-wren'
 import { insertCommitmentIfNotDuplicate } from '@/lib/ai/dedup-commitments'
+import { generateMeetingSummary } from '@/lib/ai/generate-meeting-summary'
 
 function getAdminClient() {
   return createClient(
@@ -201,7 +203,29 @@ export const processMeetingTranscript = inngest.createFunction(
       })
     }
 
-    // ── Step 5: Mark transcript as processed ──
+    // ── Step 5: Generate AI meeting summary ──
+    const summaryResult = await step.run('generate-summary', async () => {
+      try {
+        const attendeeNames = transcript.attendees?.map((a: any) => a.name || a.email).filter(Boolean) || []
+        const summary = await generateMeetingSummary(
+          transcript.title || 'Meeting',
+          transcript.transcript_text,
+          attendeeNames
+        )
+        if (summary) {
+          await supabase
+            .from('meeting_transcripts')
+            .update({ summary_json: summary })
+            .eq('id', transcriptId)
+        }
+        return { generated: !!summary }
+      } catch (err) {
+        console.error('Summary generation failed:', err)
+        return { generated: false }
+      }
+    })
+
+    // ── Step 6: Mark transcript as processed ──
     const totalCommitments = heyWrenCount + passiveCount
     await step.run('mark-processed', async () => {
       await supabase
@@ -215,7 +239,7 @@ export const processMeetingTranscript = inngest.createFunction(
         .eq('id', transcriptId)
     })
 
-    // ── Step 6: Trigger follow-up draft generation ──
+    // ── Step 7: Trigger follow-up draft generation ──
     const allCommitmentIds = [...heyWrenCommitmentIds, ...passiveCommitmentIds]
     if (allCommitmentIds.length > 0) {
       await step.run('trigger-followup-drafts', async () => {
@@ -243,6 +267,7 @@ export const processMeetingTranscript = inngest.createFunction(
       heyWrenCommitments: heyWrenCount,
       passiveCommitments: passiveCount,
       totalCommitments,
+      summaryGenerated: summaryResult.generated,
     }
   }
 )
