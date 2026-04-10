@@ -43,6 +43,7 @@ import { scanEmailThreats } from '@/inngest/functions/scan-email-threats'
 import { processBccEmail } from '@/inngest/functions/process-bcc-email'
 import { pollWrenMailbox } from '@/inngest/functions/poll-wren-mailbox'
 import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
+import { scheduleRecallBots, dispatchManualRecallBot } from '@/inngest/functions/schedule-recall-bots'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -86,5 +87,7 @@ export const { GET, POST, PUT } = serve({
     processBccEmail,             // On-demand — process emails BCC'd to wren@heywren.ai
     pollWrenMailbox,             // Every 5 min — poll wren@heywren.ai IMAP mailbox for BCC'd emails
     scanStaleEmails,             // 11 AM + 3 PM PT weekdays — detect read-but-not-acted-on emails
+    scheduleRecallBots,          // Every 15 min — auto-dispatch HeyWren Notetaker for 3+ attendee meetings
+    dispatchManualRecallBot,     // On-demand — user manually sends notetaker to a meeting
   ],
 })
