@@ -1,14 +1,18 @@
 export const dynamic = 'force-dynamic'
 
 // app/api/recall/webhook/route.ts
-// Receives webhooks from Recall.ai for bot status changes and transcript delivery.
-// Events: bot.status_change, bot.transcription, bot.done
-// Dispatches Inngest events for transcript processing.
+// Receives webhooks from Recall.ai:
+//   1. Bot Status Change Webhooks (configured in dashboard) — bot lifecycle events
+//   2. Real-time transcript endpoints (configured per-bot in createBot) — live transcript chunks
+//
+// When bot reaches "done" status, fetches the full transcript via API and dispatches processing.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { inngest } from '@/inngest/client'
 import {
+  getBot,
+  getBotTranscript,
   recallTranscriptToSegments,
   recallTranscriptToText,
   calculateBilledMinutes,
@@ -24,28 +28,54 @@ function getAdminClient() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { event, data } = body
 
-    if (!event || !data) {
-      return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 })
-    }
+    console.log('[recall-webhook] Received:', JSON.stringify(body).slice(0, 500))
 
     const supabase = getAdminClient()
 
-    switch (event) {
-      case 'bot.status_change': {
-        await handleStatusChange(supabase, data)
-        break
+    // Recall.ai sends different payload formats:
+    // 1. Bot Status Change: { event: "bot.status_change", data: { bot: { id }, data: { code } } }
+    // 2. Real-time transcript: { event: "transcript.data", data: { bot_id, transcript: {...} } }
+    // 3. Some events use flat structure: { bot_id, status, ... }
+
+    const event = body.event
+
+    if (event === 'bot.status_change') {
+      const botId = body.data?.bot?.id
+      const statusCode = body.data?.data?.code
+
+      if (!botId || !statusCode) {
+        console.log('[recall-webhook] Missing bot ID or status code in status_change event')
+        return NextResponse.json({ ok: true })
       }
 
-      case 'bot.transcription':
-      case 'bot.done': {
-        await handleBotDone(supabase, data)
-        break
-      }
+      console.log(`[recall-webhook] Status change: bot=${botId} status=${statusCode}`)
 
-      default: {
-        console.log(`[recall-webhook] Unhandled event: ${event}`)
+      // Update bot session status
+      await updateBotStatus(supabase, botId, statusCode, body.data?.data?.sub_code)
+
+      // When bot is done, fetch transcript via API and process it
+      if (statusCode === 'done' || statusCode === 'analysis_done') {
+        await fetchAndProcessTranscript(supabase, botId)
+      }
+    } else if (event === 'transcript.data' || event === 'transcript.partial_data') {
+      // Real-time transcript chunks — log but don't process yet
+      // Full transcript is fetched via API when bot.done fires
+      console.log(`[recall-webhook] Real-time transcript event received`)
+    } else {
+      // Try to handle as a generic/flat payload (some webhook formats)
+      const botId = body.bot_id || body.data?.bot?.id || body.data?.bot_id || body.data?.id
+      const statusCode = body.status?.code || body.data?.status?.code || body.data?.data?.code
+
+      if (botId && statusCode) {
+        console.log(`[recall-webhook] Generic event: bot=${botId} status=${statusCode}`)
+        await updateBotStatus(supabase, botId, statusCode)
+
+        if (statusCode === 'done' || statusCode === 'analysis_done' || statusCode === 'call_ended') {
+          await fetchAndProcessTranscript(supabase, botId)
+        }
+      } else {
+        console.log(`[recall-webhook] Unhandled event format:`, JSON.stringify(body).slice(0, 300))
       }
     }
 
@@ -56,34 +86,28 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function handleStatusChange(supabase: any, data: any) {
-  const botId = data.bot_id || data.id
-  if (!botId) return
-
+async function updateBotStatus(supabase: any, botId: string, statusCode: string, subCode?: string) {
   const statusMap: Record<string, string> = {
     joining_call: 'joining',
     in_waiting_room: 'joining',
     in_call_not_recording: 'in_meeting',
+    recording_permission_allowed: 'in_meeting',
+    recording_permission_denied: 'error',
     in_call_recording: 'recording',
     call_ended: 'done',
     done: 'done',
-    fatal: 'error',
     analysis_done: 'done',
+    fatal: 'error',
   }
 
-  const recallStatus = statusMap[data.status?.code] || data.status?.code
+  const recallStatus = statusMap[statusCode] || 'pending'
 
   const update: Record<string, unknown> = {
     recall_status: recallStatus,
   }
 
   if (recallStatus === 'error') {
-    update.error_message = data.status?.message || 'Bot encountered an error'
-  }
-
-  if (data.recording?.duration) {
-    update.recording_duration_seconds = data.recording.duration
-    update.billed_minutes = calculateBilledMinutes(data.recording.duration)
+    update.error_message = subCode || `Bot error: ${statusCode}`
   }
 
   await supabase
@@ -92,10 +116,7 @@ async function handleStatusChange(supabase: any, data: any) {
     .eq('recall_bot_id', botId)
 }
 
-async function handleBotDone(supabase: any, data: any) {
-  const botId = data.bot_id || data.id
-  if (!botId) return
-
+async function fetchAndProcessTranscript(supabase: any, botId: string) {
   // Look up the bot session
   const { data: session } = await supabase
     .from('recall_bot_sessions')
@@ -108,90 +129,114 @@ async function handleBotDone(supabase: any, data: any) {
     return
   }
 
-  // Extract transcript from the webhook payload
-  const transcriptEntries = data.transcript || data.transcription?.entries || []
-  if (transcriptEntries.length === 0) {
-    console.log(`[recall-webhook] No transcript in done event for bot ${botId}`)
-
-    await supabase
-      .from('recall_bot_sessions')
-      .update({ recall_status: 'done', error_message: 'No transcript received' })
-      .eq('id', session.id)
+  // Check if we already processed this bot (avoid duplicates from multiple done events)
+  if (session.transcript_id) {
+    console.log(`[recall-webhook] Bot ${botId} already processed, skipping`)
     return
   }
 
-  // Convert Recall.ai transcript to our format
-  const segments = recallTranscriptToSegments(transcriptEntries)
-  const transcriptText = recallTranscriptToText(transcriptEntries)
+  try {
+    // Fetch the full transcript from Recall.ai API
+    console.log(`[recall-webhook] Fetching transcript for bot ${botId}`)
+    const transcriptData = await getBotTranscript(botId)
+    const entries = transcriptData.entries || transcriptData as any
 
-  if (transcriptText.trim().length < 50) {
+    // Handle both array format and {entries: [...]} format
+    const transcriptEntries = Array.isArray(entries) ? entries : []
+
+    if (transcriptEntries.length === 0) {
+      console.log(`[recall-webhook] No transcript entries for bot ${botId}`)
+      await supabase
+        .from('recall_bot_sessions')
+        .update({ recall_status: 'done', error_message: 'No transcript available' })
+        .eq('id', session.id)
+      return
+    }
+
+    // Convert to our format
+    const segments = recallTranscriptToSegments(transcriptEntries)
+    const transcriptText = recallTranscriptToText(transcriptEntries)
+
+    if (transcriptText.trim().length < 50) {
+      await supabase
+        .from('recall_bot_sessions')
+        .update({ recall_status: 'done', error_message: 'Transcript too short' })
+        .eq('id', session.id)
+      return
+    }
+
+    // Also fetch bot details for duration
+    let durationSeconds = 0
+    try {
+      const botDetails = await getBot(botId)
+      durationSeconds = (botDetails as any).recording?.duration || 0
+    } catch {
+      // Non-critical — continue without duration
+    }
+
+    const durationMinutes = durationSeconds ? Math.round(durationSeconds / 60) : null
+
+    // Insert transcript into meeting_transcripts
+    const { data: transcript, error: insertError } = await supabase
+      .from('meeting_transcripts')
+      .insert({
+        team_id: session.team_id,
+        user_id: session.user_id,
+        provider: 'recall_bot',
+        external_meeting_id: botId,
+        title: session.meeting_title || 'Meeting Recording',
+        start_time: session.scheduled_start || session.created_at,
+        duration_minutes: durationMinutes,
+        attendees: [],
+        transcript_text: transcriptText,
+        transcript_segments: segments,
+        transcript_status: 'pending',
+        metadata: {
+          recall_bot_id: botId,
+          meeting_platform: session.meeting_platform,
+          attendee_count: session.attendee_count,
+          synced_via: 'recall_bot',
+        },
+      })
+      .select('id')
+      .single()
+
+    if (insertError) {
+      console.error('[recall-webhook] Failed to insert transcript:', insertError)
+      await supabase
+        .from('recall_bot_sessions')
+        .update({ recall_status: 'error', error_message: `DB error: ${insertError.message}` })
+        .eq('id', session.id)
+      return
+    }
+
+    // Link transcript to bot session
     await supabase
       .from('recall_bot_sessions')
-      .update({ recall_status: 'done', error_message: 'Transcript too short' })
+      .update({
+        recall_status: 'done',
+        transcript_id: transcript.id,
+        recording_duration_seconds: durationSeconds,
+        billed_minutes: calculateBilledMinutes(durationSeconds),
+      })
       .eq('id', session.id)
-    return
-  }
 
-  // Calculate duration
-  const durationSeconds = data.recording?.duration || session.recording_duration_seconds || 0
-  const durationMinutes = durationSeconds ? Math.round(durationSeconds / 60) : null
-
-  // Insert the transcript into meeting_transcripts
-  const { data: transcript, error: insertError } = await supabase
-    .from('meeting_transcripts')
-    .insert({
-      team_id: session.team_id,
-      user_id: session.user_id,
-      provider: 'recall_bot',
-      external_meeting_id: botId,
-      title: session.meeting_title || 'Meeting Recording',
-      start_time: session.scheduled_start || session.created_at,
-      duration_minutes: durationMinutes,
-      attendees: [],
-      transcript_text: transcriptText,
-      transcript_segments: segments,
-      transcript_status: 'pending',
-      metadata: {
-        recall_bot_id: botId,
-        meeting_platform: session.meeting_platform,
-        recording_url: data.media?.video_url || null,
-        attendee_count: session.attendee_count,
-        synced_via: 'recall_bot',
+    // Dispatch for commitment extraction + summary generation
+    await inngest.send({
+      name: 'meeting/transcript.ready',
+      data: {
+        transcript_id: transcript.id,
+        team_id: session.team_id,
+        user_id: session.user_id,
       },
     })
-    .select('id')
-    .single()
 
-  if (insertError) {
-    console.error('[recall-webhook] Failed to insert transcript:', insertError)
+    console.log(`[recall-webhook] Bot ${botId} — transcript ${transcript.id} dispatched for processing`)
+  } catch (error) {
+    console.error(`[recall-webhook] Failed to fetch/process transcript for bot ${botId}:`, error)
     await supabase
       .from('recall_bot_sessions')
-      .update({ recall_status: 'error', error_message: 'Failed to store transcript' })
+      .update({ recall_status: 'error', error_message: `Transcript fetch failed: ${(error as Error).message}` })
       .eq('id', session.id)
-    return
   }
-
-  // Link transcript to bot session and mark complete
-  await supabase
-    .from('recall_bot_sessions')
-    .update({
-      recall_status: 'done',
-      transcript_id: transcript.id,
-      recording_duration_seconds: durationSeconds,
-      billed_minutes: calculateBilledMinutes(durationSeconds),
-      recording_url: data.media?.video_url || null,
-    })
-    .eq('id', session.id)
-
-  // Dispatch for commitment + summary processing
-  await inngest.send({
-    name: 'meeting/transcript.ready',
-    data: {
-      transcript_id: transcript.id,
-      team_id: session.team_id,
-      user_id: session.user_id,
-    },
-  })
-
-  console.log(`[recall-webhook] Bot ${botId} done — transcript ${transcript.id} dispatched for processing`)
 }
