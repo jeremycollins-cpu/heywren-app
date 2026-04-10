@@ -112,12 +112,20 @@ async function refreshMicrosoftToken(
     }
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+
+    // Read existing config to preserve user metadata (microsoft_user_id, display_name, email)
+    const { data: current } = await supabase
+      .from('integrations')
+      .select('config')
+      .eq('id', integrationId)
+      .single()
+
     await supabase
       .from('integrations')
       .update({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || refreshToken,
-        config: { token_expires_at: expiresAt },
+        config: { ...(current?.config || {}), token_expires_at: expiresAt },
       })
       .eq('id', integrationId)
 
