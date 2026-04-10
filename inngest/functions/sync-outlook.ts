@@ -217,9 +217,12 @@ export async function syncTeamOutlook(
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
 
-  // Proactive token refresh
+  // Proactive token refresh — refresh if expired OR expiring within 5 minutes.
+  // Microsoft access tokens last ~1 hour; refreshing early avoids a window
+  // where the token is expired but hasn't been refreshed yet.
   const tokenExpiresAt = integration.config?.token_expires_at
-  if (tokenExpiresAt && new Date(tokenExpiresAt) < new Date()) {
+  const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000)
+  if (tokenExpiresAt && new Date(tokenExpiresAt) < fiveMinFromNow) {
     const newToken = await refreshMicrosoftToken(supabase, integrationId, refreshToken)
     if (newToken) {
       msToken = newToken
