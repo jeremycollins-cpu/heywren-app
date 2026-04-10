@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     // Check if latest weekly_scores already covers current week
     const hasCurrentWeek = (weeklyScores || []).some(
-      (ws: { week_start: string }) => ws.week_start === currentWeekStr
+      (ws: any) => ws.week_start === currentWeekStr
     )
 
     let liveWeek = null
@@ -127,12 +127,12 @@ export async function GET(request: NextRequest) {
       const missedChats = missedChatsRes.data || []
 
       const created = commitments.length
-      const completed = commitments.filter((c: { status: string }) => c.status === 'completed').length
-      const overdue = commitments.filter((c: { status: string }) => c.status === 'overdue').length
-      const emailsResolved = missedEmails.filter((e: { status: string }) =>
+      const completed = commitments.filter((c: any) => c.status === 'completed').length
+      const overdue = commitments.filter((c: any) => c.status === 'overdue').length
+      const emailsResolved = missedEmails.filter((e: any) =>
         e.status === 'replied' || e.status === 'dismissed'
       ).length
-      const chatsResolved = missedChats.filter((c: { status: string }) =>
+      const chatsResolved = missedChats.filter((c: any) =>
         c.status === 'replied'
       ).length
       const totalMissed = missedEmails.length + missedChats.length
