@@ -95,14 +95,15 @@ export default function MeetingDetailPage() {
 
   const summary: MeetingSummary | null = transcript.summary_json
   const segments: TranscriptSegment[] = transcript.transcript_segments || []
-  const providerLabel = {
+  const providerLabels: Record<string, string> = {
     recall_bot: 'HeyWren Notetaker',
     zoom: 'Zoom',
     google_meet: 'Google Meet',
     teams: 'Teams',
     manual: 'Manual Upload',
     chrome_extension: 'Live Capture',
-  }[transcript.provider] || transcript.provider
+  }
+  const providerLabel = providerLabels[transcript.provider as string] || transcript.provider
 
   const sentimentColors = {
     positive: 'bg-green-50 text-green-700',
