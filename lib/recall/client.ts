@@ -126,12 +126,9 @@ export async function getBotTranscript(botId: string): Promise<RecallTranscript>
   }
 
   // Step 2: Download the transcript from the provided URL
+  // This is a pre-signed S3 URL — do NOT send Authorization header
   const downloadUrl = transcriptShortcut.data.download_url
-  const res = await fetch(downloadUrl, {
-    headers: {
-      Authorization: `Token ${getApiKey()}`,
-    },
-  })
+  const res = await fetch(downloadUrl)
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
