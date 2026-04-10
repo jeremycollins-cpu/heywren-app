@@ -113,6 +113,24 @@ async function refreshMicrosoftToken(
   refreshToken: string
 ): Promise<string | null> {
   try {
+    // Guard against concurrent refreshes: if token was refreshed in the last 60s
+    // by another function, just use the existing fresh token
+    const { data: fresh } = await supabase
+      .from('integrations')
+      .select('access_token, config')
+      .eq('id', integrationId)
+      .single()
+
+    if (fresh?.config?.token_expires_at) {
+      const expiresAt = new Date(fresh.config.token_expires_at)
+      const refreshedAgo = expiresAt.getTime() - Date.now()
+      // If token expires more than 55 min from now, it was just refreshed
+      if (refreshedAgo > 55 * 60 * 1000) {
+        console.log('Token was recently refreshed by another function, reusing')
+        return fresh.access_token
+      }
+    }
+
     const tokenRes = await fetch(
       'https://login.microsoftonline.com/common/oauth2/v2.0/token',
       {
@@ -135,12 +153,20 @@ async function refreshMicrosoftToken(
     }
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+
+    // Read existing config to preserve user metadata (microsoft_user_id, display_name, email)
+    const { data: current } = await supabase
+      .from('integrations')
+      .select('config')
+      .eq('id', integrationId)
+      .single()
+
     await supabase
       .from('integrations')
       .update({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || refreshToken,
-        config: { token_expires_at: expiresAt },
+        config: { ...(current?.config || {}), token_expires_at: expiresAt },
       })
       .eq('id', integrationId)
 
