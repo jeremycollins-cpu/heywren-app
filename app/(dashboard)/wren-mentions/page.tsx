@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   AtSign, Mail, MessageSquare, Mic,
   CheckCircle2, ExternalLink, Clock, Filter,
-  ChevronDown, Loader2, Inbox, ListChecks, Bell,
+  ChevronDown, Loader2, Inbox, ListChecks, Bell, XCircle, Eye, EyeOff,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTodo } from '@/lib/contexts/todo-context'
@@ -87,7 +87,7 @@ async function addReminder(title: string, sourceType: string, sourceId: string) 
   }
 }
 
-function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: (title: string, source?: { type: string; id?: string }) => void }) {
+function MentionCard({ mention, onAddTodo, onDismiss }: { mention: WrenMention; onAddTodo: (title: string, source?: { type: string; id?: string }) => void; onDismiss: (id: string) => void }) {
   const cfg = channelConfig[mention.channel]
   const Icon = cfg.icon
   const [expanded, setExpanded] = useState(false)
@@ -126,7 +126,9 @@ function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: 
 
             {/* Title: commitment or message summary */}
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">
-              {mention.source_title}
+              {mention.source_title && /^#[A-Z0-9]{8,}$/i.test(mention.source_title)
+                ? 'Slack mention'
+                : mention.source_title || 'Mention'}
             </h3>
 
             {/* Full context (expandable) */}
@@ -192,6 +194,13 @@ function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: 
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
+          <button
+            onClick={() => onDismiss(mention.id)}
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition"
+            title="Dismiss"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </div>
@@ -208,6 +217,27 @@ export default function WrenMentionsPage() {
   const [hasMore, setHasMore] = useState(false)
   const [filter, setFilter] = useState<ChannelFilter>('all')
   const [filterOpen, setFilterOpen] = useState(false)
+  const [showDismissed, setShowDismissed] = useState(false)
+
+  const dismissMention = async (id: string) => {
+    setMentions(prev => prev.filter(m => m.id !== id))
+    try {
+      const res = await fetch('/api/wren-mentions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, dismissed: true }),
+      })
+      if (res.ok) {
+        toast.success('Dismissed')
+      } else {
+        fetchMentions(1, filter, false)
+        toast.error('Failed to dismiss')
+      }
+    } catch {
+      fetchMentions(1, filter, false)
+      toast.error('Failed to dismiss')
+    }
+  }
 
   const fetchMentions = useCallback(async (pageNum: number, channel: ChannelFilter, append = false) => {
     if (append) setLoadingMore(true)
@@ -216,6 +246,7 @@ export default function WrenMentionsPage() {
     try {
       const params = new URLSearchParams({ page: String(pageNum) })
       if (channel !== 'all') params.set('channel', channel)
+      if (showDismissed) params.set('dismissed', 'true')
       const res = await fetch(`/api/wren-mentions?${params}`)
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
@@ -229,11 +260,11 @@ export default function WrenMentionsPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [])
+  }, [showDismissed])
 
   useEffect(() => {
     fetchMentions(1, filter)
-  }, [filter, fetchMentions])
+  }, [filter, showDismissed, fetchMentions])
 
   const channelCounts = mentions.reduce((acc, m) => {
     acc[m.channel] = (acc[m.channel] || 0) + 1
@@ -266,8 +297,21 @@ export default function WrenMentionsPage() {
           })}
         </div>
 
+        {/* Show dismissed toggle */}
+        <button
+          onClick={() => setShowDismissed(!showDismissed)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition ml-auto ${
+            showDismissed
+              ? 'text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20'
+              : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          {showDismissed ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+          {showDismissed ? 'Showing all' : 'Show dismissed'}
+        </button>
+
         {/* Filter */}
-        <div className="relative ml-auto">
+        <div className="relative">
           <button
             onClick={() => setFilterOpen(!filterOpen)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
@@ -327,7 +371,7 @@ export default function WrenMentionsPage() {
       ) : (
         <div className="space-y-2">
           {mentions.map(mention => (
-            <MentionCard key={mention.id} mention={mention} onAddTodo={addTodoFromPage} />
+            <MentionCard key={mention.id} mention={mention} onAddTodo={addTodoFromPage} onDismiss={dismissMention} />
           ))}
 
           {hasMore && (

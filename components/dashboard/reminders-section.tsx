@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { Bell, CheckCircle2, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -94,7 +95,13 @@ export function RemindersSection() {
               <CheckCircle2 className="w-3 h-3 text-transparent group-hover:text-green-500 transition" />
             </button>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{r.title}</p>
+              {r.source_type === 'commitment' && r.source_id ? (
+                <Link href={`/commitments/${r.source_id}`} className="text-sm text-gray-800 dark:text-gray-200 truncate block hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                  {r.title}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{r.title}</p>
+              )}
               <span className="text-[10px] text-gray-400">{formatDate(r.created_at)}</span>
             </div>
             <button

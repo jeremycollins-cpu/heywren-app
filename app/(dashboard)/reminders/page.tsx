@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { PageHeader } from '@/components/ui/page-header'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
-import { Bell, CheckCircle2, X, Inbox, Plus } from 'lucide-react'
+import { Bell, CheckCircle2, X, Inbox, Plus, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Reminder {
@@ -188,11 +189,36 @@ export default function RemindersPage() {
                 <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <p className={`text-sm ${r.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>{r.title}</p>
+                {r.source_type === 'commitment' && r.source_id ? (
+                  <Link
+                    href={`/commitments/${r.source_id}`}
+                    className={`text-sm hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors ${r.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}
+                  >
+                    {r.title}
+                  </Link>
+                ) : (
+                  <p className={`text-sm ${r.status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>{r.title}</p>
+                )}
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[10px] text-gray-400">{formatDate(r.created_at)}</span>
                   {r.source_type !== 'manual' && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500">from {r.source_type}</span>
+                  )}
+                  {r.source_type === 'commitment' && r.source_id && (
+                    <Link
+                      href={`/commitments/${r.source_id}`}
+                      className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium flex items-center gap-0.5 transition-colors"
+                    >
+                      View commitment <ExternalLink className="w-2.5 h-2.5" />
+                    </Link>
+                  )}
+                  {r.source_type === 'mention' && (
+                    <Link
+                      href="/wren-mentions"
+                      className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium flex items-center gap-0.5 transition-colors"
+                    >
+                      View mentions <ExternalLink className="w-2.5 h-2.5" />
+                    </Link>
                   )}
                 </div>
               </div>

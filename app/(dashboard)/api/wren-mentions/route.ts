@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     const channel = request.nextUrl.searchParams.get('channel') // 'slack' | 'email' | 'meeting' | null (all)
+    const showDismissed = request.nextUrl.searchParams.get('dismissed') === 'true'
     const page = parseInt(request.nextUrl.searchParams.get('page') || '1', 10)
     const limit = 30
     const offset = (page - 1) * limit
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
       .eq('team_id', profile.current_team_id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
+
+    if (!showDismissed) {
+      query = query.eq('dismissed', false)
+    }
 
     if (channel && ['slack', 'email', 'meeting'].includes(channel)) {
       query = query.eq('channel', channel)
@@ -86,6 +91,39 @@ export async function GET(request: NextRequest) {
     })
   } catch (err: any) {
     console.error('Wren mentions error:', err?.message || err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+// PATCH — dismiss or un-dismiss a mention
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createSessionClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id, dismissed } = await request.json()
+    if (!id || typeof dismissed !== 'boolean') {
+      return NextResponse.json({ error: 'Missing id or dismissed' }, { status: 400 })
+    }
+
+    const admin = getAdminClient()
+    const { error } = await admin
+      .from('wren_mentions')
+      .update({ dismissed })
+      .eq('id', id)
+      .eq('user_id', userData.user.id)
+
+    if (error) {
+      console.error('Failed to update mention:', error)
+      return NextResponse.json({ error: 'Failed to update' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    console.error('Wren mentions PATCH error:', err?.message || err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
