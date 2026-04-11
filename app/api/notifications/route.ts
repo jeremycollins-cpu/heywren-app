@@ -52,20 +52,28 @@ export async function PATCH(request: NextRequest) {
   const { id, markAllRead } = body
 
   if (markAllRead) {
-    await admin
+    const { error } = await admin
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
       .eq('read', false)
+    if (error) {
+      console.error('Notification markAllRead error:', error)
+      return NextResponse.json({ error: 'Failed to mark as read' }, { status: 500 })
+    }
     return NextResponse.json({ success: true })
   }
 
   if (id) {
-    await admin
+    const { error } = await admin
       .from('notifications')
       .update({ read: true })
       .eq('id', id)
       .eq('user_id', user.id)
+    if (error) {
+      console.error('Notification mark read error:', error)
+      return NextResponse.json({ error: 'Failed to mark as read' }, { status: 500 })
+    }
     return NextResponse.json({ success: true })
   }
 

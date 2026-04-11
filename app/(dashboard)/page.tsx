@@ -77,7 +77,9 @@ export default function DashboardPage() {
           chatsEvaluated: chatRes?.totalEvaluated || 0,
           chatsMissed: chatRes?.missedChats?.length || 0,
         })
-      } catch { /* ignore */ }
+      } catch {
+        console.error('Failed to fetch evaluation metrics')
+      }
     }
     if (!loading) fetchEvalMetrics()
   }, [loading])
@@ -129,8 +131,12 @@ export default function DashboardPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ daysBack: 30 }),
         }),
-      ]).then(() => {
+      ]).then((results) => {
         setAutoSyncing(false)
+        const allFailed = results.every(r => r.status === 'rejected')
+        if (allFailed) {
+          toast.error('Failed to sync integrations — check your connections')
+        }
         fetchDashboard()
       })
     }

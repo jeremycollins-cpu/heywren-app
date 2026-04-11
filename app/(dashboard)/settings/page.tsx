@@ -323,9 +323,9 @@ export default function SettingsPage() {
         const p = data.period
         setOooPeriods(prev => [{
           id: p.id,
-          startDate: p.start_date,
-          endDate: p.end_date,
-          oooType: p.ooo_type,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          oooType: p.oooType,
           note: p.note,
           status: p.status,
         }, ...prev])

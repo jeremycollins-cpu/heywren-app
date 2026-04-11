@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     let query = admin
       .from('ooo_periods')
-      .select('*, profiles:user_id(display_name, avatar_url), backup:backup_user_id(display_name)')
+      .select('*, profiles:user_id(display_name, full_name, avatar_url), backup:backup_user_id(display_name, full_name)')
       .eq('organization_id', orgId)
       .order('start_date', { ascending: false })
 
@@ -65,7 +65,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('user_id', callerId)
     }
 
-    const { data: periods } = await query
+    const { data: periods, error: queryError } = await query
+
+    if (queryError) {
+      console.error('OOO query error:', queryError)
+      return NextResponse.json({ error: 'Failed to load' }, { status: 500 })
+    }
 
     // Enrich with display info
     const enriched = (periods || []).map((p: any) => {
@@ -74,14 +79,14 @@ export async function GET(request: NextRequest) {
       return {
         id: p.id,
         userId: p.user_id,
-        name: profile?.display_name || 'Unknown',
+        name: profile?.display_name || profile?.full_name || 'Unknown',
         avatar: profile?.avatar_url || null,
         startDate: p.start_date,
         endDate: p.end_date,
         oooType: p.ooo_type,
         note: p.note,
         backupUserId: p.backup_user_id,
-        backupName: backup?.display_name || null,
+        backupName: backup?.display_name || backup?.full_name || null,
         status: p.status,
         createdAt: p.created_at,
       }
@@ -161,7 +166,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create' }, { status: 500 })
     }
 
-    return NextResponse.json({ period })
+    // Return enriched format matching GET response
+    return NextResponse.json({
+      period: {
+        id: period.id,
+        userId: period.user_id,
+        startDate: period.start_date,
+        endDate: period.end_date,
+        oooType: period.ooo_type,
+        note: period.note,
+        backupUserId: period.backup_user_id,
+        status: period.status,
+        createdAt: period.created_at,
+      },
+    })
   } catch (err) {
     console.error('OOO POST error:', err)
     return NextResponse.json({ error: 'Failed to create' }, { status: 500 })

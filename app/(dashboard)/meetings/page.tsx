@@ -46,6 +46,11 @@ export default function MeetingsPage() {
       if (res.ok) {
         const data = await res.json()
         setTranscripts(data.transcripts || [])
+      } else {
+        const data = await res.json().catch(() => ({}))
+        const message = data.error || 'Failed to load meeting transcripts'
+        setError(message)
+        toast.error(message)
       }
     } catch (err) {
       console.error('Failed to fetch transcripts:', err)

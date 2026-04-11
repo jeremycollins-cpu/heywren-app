@@ -180,15 +180,14 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 7. UPSERT PROFILE ─────────────────────────────────────────────
-    // Detect name column: production may use 'display_name' instead of 'full_name'
-    const nameCol = await detectNameColumn()
     const profileRole = flow === 'created' ? 'admin' : 'user'
 
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
         id: userId,
-        [nameCol]: fullName,
+        full_name: fullName,
+        display_name: fullName,
         email: userEmail,
         role: profileRole,
         current_team_id: teamId,
@@ -202,7 +201,8 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin
         .from('profiles')
         .update({
-          [nameCol]: fullName,
+          full_name: fullName,
+          display_name: fullName,
           email: userEmail,
           role: profileRole,
           current_team_id: teamId,

@@ -80,17 +80,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to add user to team' }, { status: 500 })
     }
 
-    // Update profile
+    // Upsert profile — handles both existing and new profiles
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .update({
+      .upsert({
+        id: resolvedUserId,
+        email: email || '',
+        full_name: companyName ? `${companyName} Admin` : 'User',
+        display_name: companyName ? `${companyName} Admin` : 'User',
         role: 'super_admin',
         current_team_id: newTeam.id,
-      })
-      .eq('id', resolvedUserId)
+      }, { onConflict: 'id' })
 
     if (profileError) {
-      console.error('Profile update error:', profileError)
+      console.error('Profile upsert error:', profileError)
       return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
     }
 

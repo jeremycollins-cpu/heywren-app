@@ -94,6 +94,9 @@ export default function DraftQueuePage() {
       if (res.ok) {
         setDrafts(drafts.filter(d => d.id !== id))
         toast.success('Draft marked as sent')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to send draft')
       }
     } catch {
       toast.error('Failed to send draft')
@@ -110,6 +113,9 @@ export default function DraftQueuePage() {
       if (res.ok) {
         setDrafts(drafts.filter(d => d.id !== id))
         toast.success('Draft dismissed')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to dismiss draft')
       }
     } catch {
       toast.error('Failed to dismiss draft')
@@ -135,6 +141,9 @@ export default function DraftQueuePage() {
         ))
         setEditingDraft(null)
         toast.success('Draft updated')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to save edit')
       }
     } catch {
       toast.error('Failed to save edit')
