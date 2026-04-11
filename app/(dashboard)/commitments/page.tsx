@@ -6,7 +6,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
@@ -894,13 +894,34 @@ export default function CommitmentsPage() {
                     </button>
                   ) : null}
                   {c.status !== 'completed' && (
-                    <button
-                      onClick={() => addTodoFromPage(c.title, { type: 'commitment', id: c.id })}
-                      className="text-xs px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 font-medium transition-colors flex items-center gap-1"
-                      title="Add to To-Dos"
-                    >
-                      <ListChecks className="w-3 h-3" /> To-Do
-                    </button>
+                    <>
+                      <button
+                        onClick={() => addTodoFromPage(c.title, { type: 'commitment', id: c.id })}
+                        className="text-xs px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/50 font-medium transition-colors flex items-center gap-1"
+                        title="Add to To-Dos"
+                      >
+                        <ListChecks className="w-3 h-3" /> To-Do
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/reminders', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ title: c.title, sourceType: 'commitment', sourceId: c.id }),
+                            })
+                            const data = await res.json()
+                            if (data.existing) toast('Reminder already exists', { icon: '\u{1F514}' })
+                            else if (res.ok) toast.success('Reminder set')
+                            else toast.error(data.error || 'Failed')
+                          } catch { toast.error('Failed to set reminder') }
+                        }}
+                        className="text-xs px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 font-medium transition-colors flex items-center gap-1"
+                        title="Set reminder"
+                      >
+                        <Bell className="w-3 h-3" /> Remind
+                      </button>
+                    </>
                   )}
                 </div>
 
