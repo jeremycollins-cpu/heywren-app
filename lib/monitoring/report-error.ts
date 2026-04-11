@@ -52,7 +52,7 @@ export async function reportError(opts: ReportErrorOptions): Promise<void> {
       team_id: opts.teamId || null,
       details: opts.details || null,
       error_key: opts.errorKey || null,
-    })
+    } as any)
   } catch {
     // Never throw — monitoring should not break the app
     console.error('[reportError] Failed to log error:', opts.message)
