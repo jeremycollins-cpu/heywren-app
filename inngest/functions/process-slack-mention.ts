@@ -343,17 +343,43 @@ export const processSlackMention = inngest.createFunction(
           ? `https://slack.com/archives/${channel_id}/p${ts.replace('.', '')}`
           : null
 
+        // Resolve channel name and user display name via Slack API
+        let channelName = channel_id
+        let participantName: string | null = null
+        try {
+          const channelInfo = await slackApi('conversations.info', { channel: channel_id }, token)
+          if (channelInfo.ok && channelInfo.channel?.name) {
+            channelName = channelInfo.channel.name
+          }
+        } catch { /* non-critical */ }
+        try {
+          if (user_id) {
+            const userInfo = await slackApi('users.info', { user: user_id }, token)
+            if (userInfo.ok && userInfo.user?.profile) {
+              participantName = userInfo.user.profile.display_name || userInfo.user.profile.real_name || userInfo.user.real_name || null
+            }
+          }
+        } catch { /* non-critical */ }
+
+        // Build a descriptive title from the first commitment, or clean message text
+        const commitmentTitles = stored.map((c: any) => c.title)
+        const cleanText = text?.replace(/<@[^>]+>/g, '').trim() || ''
+        const descriptiveTitle = commitmentTitles.length > 0
+          ? commitmentTitles[0]
+          : (cleanText.slice(0, 120) || `Mention in #${channelName}`)
+
         await supabase.from('wren_mentions').insert({
           team_id: teamId,
           user_id: mentionUserId,
           channel: 'slack',
-          source_title: `#${channel_id}`,
+          source_title: descriptiveTitle,
           source_snippet: text?.slice(0, 300) || null,
           source_url: permalink,
-          participant_name: null, // Slack user names aren't available in the event payload
+          source_ref: `#${channelName}`,
+          participant_name: participantName,
           commitments_extracted: stored.length,
           created_at: new Date().toISOString(),
-        })
+        } as any)
       }
     })
 

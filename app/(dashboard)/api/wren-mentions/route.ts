@@ -54,8 +54,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch mentions' }, { status: 500 })
     }
 
+    // Enrich with linked commitment titles (match by source_url = commitment.source_url)
+    const mentionUrls = (mentions || []).map((m: any) => m.source_url).filter(Boolean)
+    const commitmentMap = new Map<string, string[]>()
+
+    if (mentionUrls.length > 0) {
+      const { data: commitments } = await admin
+        .from('commitments')
+        .select('title, source_url')
+        .eq('team_id', profile.current_team_id)
+        .in('source_url', mentionUrls)
+
+      for (const c of commitments || []) {
+        if (!c.source_url) continue
+        const existing = commitmentMap.get(c.source_url) || []
+        existing.push(c.title)
+        commitmentMap.set(c.source_url, existing)
+      }
+    }
+
+    const enrichedMentions = (mentions || []).map((m: any) => ({
+      ...m,
+      commitment_titles: m.source_url ? (commitmentMap.get(m.source_url) || []) : [],
+    }))
+
     return NextResponse.json({
-      mentions: mentions || [],
+      mentions: enrichedMentions,
       total: count || 0,
       page,
       hasMore: (count || 0) > offset + limit,
