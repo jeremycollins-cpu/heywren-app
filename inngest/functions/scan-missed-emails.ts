@@ -40,11 +40,22 @@ async function refreshMicrosoftToken(
     const tokenData = await res.json()
     if (tokenData.error) return null
 
+    // Fetch current config to preserve existing fields
+    const { data: current } = await supabase
+      .from('integrations')
+      .select('config')
+      .eq('id', integrationId)
+      .single()
+
     await supabase
       .from('integrations')
       .update({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || refreshToken,
+        config: {
+          ...(current?.config || {}),
+          token_expires_at: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString(),
+        },
       })
       .eq('id', integrationId)
 
