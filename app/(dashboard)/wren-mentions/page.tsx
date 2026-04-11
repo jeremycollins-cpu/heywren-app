@@ -126,7 +126,9 @@ function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: 
 
             {/* Title: commitment or message summary */}
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">
-              {mention.source_title}
+              {mention.source_title && /^#[A-Z0-9]{8,}$/i.test(mention.source_title)
+                ? 'Slack mention'
+                : mention.source_title || 'Mention'}
             </h3>
 
             {/* Full context (expandable) */}

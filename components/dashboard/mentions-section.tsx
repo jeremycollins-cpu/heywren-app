@@ -49,7 +49,7 @@ export function MentionsSection({ mentions }: MentionsSectionProps) {
                   {(m.message_text?.length || 0) > 100 ? '...' : ''}
                 </div>
                 <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  <span>#{m.channel_id?.slice(-6)}</span>
+                  <span>Slack</span>
                   <span aria-hidden="true">·</span>
                   <span>{daysSince(m.created_at) === 0 ? 'Today' : daysSince(m.created_at) === 1 ? 'Yesterday' : `${daysSince(m.created_at)} days ago`}</span>
                   <span aria-hidden="true">·</span>
