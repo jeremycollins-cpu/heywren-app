@@ -6,11 +6,17 @@ import { useCelebration } from '@/lib/contexts/celebration-context'
  * Renders a wren bird flying across the screen with trailing sparkles, leaves,
  * and musical notes when the user completes a task.  Inspired by Asana's
  * unicorn celebration but themed around the HeyWren brand.
+ *
+ * Like Asana, the animation only fires randomly (~1 in 7 completions) so it
+ * stays surprising and delightful.  Each trigger picks a random vertical
+ * position and flight direction for variety.
  */
 export default function WrenCelebration() {
-  const { celebrating } = useCelebration()
+  const { celebrating, variant } = useCelebration()
 
-  if (!celebrating) return null
+  if (!celebrating || !variant) return null
+
+  const isRtl = variant.direction === 'rtl'
 
   return (
     <div
@@ -18,7 +24,10 @@ export default function WrenCelebration() {
       className="fixed inset-0 z-[9999] pointer-events-none overflow-hidden"
     >
       {/* ── Flying Wren ─────────────────────────────────────────────── */}
-      <div className="wren-fly-across absolute" style={{ top: '30%' }}>
+      <div
+        className={`absolute ${isRtl ? 'wren-fly-across-rtl' : 'wren-fly-across'}`}
+        style={{ top: `${variant.topPercent}%` }}
+      >
         <svg
           width="80"
           height="80"
@@ -26,6 +35,7 @@ export default function WrenCelebration() {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           className="wren-bob drop-shadow-lg"
+          style={isRtl ? { transform: 'scaleX(-1)' } : undefined}
         >
           {/* Body */}
           <ellipse cx="60" cy="62" rx="24" ry="18" fill="#8B6914" />
@@ -75,9 +85,9 @@ export default function WrenCelebration() {
       {[...Array(8)].map((_, i) => (
         <div
           key={`sparkle-${i}`}
-          className="wren-trail-particle absolute"
+          className={`absolute ${isRtl ? 'wren-trail-particle-rtl' : 'wren-trail-particle'}`}
           style={{
-            top: `${26 + Math.random() * 14}%`,
+            top: `${variant.topPercent - 4 + Math.random() * 14}%`,
             animationDelay: `${0.15 + i * 0.18}s`,
           }}
         >
@@ -95,9 +105,9 @@ export default function WrenCelebration() {
       {[...Array(5)].map((_, i) => (
         <div
           key={`note-${i}`}
-          className="wren-trail-particle wren-note-float absolute"
+          className={`absolute ${isRtl ? 'wren-trail-particle-rtl' : 'wren-trail-particle'} wren-note-float`}
           style={{
-            top: `${22 + Math.random() * 20}%`,
+            top: `${variant.topPercent - 8 + Math.random() * 20}%`,
             animationDelay: `${0.3 + i * 0.28}s`,
           }}
         >
@@ -119,9 +129,9 @@ export default function WrenCelebration() {
       {[...Array(6)].map((_, i) => (
         <div
           key={`leaf-${i}`}
-          className="wren-trail-particle wren-leaf-spin absolute"
+          className={`absolute ${isRtl ? 'wren-trail-particle-rtl' : 'wren-trail-particle'} wren-leaf-spin`}
           style={{
-            top: `${24 + Math.random() * 18}%`,
+            top: `${variant.topPercent - 6 + Math.random() * 18}%`,
             animationDelay: `${0.2 + i * 0.22}s`,
           }}
         >

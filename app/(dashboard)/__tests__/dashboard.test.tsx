@@ -37,6 +37,7 @@ jest.mock('react-hot-toast', () => ({
 jest.mock('@/lib/contexts/celebration-context', () => ({
   useCelebration: () => ({
     celebrating: false,
+    variant: null,
     celebrate: jest.fn(),
   }),
 }))

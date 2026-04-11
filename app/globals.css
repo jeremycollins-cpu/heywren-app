@@ -349,6 +349,14 @@ code {
   100% { transform: translateX(calc(100vw + 120px)); opacity: 0; }
 }
 
+/* Bird flies from off-screen right to off-screen left */
+@keyframes wrenFlyAcrossRtl {
+  0%   { transform: translateX(calc(100vw + 120px)); opacity: 0; }
+  5%   { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(-120px); opacity: 0; }
+}
+
 /* Gentle vertical bob while flying */
 @keyframes wrenBob {
   0%, 100% { transform: translateY(0) rotate(-4deg); }
@@ -371,6 +379,13 @@ code {
   100% { transform: translateX(calc(100vw + 80px)) scale(0.4); opacity: 0; }
 }
 
+@keyframes wrenTrailRtl {
+  0%   { transform: translateX(calc(100vw + 80px)) scale(0); opacity: 0; }
+  10%  { opacity: 1; transform: translateX(calc(100vw + 60px)) scale(1); }
+  40%  { opacity: 0.8; }
+  100% { transform: translateX(-120px) scale(0.4); opacity: 0; }
+}
+
 /* Musical notes float upward */
 @keyframes wrenNoteFloat {
   0%   { transform: translateY(0); }
@@ -387,6 +402,10 @@ code {
   animation: wrenFlyAcross 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
 }
 
+.wren-fly-across-rtl {
+  animation: wrenFlyAcrossRtl 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
 .wren-bob {
   animation: wrenBob 0.6s ease-in-out infinite;
 }
@@ -401,14 +420,31 @@ code {
   opacity: 0;
 }
 
+.wren-trail-particle-rtl {
+  animation: wrenTrailRtl 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  opacity: 0;
+}
+
 .wren-note-float {
   animation:
     wrenTrail 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
     wrenNoteFloat 1.2s ease-in-out infinite alternate;
 }
 
+.wren-trail-particle-rtl.wren-note-float {
+  animation:
+    wrenTrailRtl 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
+    wrenNoteFloat 1.2s ease-in-out infinite alternate;
+}
+
 .wren-leaf-spin {
   animation:
     wrenTrail 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
+    wrenLeafSpin 1.8s linear infinite;
+}
+
+.wren-trail-particle-rtl.wren-leaf-spin {
+  animation:
+    wrenTrailRtl 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
     wrenLeafSpin 1.8s linear infinite;
 }
