@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { ListChecks, Plus, Trash2, ChevronRight, Star, ChevronDown, FileText, X, Pencil, Calendar, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 import { TODO_CATEGORIES, getCategoryLabel, getCategoryColor } from '@/components/todo-panel'
 import type { TodoCategory } from '@/components/todo-panel'
 
@@ -21,6 +22,7 @@ interface Todo {
 }
 
 export default function TodosPage() {
+  const { celebrate } = useCelebration()
   const [todos, setTodos] = useState<Todo[]>([])
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
@@ -100,15 +102,17 @@ export default function TodosPage() {
   }
 
   const toggleTodo = async (id: string, completed: boolean) => {
+    const nowCompleting = !completed
     setTodos(prev => prev.map(t =>
-      t.id === id ? { ...t, completed: !completed, completed_at: !completed ? new Date().toISOString() : null } : t
+      t.id === id ? { ...t, completed: nowCompleting, completed_at: nowCompleting ? new Date().toISOString() : null } : t
     ))
+    if (nowCompleting) celebrate()
 
     try {
       const res = await fetch('/api/todos', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, completed: !completed }),
+        body: JSON.stringify({ id, completed: nowCompleting }),
       })
       if (!res.ok) {
         setTodos(prev => prev.map(t =>

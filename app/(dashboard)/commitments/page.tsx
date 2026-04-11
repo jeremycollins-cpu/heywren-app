@@ -10,6 +10,7 @@ import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, Li
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 
 interface CommitmentStakeholder {
   name: string
@@ -120,6 +121,7 @@ type SortBy = 'newest' | 'oldest' | 'score' | 'urgency'
 
 export default function CommitmentsPage() {
   const { addTodoFromPage } = useTodo()
+  const { celebrate } = useCelebration()
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -242,6 +244,7 @@ export default function CommitmentsPage() {
     const supabase = createClient()
     await supabase.from('commitments').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
     setCommitments(prev => prev.map(c => c.id === id ? { ...c, status: newStatus, updated_at: new Date().toISOString() } : c))
+    if (newStatus === 'completed') celebrate()
   }
 
   async function bulkComplete() {
@@ -254,6 +257,7 @@ export default function CommitmentsPage() {
       await supabase.from('commitments').update({ status: 'completed', updated_at: now, completed_at: now }).in('id', ids)
       setCommitments(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: 'completed', updated_at: now } : c))
       toast.success(`${ids.length} commitment${ids.length > 1 ? 's' : ''} marked complete`)
+      celebrate()
       setSelectedIds(new Set())
 
       // Auto-create next instances for recurring commitments
