@@ -329,7 +329,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete local
-    await admin.from('email_rules').delete().eq('id', ruleId)
+    const { error: deleteError } = await admin.from('email_rules').delete().eq('id', ruleId)
+    if (deleteError) {
+      console.error('Email rules delete error:', deleteError)
+      return NextResponse.json({ error: 'Failed to delete rule' }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

@@ -44,7 +44,7 @@ export const generateDrafts = inngest.createFunction(
         // Fetch open commitments without drafts
         let query = supabase
           .from('commitments')
-          .select('id, title, description, source, created_at, assignee:team_members(user_id, profiles(display_name))')
+          .select('id, title, description, source, created_at, assignee_id')
           .eq('team_id', teamId)
           .eq('status', 'open')
           .order('created_at', { ascending: false })
@@ -76,6 +76,19 @@ export const generateDrafts = inngest.createFunction(
 
         const generatedBy = members && members.length > 0 ? members[0].user_id : null
 
+        // Look up assignee names separately (assignee_id FK points to auth.users, not profiles)
+        const assigneeIds = [...new Set(commitments.map((c: any) => c.assignee_id).filter(Boolean))]
+        const assigneeNames = new Map<string, string>()
+        if (assigneeIds.length > 0) {
+          const { data: assigneeProfiles } = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', assigneeIds)
+          for (const p of assigneeProfiles || []) {
+            if (p.display_name) assigneeNames.set(p.id, p.display_name)
+          }
+        }
+
         // Prepare commitments for AI
         const commitmentsForAI = commitments.map((c: any) => ({
           id: c.id,
@@ -83,7 +96,7 @@ export const generateDrafts = inngest.createFunction(
           description: c.description || undefined,
           source: c.source || undefined,
           created_at: c.created_at,
-          recipient_name: c.assignee?.profiles?.display_name || undefined,
+          recipient_name: c.assignee_id ? assigneeNames.get(c.assignee_id) : undefined,
         }))
 
         let totalGenerated = 0

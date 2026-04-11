@@ -63,13 +63,31 @@ export async function GET(request: NextRequest) {
 
     const orgId = callerMembership.organization_id
 
-    // Get org members
+    // Get org members (separate profile lookup — user_id FK points to auth.users, not profiles)
     const { data: members } = await admin
       .from('organization_members')
-      .select('user_id, department_id, team_id, role, profiles(display_name, avatar_url, job_title)')
-      .eq('organization_id', orgId) as { data: MemberProfile[] | null }
+      .select('user_id, department_id, team_id, role')
+      .eq('organization_id', orgId)
 
-    if (!members || members.length === 0) {
+    // Fetch profiles separately
+    const memberUserIds = (members || []).map((m: any) => m.user_id)
+    const profileMap = new Map<string, { display_name: string | null; avatar_url: string | null; job_title: string | null }>()
+    if (memberUserIds.length > 0) {
+      const { data: profiles } = await admin
+        .from('profiles')
+        .select('id, display_name, avatar_url, job_title')
+        .in('id', memberUserIds)
+      for (const p of profiles || []) {
+        profileMap.set(p.id, p)
+      }
+    }
+    // Attach profiles to members for downstream code
+    const membersWithProfiles = (members || []).map((m: any) => ({
+      ...m,
+      profiles: profileMap.get(m.user_id) || null,
+    })) as MemberProfile[] | null
+
+    if (!membersWithProfiles || membersWithProfiles.length === 0) {
       return NextResponse.json({
         nodes: [],
         edges: [],
@@ -85,9 +103,9 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const memberIds = members.map((m: MemberProfile) => m.user_id)
+    const memberIds = membersWithProfiles.map((m: MemberProfile) => m.user_id)
     const memberMap = new Map<string, MemberProfile>()
-    for (const m of members) memberMap.set(m.user_id, m)
+    for (const m of membersWithProfiles) memberMap.set(m.user_id, m)
 
     // Try pre-computed edges first
     const now = new Date()
@@ -110,7 +128,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build nodes
-    const nodes = members.map((m: MemberProfile) => {
+    const nodes = membersWithProfiles.map((m: MemberProfile) => {
       const profile = m.profiles as { display_name: string; avatar_url: string | null; job_title: string | null } | null
       // Count connections for this person
       const connections = edges.filter(
@@ -140,7 +158,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Identify insights
-    const insights = computeInsights(nodes, edges, members)
+    const insights = computeInsights(nodes, edges, membersWithProfiles)
 
     return NextResponse.json({
       nodes,

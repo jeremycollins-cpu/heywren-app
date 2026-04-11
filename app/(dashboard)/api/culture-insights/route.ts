@@ -104,15 +104,27 @@ export async function GET(request: NextRequest) {
     const rangeStartISO = rangeStart.toISOString()
     const rangeStartDate = rangeStart.toISOString().split('T')[0]
 
-    // Get org members for mapping
+    // Get org members for mapping (separate profile lookup — user_id FK points to auth.users, not profiles)
     const { data: members } = await admin
       .from('organization_members')
-      .select('user_id, profiles(display_name, avatar_url, job_title), department_id')
-      .eq('organization_id', orgId) as { data: MemberInfo[] | null }
+      .select('user_id, department_id')
+      .eq('organization_id', orgId)
+
+    const memberUserIds = (members || []).map((m: any) => m.user_id)
+    const profileMap = new Map<string, { display_name: string | null; avatar_url: string | null }>()
+    if (memberUserIds.length > 0) {
+      const { data: profiles } = await admin
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', memberUserIds)
+      for (const p of profiles || []) {
+        profileMap.set(p.id, p)
+      }
+    }
 
     const memberMap = new Map<string, { name: string; avatar: string | null; department: string | null }>()
     for (const m of members || []) {
-      const profile = m.profiles as { display_name: string; avatar_url: string | null; job_title: string | null } | null
+      const profile = profileMap.get(m.user_id)
       memberMap.set(m.user_id, {
         name: profile?.display_name || 'Unknown',
         avatar: profile?.avatar_url || null,

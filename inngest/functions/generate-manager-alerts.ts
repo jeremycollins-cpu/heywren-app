@@ -60,10 +60,24 @@ export const generateManagerAlerts = inngest.createFunction(
       const orgData = await step.run(`fetch-data-${orgId}`, async () => {
         const members = await supabase
           .from('organization_members')
-          .select('user_id, profiles(display_name)')
+          .select('user_id')
           .eq('organization_id', orgId)
 
         const memberIds = (members.data || []).map((m: { user_id: string }) => m.user_id)
+
+        // Fetch profiles separately (user_id FK points to auth.users, not profiles)
+        const profileResults = memberIds.length > 0
+          ? await supabase.from('profiles').select('id, display_name').in('id', memberIds)
+          : { data: [] }
+        const profileLookup = new Map<string, string>()
+        for (const p of profileResults.data || []) {
+          if (p.display_name) profileLookup.set(p.id, p.display_name)
+        }
+        // Attach profiles to members for downstream code
+        const membersWithProfiles = (members.data || []).map((m: any) => ({
+          ...m,
+          profiles: { display_name: profileLookup.get(m.user_id) || null },
+        }))
         if (memberIds.length === 0) return null
 
         const fourWeeksAgo = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000)
@@ -95,7 +109,7 @@ export const generateManagerAlerts = inngest.createFunction(
         ])
 
         return {
-          members: (members.data || []) as MemberProfile[],
+          members: membersWithProfiles as MemberProfile[],
           weeklyScores: (weeklyResult.data || []) as WeeklyScoreRow[],
           sentiments: (sentimentResult.data || []) as SentimentRow[],
           commitments: (commitmentsResult.data || []) as Array<{ assignee_id: string; status: string }>,
