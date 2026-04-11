@@ -3,6 +3,7 @@
 // Uses the same token refresh pattern as sync-outlook.ts.
 
 import { createClient } from '@supabase/supabase-js'
+import { reportError } from '@/lib/monitoring/report-error'
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
@@ -44,6 +45,7 @@ async function refreshToken(
   const data = await tokenRes.json()
   if (!data.access_token) {
     console.error('[graph-client] Token refresh failed:', data.error_description || data.error)
+    await reportError({ source: 'graph-client', message: `Token refresh failed: ${data.error_description || data.error}`, severity: 'critical', errorKey: 'token_refresh_failed', details: { error: data.error, description: data.error_description } })
     return null
   }
 
