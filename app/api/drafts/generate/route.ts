@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
   let query = admin
     .from('commitments')
-    .select('id, title, description, source, created_at, assignee:team_members(user_id, profiles(display_name))')
+    .select('id, title, description, source, created_at, assignee_id')
     .eq('team_id', teamId)
     .or(`creator_id.eq.${user.id},assignee_id.eq.${user.id}`)
     .eq('status', 'open')
@@ -78,6 +78,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ drafts_generated: 0, message: 'No new commitments to draft follow-ups for' })
   }
 
+  // Look up assignee names separately (assignee_id FK points to auth.users, not profiles)
+  const assigneeIds = [...new Set(commitments.map((c: any) => c.assignee_id).filter(Boolean))]
+  const assigneeNameMap = new Map<string, string>()
+  if (assigneeIds.length > 0) {
+    const { data: assigneeProfiles } = await admin
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', assigneeIds)
+    for (const p of assigneeProfiles || []) {
+      if (p.display_name) assigneeNameMap.set(p.id, p.display_name)
+    }
+  }
+
   // Prepare commitments for AI
   const commitmentsForAI = commitments.map((c: any) => ({
     id: c.id,
@@ -85,7 +98,7 @@ export async function POST(request: NextRequest) {
     description: c.description || undefined,
     source: c.source || undefined,
     created_at: c.created_at,
-    recipient_name: c.assignee?.profiles?.display_name || undefined,
+    recipient_name: c.assignee_id ? assigneeNameMap.get(c.assignee_id) : undefined,
   }))
 
   // Generate drafts in batches of 10
@@ -104,7 +117,7 @@ export async function POST(request: NextRequest) {
           commitment_id: commitmentId,
           subject: draft.subject,
           body: draft.body,
-          status: 'pending',
+          status: 'ready',
           generated_by: user.id,
         })
 

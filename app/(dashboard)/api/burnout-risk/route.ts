@@ -66,11 +66,27 @@ export async function GET(request: NextRequest) {
 
     const orgId = callerMembership.organization_id
 
-    // Get members to analyze
-    const { data: members } = await admin
+    // Get members to analyze (separate profile lookup — user_id FK points to auth.users, not profiles)
+    const { data: rawMembers } = await admin
       .from('organization_members')
-      .select('user_id, department_id, profiles(display_name, avatar_url, job_title)')
-      .eq('organization_id', orgId) as { data: MemberProfile[] | null }
+      .select('user_id, department_id')
+      .eq('organization_id', orgId)
+
+    const burnoutUserIds = (rawMembers || []).map((m: any) => m.user_id)
+    const burnoutProfileMap = new Map<string, { display_name: string | null; avatar_url: string | null; job_title: string | null }>()
+    if (burnoutUserIds.length > 0) {
+      const { data: profiles } = await admin
+        .from('profiles')
+        .select('id, display_name, avatar_url, job_title')
+        .in('id', burnoutUserIds)
+      for (const p of profiles || []) {
+        burnoutProfileMap.set(p.id, p)
+      }
+    }
+    const members = (rawMembers || []).map((m: any) => ({
+      ...m,
+      profiles: burnoutProfileMap.get(m.user_id) || null,
+    })) as MemberProfile[] | null
 
     if (!members || members.length === 0) {
       return NextResponse.json({

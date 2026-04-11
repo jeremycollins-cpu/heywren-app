@@ -98,8 +98,8 @@ export async function PATCH(request: NextRequest) {
   if (body.subject !== undefined) update.subject = body.subject
   if (body.body !== undefined) update.body = body.body
   if (body.status !== undefined) {
-    if (!['pending', 'sent', 'dismissed'].includes(body.status)) {
-      return NextResponse.json({ error: 'Invalid status. Must be pending, sent, or dismissed.' }, { status: 400 })
+    if (!['pending', 'ready', 'edited', 'sent', 'dismissed'].includes(body.status)) {
+      return NextResponse.json({ error: 'Invalid status.' }, { status: 400 })
     }
     update.status = body.status
   }
