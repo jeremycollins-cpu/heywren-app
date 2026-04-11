@@ -24,7 +24,7 @@ async function checkSuperAdmin(): Promise<boolean> {
   return profile?.role === 'super_admin'
 }
 
-// GET — read a config value by key (public, used by client contexts)
+// GET — read a config value by key
 export async function GET(request: NextRequest) {
   const key = request.nextUrl.searchParams.get('key')
   if (!key) {
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Config not found' }, { status: 404 })
   }
 
+  // value is JSONB — Supabase auto-parses it. Return as-is.
   return NextResponse.json({ key, value: data.value })
 }
 
@@ -59,29 +60,16 @@ export async function PUT(request: NextRequest) {
   }
 
   const adminDb = getAdminClient()
-  const jsonValue = JSON.stringify(value)
   const now = new Date().toISOString()
 
-  // Try update first, then insert if no rows matched
-  const { data: updated, error: updateError } = await adminDb
+  // Delete + insert to avoid upsert/update edge cases with RLS
+  await adminDb.from('app_config').delete().eq('key', key)
+  const { error } = await adminDb
     .from('app_config')
-    .update({ value: jsonValue, updated_at: now } as any)
-    .eq('key', key)
-    .select()
+    .insert({ key, value, updated_at: now } as any)
 
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 })
-  }
-
-  if (!updated || updated.length === 0) {
-    // Key doesn't exist yet — insert
-    const { error: insertError } = await adminDb
-      .from('app_config')
-      .insert({ key, value: jsonValue, updated_at: now } as any)
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 })
-    }
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json({ success: true, key, value })

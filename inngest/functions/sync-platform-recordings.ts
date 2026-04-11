@@ -445,8 +445,10 @@ async function syncTeamsRecordings(
   )
 
   if (!eventsRes.ok) {
-    const body = await eventsRes.text().catch(() => '')
-    throw new Error(`Microsoft Graph API error: ${eventsRes.status} ${body}`)
+    // Don't throw on API errors — return 0 gracefully so the function doesn't
+    // retry and flood Inngest when tokens are expired or scopes are insufficient
+    console.error(`Teams sync: Graph API error ${eventsRes.status} for team ${teamId}`)
+    return 0
   }
 
   const eventsData = await eventsRes.json()
@@ -792,18 +794,12 @@ export const scheduledPlatformSync = inngest.createFunction(
         .select('team_id, user_id, provider')
         .in('provider', ['zoom', 'google_meet'])
 
-      // Also find users with Outlook that may have Teams meetings
-      const { data: outlookIntegrations } = await supabase
-        .from('integrations')
-        .select('team_id, user_id')
-        .eq('provider', 'outlook')
-
-      const all = [...(data || [])]
-      for (const oi of (outlookIntegrations || [])) {
-        all.push({ team_id: oi.team_id, user_id: oi.user_id, provider: 'teams' })
-      }
-
-      return all
+      // Note: Removed auto-adding all Outlook users as Teams recording syncs.
+      // This was causing ~1700 failed runs/day when Outlook tokens were expired,
+      // flooding Inngest and blocking other functions. Teams recording sync
+      // is only useful for orgs actively using Teams meetings with transcription
+      // enabled, which requires OnlineMeetings.Read scope (not in our OAuth flow).
+      return data || []
     })
 
     if (!integrations?.length) {
