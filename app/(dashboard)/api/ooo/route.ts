@@ -48,9 +48,10 @@ export async function GET(request: NextRequest) {
     const isManager = MANAGER_ROLES.includes(callerMembership.role)
     const orgId = callerMembership.organization_id
 
+    // Fetch OOO periods (no profile join — user_id FK points to auth.users, not profiles)
     let query = admin
       .from('ooo_periods')
-      .select('*, profiles:user_id(display_name, avatar_url), backup:backup_user_id(display_name)')
+      .select('*')
       .eq('organization_id', orgId)
       .order('start_date', { ascending: false })
 
@@ -72,10 +73,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to load' }, { status: 500 })
     }
 
+    // Fetch profile info separately for display names / avatars
+    const userIds = [...new Set((periods || []).flatMap((p: any) =>
+      [p.user_id, p.backup_user_id].filter(Boolean)
+    ))]
+
+    const profileMap = new Map<string, { display_name: string | null; avatar_url: string | null }>()
+    if (userIds.length > 0) {
+      const { data: profiles } = await admin
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', userIds)
+      for (const p of profiles || []) {
+        profileMap.set(p.id, p)
+      }
+    }
+
     // Enrich with display info
     const enriched = (periods || []).map((p: any) => {
-      const profile = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles
-      const backup = Array.isArray(p.backup) ? p.backup[0] : p.backup
+      const profile = profileMap.get(p.user_id)
+      const backup = p.backup_user_id ? profileMap.get(p.backup_user_id) : null
       return {
         id: p.id,
         userId: p.user_id,
