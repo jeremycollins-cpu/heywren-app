@@ -22,6 +22,7 @@ import { MentionsSection } from '@/components/dashboard/mentions-section'
 import { NudgeCard } from '@/components/dashboard/nudge-card'
 import { TodaysFocus } from '@/components/dashboard/todays-focus'
 import { ThemesSection } from '@/components/dashboard/themes-section'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -53,6 +54,7 @@ export default function DashboardPage() {
     fetchDashboard, markDone, snooze, dismiss, clearError,
     addCommitment, updateCommitment, removeCommitment, addMention,
   } = useDashboardStore()
+  const { celebrate } = useCelebration()
 
   const [evalMetrics, setEvalMetrics] = useState<{
     emailsEvaluated: number; emailsMissed: number;
@@ -274,10 +276,11 @@ export default function DashboardPage() {
     )
   }
 
-  async function handleAction(action: (id: string) => Promise<void>, id: string, successMsg: string) {
+  async function handleAction(action: (id: string) => Promise<void>, id: string, successMsg: string, onSuccess?: () => void) {
     try {
       await action(id)
       toast.success(successMsg)
+      onSuccess?.()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Action failed')
     }
@@ -328,7 +331,7 @@ export default function DashboardPage() {
       <TodaysFocus
         commitments={commitments}
         integrationCount={integrationCount}
-        onMarkDone={id => handleAction(markDone, id, 'Marked as done!')}
+        onMarkDone={id => handleAction(markDone, id, 'Marked as done!', celebrate)}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -447,7 +450,7 @@ export default function DashboardPage() {
                 <NudgeCard
                   key={c.id}
                   commitment={c}
-                  onDone={id => handleAction(markDone, id, 'Marked as done!')}
+                  onDone={id => handleAction(markDone, id, 'Marked as done!', celebrate)}
                   onSnooze={id => handleAction(snooze, id, 'Snoozed — timer reset')}
                   onDismiss={id => handleAction(dismiss, id, 'Dismissed')}
                 />

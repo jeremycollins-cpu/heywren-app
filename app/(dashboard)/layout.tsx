@@ -14,6 +14,8 @@ import { SectionErrorBoundary } from '@/components/ui/error-boundary'
 import TodoPanel from '@/components/todo-panel'
 import { PlanProvider } from '@/lib/contexts/plan-context'
 import { TodoProvider, useTodo } from '@/lib/contexts/todo-context'
+import { CelebrationProvider } from '@/lib/contexts/celebration-context'
+import WrenCelebration from '@/components/wren-celebration'
 
 function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
   const router = useRouter()
@@ -177,6 +179,7 @@ export default function DashboardLayout({
   return (
     <PlanProvider>
     <TodoProvider>
+    <CelebrationProvider>
     <div className="flex flex-col h-screen bg-surface-secondary dark:bg-surface-dark font-sans transition-colors duration-300">
       {/* Onboarding banner */}
       {showOnboardingBanner && !bannerDismissed && (
@@ -222,7 +225,11 @@ export default function DashboardLayout({
 
       {/* Hey Wren floating chat */}
       <WrenChat />
+
+      {/* Celebration animation on task completion */}
+      <WrenCelebration />
     </div>
+    </CelebrationProvider>
     </TodoProvider>
     </PlanProvider>
   )

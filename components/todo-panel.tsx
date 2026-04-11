@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Plus, Trash2, ListChecks, ChevronRight, Star, ChevronDown, FileText, Pencil } from 'lucide-react'
 import { useTodo } from '@/lib/contexts/todo-context'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 import toast from 'react-hot-toast'
 
 export const TODO_CATEGORIES = [
@@ -49,6 +50,7 @@ interface TodoPanelProps {
 
 export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   const { pendingTitle, pendingSource, clearPendingTitle } = useTodo()
+  const { celebrate } = useCelebration()
   const [todos, setTodos] = useState<Todo[]>([])
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
@@ -140,6 +142,9 @@ export default function TodoPanel({ open, onClose }: TodoPanelProps) {
   }
 
   const toggleTodo = async (id: string, completed: boolean) => {
+    // Trigger celebration when marking a todo as complete
+    if (!completed) celebrate()
+
     setTodos(prev => prev.map(t =>
       t.id === id ? { ...t, completed: !completed, completed_at: !completed ? new Date().toISOString() : null } : t
     ))

@@ -338,3 +338,77 @@ code {
     box-shadow: var(--shadow-glow);
   }
 }
+
+/* ─── Wren Celebration Animations ────────────────────────────────────────── */
+
+/* Bird flies from off-screen left to off-screen right */
+@keyframes wrenFlyAcross {
+  0%   { transform: translateX(-120px); opacity: 0; }
+  5%   { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 120px)); opacity: 0; }
+}
+
+/* Gentle vertical bob while flying */
+@keyframes wrenBob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  25%      { transform: translateY(-12px) rotate(-2deg); }
+  50%      { transform: translateY(4px) rotate(-6deg); }
+  75%      { transform: translateY(-8px) rotate(-3deg); }
+}
+
+/* Wing flap */
+@keyframes wrenWingFlap {
+  0%, 100% { transform: scaleY(1) rotate(0deg); }
+  50%      { transform: scaleY(0.5) rotate(8deg); }
+}
+
+/* Particles trail behind the bird then drift and fade */
+@keyframes wrenTrail {
+  0%   { transform: translateX(-120px) scale(0); opacity: 0; }
+  10%  { opacity: 1; transform: translateX(-100px) scale(1); }
+  40%  { opacity: 0.8; }
+  100% { transform: translateX(calc(100vw + 80px)) scale(0.4); opacity: 0; }
+}
+
+/* Musical notes float upward */
+@keyframes wrenNoteFloat {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-30px); }
+}
+
+/* Leaves spin as they trail */
+@keyframes wrenLeafSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.wren-fly-across {
+  animation: wrenFlyAcross 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+.wren-bob {
+  animation: wrenBob 0.6s ease-in-out infinite;
+}
+
+.wren-wing {
+  transform-origin: 52px 52px;
+  animation: wrenWingFlap 0.15s ease-in-out infinite;
+}
+
+.wren-trail-particle {
+  animation: wrenTrail 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  opacity: 0;
+}
+
+.wren-note-float {
+  animation:
+    wrenTrail 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
+    wrenNoteFloat 1.2s ease-in-out infinite alternate;
+}
+
+.wren-leaf-spin {
+  animation:
+    wrenTrail 3.2s cubic-bezier(0.25, 0.1, 0.25, 1) forwards,
+    wrenLeafSpin 1.8s linear infinite;
+}
