@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest) {
   const adminDb = getAdminClient()
   const { error } = await adminDb
     .from('app_config')
-    .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() })
+    .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() }, { onConflict: 'key' })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
