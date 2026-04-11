@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Bell, CheckCircle2, X, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 
 interface Reminder {
   id: string
@@ -26,6 +27,7 @@ function formatDate(dateStr: string): string {
 }
 
 export function RemindersSection() {
+  const { celebrate } = useCelebration()
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -52,6 +54,7 @@ export function RemindersSection() {
       })
       if (res.ok) {
         toast.success('Done! Reminder and linked item completed')
+        celebrate()
       } else {
         const data = await res.json()
         toast.error(data.error || 'Failed to complete')

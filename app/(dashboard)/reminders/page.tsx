@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { Bell, CheckCircle2, X, Inbox, Plus, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useCelebration } from '@/lib/contexts/celebration-context'
 
 interface Reminder {
   id: string
@@ -28,6 +29,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function RemindersPage() {
+  const { celebrate } = useCelebration()
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -87,6 +89,7 @@ export default function RemindersPage() {
       })
       if (res.ok) {
         toast.success('Done! Reminder and linked item completed')
+        celebrate()
       } else {
         fetchReminders()
       }
