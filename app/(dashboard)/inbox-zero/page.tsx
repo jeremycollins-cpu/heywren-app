@@ -212,8 +212,8 @@ export default function InboxZeroPage() {
     return <LoadingSkeleton variant="list" />
   }
 
-  // Celebration screen when inbox is at zero
-  if (completed || categories.length === 0) {
+  // Celebration screen when inbox is at zero (but NOT if there's an error)
+  if (!error && (completed || categories.length === 0)) {
     return (
       <div className="space-y-6">
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -247,6 +247,26 @@ export default function InboxZeroPage() {
   }
 
   const currentCategory = categories[activeIndex]
+
+  // Error state with no data — show error + retry
+  if (error && categories.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
+          <p className="text-sm font-medium">{error}</p>
+        </div>
+        <div className="flex justify-center">
+          <button
+            onClick={handleRefresh}
+            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
