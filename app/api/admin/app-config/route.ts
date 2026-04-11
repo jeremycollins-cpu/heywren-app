@@ -59,12 +59,29 @@ export async function PUT(request: NextRequest) {
   }
 
   const adminDb = getAdminClient()
-  const { error } = await adminDb
-    .from('app_config')
-    .upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  const jsonValue = JSON.stringify(value)
+  const now = new Date().toISOString()
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  // Try update first, then insert if no rows matched
+  const { data: updated, error: updateError } = await adminDb
+    .from('app_config')
+    .update({ value: jsonValue, updated_at: now } as any)
+    .eq('key', key)
+    .select()
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  if (!updated || updated.length === 0) {
+    // Key doesn't exist yet — insert
+    const { error: insertError } = await adminDb
+      .from('app_config')
+      .insert({ key, value: jsonValue, updated_at: now } as any)
+
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ success: true, key, value })
