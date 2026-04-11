@@ -186,7 +186,6 @@ export async function POST(request: NextRequest) {
       .from('profiles')
       .upsert({
         id: userId,
-        full_name: fullName,
         display_name: fullName,
         email: userEmail,
         role: profileRole,
@@ -201,7 +200,6 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin
         .from('profiles')
         .update({
-          full_name: fullName,
           display_name: fullName,
           email: userEmail,
           role: profileRole,

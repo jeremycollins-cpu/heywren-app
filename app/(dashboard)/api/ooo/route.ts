@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     let query = admin
       .from('ooo_periods')
-      .select('*, profiles:user_id(display_name, full_name, avatar_url), backup:backup_user_id(display_name, full_name)')
+      .select('*, profiles:user_id(display_name, avatar_url), backup:backup_user_id(display_name)')
       .eq('organization_id', orgId)
       .order('start_date', { ascending: false })
 
@@ -79,14 +79,14 @@ export async function GET(request: NextRequest) {
       return {
         id: p.id,
         userId: p.user_id,
-        name: profile?.display_name || profile?.full_name || 'Unknown',
+        name: profile?.display_name || 'Unknown',
         avatar: profile?.avatar_url || null,
         startDate: p.start_date,
         endDate: p.end_date,
         oooType: p.ooo_type,
         note: p.note,
         backupUserId: p.backup_user_id,
-        backupName: backup?.display_name || backup?.full_name || null,
+        backupName: backup?.display_name || null,
         status: p.status,
         createdAt: p.created_at,
       }

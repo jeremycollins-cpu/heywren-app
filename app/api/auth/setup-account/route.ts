@@ -86,7 +86,6 @@ export async function POST(request: NextRequest) {
       .upsert({
         id: resolvedUserId,
         email: email || '',
-        full_name: companyName ? `${companyName} Admin` : 'User',
         display_name: companyName ? `${companyName} Admin` : 'User',
         role: 'super_admin',
         current_team_id: newTeam.id,

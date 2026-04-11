@@ -33,11 +33,9 @@ export async function POST(request: NextRequest) {
     const nameColumn = await detectNameColumn()
 
     // Try full update with all onboarding columns
-    // Set both full_name and display_name to keep them in sync
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
-        full_name: fullName.trim(),
         display_name: fullName.trim(),
         job_title: jobTitle || null,
         company: companyName?.trim() || null,
@@ -55,7 +53,6 @@ export async function POST(request: NextRequest) {
         const { error: fallbackError } = await supabaseAdmin
           .from('profiles')
           .update({
-            full_name: fullName.trim(),
             display_name: fullName.trim(),
             updated_at: new Date().toISOString(),
           })
