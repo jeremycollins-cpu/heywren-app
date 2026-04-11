@@ -32,6 +32,16 @@ jest.mock('react-hot-toast', () => ({
   },
 }))
 
+// ─── Mock celebration context ──────────────────────────────────────────────
+
+jest.mock('@/lib/contexts/celebration-context', () => ({
+  useCelebration: () => ({
+    celebrating: false,
+    variant: null,
+    celebrate: jest.fn(),
+  }),
+}))
+
 // ─── Mock extracted components to simplify rendering ────────────────────────
 
 jest.mock('@/components/ui/loading-skeleton', () => ({
