@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
-        [nameColumn]: fullName.trim(),
+        display_name: fullName.trim(),
         job_title: jobTitle || null,
         company: companyName?.trim() || null,
         team_size: teamSize || null,
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         const { error: fallbackError } = await supabaseAdmin
           .from('profiles')
           .update({
-            [nameColumn]: fullName.trim(),
+            display_name: fullName.trim(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', userId)
@@ -101,10 +101,10 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Detect whether the profiles table uses 'full_name' or 'display_name'.
- * Tries full_name first (matches migration 001), falls back to display_name.
+ * Returns the name column to use for profile updates.
+ * Migration 055 adds display_name alongside full_name (from migration 001).
+ * Update both columns to keep them in sync.
  */
 async function detectNameColumn(): Promise<string> {
-  // Production uses display_name (confirmed by schema audit)
   return 'display_name'
 }

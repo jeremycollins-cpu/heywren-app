@@ -78,8 +78,8 @@ export default function TodosPage() {
           category: !parentId && newCategory ? newCategory : undefined,
         }),
       })
+      const data = await res.json()
       if (res.ok) {
-        const data = await res.json()
         setTodos(prev => [data.todo, ...prev])
         if (parentId) {
           setSubTitle('')
@@ -89,6 +89,8 @@ export default function TodosPage() {
           setNewCategory('')
           inputRef.current?.focus()
         }
+      } else {
+        toast.error(data.error || 'Failed to add to-do')
       }
     } catch {
       toast.error('Failed to add to-do')

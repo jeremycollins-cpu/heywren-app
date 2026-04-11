@@ -65,7 +65,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('user_id', callerId)
     }
 
-    const { data: periods } = await query
+    const { data: periods, error: queryError } = await query
+
+    if (queryError) {
+      console.error('OOO query error:', queryError)
+      return NextResponse.json({ error: 'Failed to load' }, { status: 500 })
+    }
 
     // Enrich with display info
     const enriched = (periods || []).map((p: any) => {
@@ -161,7 +166,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create' }, { status: 500 })
     }
 
-    return NextResponse.json({ period })
+    // Return enriched format matching GET response
+    return NextResponse.json({
+      period: {
+        id: period.id,
+        userId: period.user_id,
+        startDate: period.start_date,
+        endDate: period.end_date,
+        oooType: period.ooo_type,
+        note: period.note,
+        backupUserId: period.backup_user_id,
+        status: period.status,
+        createdAt: period.created_at,
+      },
+    })
   } catch (err) {
     console.error('OOO POST error:', err)
     return NextResponse.json({ error: 'Failed to create' }, { status: 500 })

@@ -178,6 +178,9 @@ export default function InboxZeroPage() {
           }).filter(c => c.emailCount > 0)
         )
         toast.success('Marked as read')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to mark as read')
       }
     } catch {
       toast.error('Failed to mark as read')
