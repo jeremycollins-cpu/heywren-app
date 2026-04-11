@@ -121,8 +121,10 @@ function AdminContent() {
   const [testEmailTemplate, setTestEmailTemplate] = useState('recap')
   const [healthData, setHealthData] = useState<any>(null)
   const [healthLoading, setHealthLoading] = useState(false)
+  const [celebrationRate, setCelebrationRate] = useState<number>(30)
+  const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
 
-  useEffect(() => { loadOverview() }, [])
+  useEffect(() => { loadOverview(); loadCelebrationRate() }, [])
 
   const loadHealth = async () => {
     setHealthLoading(true)
@@ -136,6 +138,32 @@ function AdminContent() {
       }
     } catch { toast.error('Failed to load system health') }
     setHealthLoading(false)
+  }
+
+  const loadCelebrationRate = async () => {
+    try {
+      const res = await fetch('/api/admin/app-config?key=celebration_trigger_rate')
+      if (res.ok) {
+        const data = await res.json()
+        const parsed = parseFloat(data.value)
+        if (!isNaN(parsed)) setCelebrationRate(Math.round(parsed * 100))
+      }
+    } catch { /* use default */ }
+  }
+
+  const saveCelebrationRate = async (pct: number) => {
+    setCelebrationRate(pct)
+    setCelebrationRateSaving(true)
+    try {
+      const res = await fetch('/api/admin/app-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'celebration_trigger_rate', value: (pct / 100).toString() }),
+      })
+      if (res.ok) toast.success(`Celebration rate set to ${pct}%`)
+      else toast.error('Failed to save')
+    } catch { toast.error('Failed to save') }
+    setCelebrationRateSaving(false)
   }
 
   const loadOverview = async () => {
@@ -385,6 +413,37 @@ function AdminContent() {
             <Activity className="w-4 h-4" />
             System Health
           </button>
+        </div>
+
+        {/* Platform Settings */}
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+            <Sparkles className="w-4 h-4 text-indigo-600" />
+            Platform Settings
+          </h3>
+          <div className="flex items-center gap-4">
+            <label className="text-sm text-gray-600 whitespace-nowrap">Celebration animation rate</label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={celebrationRate}
+              onChange={(e) => setCelebrationRate(Number(e.target.value))}
+              onMouseUp={() => saveCelebrationRate(celebrationRate)}
+              onTouchEnd={() => saveCelebrationRate(celebrationRate)}
+              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+            />
+            <span className="text-sm font-mono font-medium text-gray-900 w-12 text-right">
+              {celebrationRate}%
+            </span>
+            {celebrationRateSaving && (
+              <span className="text-xs text-gray-400">Saving...</span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Percentage chance the wren flies across the screen when a user completes a task. Set to 0 to disable, 100 to always show.
+          </p>
         </div>
 
         {/* Search */}
