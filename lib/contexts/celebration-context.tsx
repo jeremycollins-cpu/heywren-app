@@ -18,7 +18,7 @@ const CelebrationContext = createContext<CelebrationContextValue | undefined>(un
 
 const CELEBRATION_DURATION = 3500 // ms — matches the fly-across animation
 const COOLDOWN = 5000 // ms — prevent rapid re-triggers
-const TRIGGER_CHANCE = 0.3 // ~1 in 3 completions — matches Asana's frequency
+const TRIGGER_CHANCE = 1.0 // TEMPORARY: 100% for testing — revert to 0.3 after verification
 
 function pickVariant(): CelebrationVariant {
   return {
