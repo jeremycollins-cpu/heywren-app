@@ -94,11 +94,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── message: Regular channel message (for passive monitoring mode) ──
+    // ── message: DMs or regular channel messages ──
     // Only processes if the message is from a human (no bots, no subtypes)
     if (event.type === 'message' && !event.bot_id && !event.subtype) {
-      // Skip very short messages (likely not commitments)
-      if (event.text && event.text.trim().length >= 15) {
+      // DMs to the bot → treat as explicit @HeyWren mention
+      if (event.channel_type === 'im') {
+        try {
+          await inngest.send({
+            name: 'slack/mention.received',
+            data: {
+              team_id: body.team_id,
+              channel_id: event.channel,
+              user_id: event.user,
+              text: event.text || '',
+              ts: event.ts,
+              thread_ts: event.thread_ts || null,
+            },
+          })
+        } catch (err) {
+          console.error('Failed to send DM mention event to Inngest:', err)
+        }
+      } else if (event.text && event.text.trim().length >= 15) {
+        // Regular channel message — passive monitoring
         try {
           await inngest.send({
             name: 'slack/message.received',
