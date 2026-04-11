@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from 'react'
 
 // Randomised flight path picked each time the celebration fires
 export interface CelebrationVariant {
@@ -18,7 +18,7 @@ const CelebrationContext = createContext<CelebrationContextValue | undefined>(un
 
 const CELEBRATION_DURATION = 3500 // ms — matches the fly-across animation
 const COOLDOWN = 5000 // ms — prevent rapid re-triggers
-const TRIGGER_CHANCE = 1.0 // TEMPORARY: 100% for testing — revert to 0.3 after verification
+const DEFAULT_TRIGGER_CHANCE = 0.3
 
 function pickVariant(): CelebrationVariant {
   return {
@@ -31,11 +31,27 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
   const [celebrating, setCelebrating] = useState(false)
   const [variant, setVariant] = useState<CelebrationVariant | null>(null)
   const lastCelebration = useRef(0)
+  const triggerChance = useRef(DEFAULT_TRIGGER_CHANCE)
+
+  // Fetch the configured trigger rate from the admin app-config API
+  useEffect(() => {
+    fetch('/api/admin/app-config?key=celebration_trigger_rate')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.value) {
+          const parsed = parseFloat(data.value)
+          if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+            triggerChance.current = parsed
+          }
+        }
+      })
+      .catch(() => { /* use default */ })
+  }, [])
 
   const celebrate = useCallback(() => {
     const now = Date.now()
     if (now - lastCelebration.current < COOLDOWN) return
-    if (Math.random() > TRIGGER_CHANCE) return // skip most completions
+    if (Math.random() > triggerChance.current) return // random chance gate
 
     lastCelebration.current = now
     setVariant(pickVariant())
