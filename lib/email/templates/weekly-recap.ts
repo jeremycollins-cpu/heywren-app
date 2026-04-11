@@ -18,8 +18,10 @@ export interface WeeklyRecapData {
   responseRate: number
   achievementEarned?: { name: string; tier: string } | null
   insight?: string | null
+  reminders?: string[]
   dashboardUrl: string
   overdueUrl: string
+  remindersUrl?: string
   unsubscribeUrl: string
 }
 
@@ -101,12 +103,28 @@ ${ctaButton('Review Overdue Items', data.overdueUrl)}`
 
   const insightHtml = data.insight ? insightBox(data.insight) : ''
 
+  // Reminders section
+  const remindersHtml = data.reminders && data.reminders.length > 0
+    ? `${divider()}
+${sectionHeading(`🔔 ${data.reminders.length} Active Reminder${data.reminders.length !== 1 ? 's' : ''}`)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:16px 18px;border-radius:0 12px 12px 0;">
+      ${data.reminders.slice(0, 5).map(r => `<p style="margin:0 0 6px;color:#92400e;font-size:13px;line-height:1.5;">• ${r}</p>`).join('')}
+      ${data.reminders.length > 5 ? `<p style="margin:0;color:#92400e;font-size:12px;font-style:italic;">+ ${data.reminders.length - 5} more</p>` : ''}
+    </td>
+  </tr>
+</table>
+${data.remindersUrl ? ctaButton('View Reminders', data.remindersUrl) : ''}`
+    : ''
+
   const body = `
 ${wrenGreeting(data.userName, introMessage)}
 ${stats}
 ${streakHtml}
 ${achievementHtml}
 ${overdueHtml}
+${remindersHtml}
 ${insightHtml}
 ${divider()}
 ${ctaButton('Open Your Dashboard', data.dashboardUrl)}

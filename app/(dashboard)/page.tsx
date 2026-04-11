@@ -22,6 +22,7 @@ import { MentionsSection } from '@/components/dashboard/mentions-section'
 import { NudgeCard } from '@/components/dashboard/nudge-card'
 import { TodaysFocus } from '@/components/dashboard/todays-focus'
 import { ThemesSection } from '@/components/dashboard/themes-section'
+import { RemindersSection } from '@/components/dashboard/reminders-section'
 import { useCelebration } from '@/lib/contexts/celebration-context'
 
 function daysSince(dateStr: string): number {
@@ -276,6 +277,26 @@ export default function DashboardPage() {
     )
   }
 
+  async function handleRemind(commitmentId: string, title: string) {
+    try {
+      const res = await fetch('/api/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, sourceType: 'commitment', sourceId: commitmentId }),
+      })
+      const data = await res.json()
+      if (data.existing) {
+        toast('Reminder already exists', { icon: '🔔' })
+      } else if (res.ok) {
+        toast.success('Reminder added')
+      } else {
+        toast.error(data.error || 'Failed to add reminder')
+      }
+    } catch {
+      toast.error('Failed to add reminder')
+    }
+  }
+
   async function handleAction(action: (id: string) => Promise<void>, id: string, successMsg: string, onSuccess?: () => void) {
     try {
       await action(id)
@@ -333,6 +354,8 @@ export default function DashboardPage() {
         integrationCount={integrationCount}
         onMarkDone={id => handleAction(markDone, id, 'Marked as done!', celebrate)}
       />
+
+      <RemindersSection />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Active Items" value={openCommitments.length} color="#6366f1" barPercent={Math.min(openCommitments.length / 20 * 100, 100)} />
@@ -451,6 +474,7 @@ export default function DashboardPage() {
                   key={c.id}
                   commitment={c}
                   onDone={id => handleAction(markDone, id, 'Marked as done!', celebrate)}
+                  onRemind={handleRemind}
                   onSnooze={id => handleAction(snooze, id, 'Snoozed — timer reset')}
                   onDismiss={id => handleAction(dismiss, id, 'Dismissed')}
                 />

@@ -125,11 +125,18 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   markDone: async (id: string) => {
     const supabase = createClient()
+    const now = new Date().toISOString()
     const { error } = await supabase
       .from('commitments')
-      .update({ status: 'completed' })
+      .update({ status: 'completed', updated_at: now })
       .eq('id', id)
     if (error) throw error
+    // Bidirectional sync: also complete any linked reminders
+    await supabase
+      .from('reminders')
+      .update({ status: 'completed', completed_at: now, updated_at: now } as any)
+      .eq('source_type', 'commitment')
+      .eq('source_id', id)
     set(s => ({ commitments: s.commitments.filter(c => c.id !== id) }))
   },
 
