@@ -100,7 +100,7 @@ async function refreshMicrosoftToken(
           client_secret: process.env.AZURE_AD_CLIENT_SECRET!,
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
-          scope: 'openid profile email Mail.Read Calendars.ReadWrite User.Read offline_access',
+          scope: 'openid profile email Mail.Read Mail.ReadWrite Calendars.ReadWrite User.Read offline_access',
         }),
       }
     )
