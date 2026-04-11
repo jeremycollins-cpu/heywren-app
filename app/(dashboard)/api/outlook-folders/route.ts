@@ -14,7 +14,7 @@ export async function GET() {
   // Get the user's Outlook integration token
   const { data: integration } = await supabase
     .from('integrations')
-    .select('access_token, refresh_token, id')
+    .select('access_token, refresh_token, config, id')
     .eq('user_id', user.id)
     .eq('provider', 'outlook')
     .limit(1)
@@ -52,12 +52,17 @@ export async function GET() {
         return NextResponse.json({ folders: [], error: 'Token refresh failed' })
       }
 
-      // Update stored token
+      // Update stored token + expiry timestamp
+      const newExpiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString()
       await supabase
         .from('integrations')
         .update({
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token || integration.refresh_token,
+          config: {
+            ...(integration.config || {}),
+            token_expires_at: newExpiresAt,
+          },
         })
         .eq('id', integration.id)
 
