@@ -180,16 +180,45 @@ export const processSlackMention = inngest.createFunction(
       return [cleanText]
     })
 
-    // Skip if there's nothing to analyze
+    // Skip if there's nothing to analyze — but still record the mention
     const combinedText = contextMessages.join('\n\n')
     if (combinedText.trim().length < 10) {
+      // Still record in wren_mentions so the user sees it
+      await step.run('record-short-mention', async () => {
+        let mentionUserId: string | null = null
+        if (user_id) {
+          const { data: slackProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('slack_user_id', user_id)
+            .maybeSingle()
+          mentionUserId = slackProfile?.id || null
+        }
+        if (!mentionUserId) mentionUserId = connectedBy
+        if (mentionUserId) {
+          const { error: mentionError } = await supabase.from('wren_mentions').insert({
+            team_id: teamId,
+            user_id: mentionUserId,
+            channel: 'slack',
+            source_title: text?.trim() || 'Short message',
+            source_snippet: text?.slice(0, 300) || null,
+            source_url: channel_id && ts ? `https://slack.com/archives/${channel_id}/p${ts.replace('.', '')}` : null,
+            source_ref: `#${channel_id}`,
+            commitments_extracted: 0,
+            created_at: new Date().toISOString(),
+          } as any)
+          if (mentionError) {
+            console.error('[process-slack-mention] short mention insert failed:', mentionError.message)
+          }
+        }
+      })
       // Reply to let the user know
       await step.run('reply-no-content', async () => {
         await slackApi(
           'chat.postMessage',
           {
             channel: channel_id,
-            thread_ts: thread_ts || ts, // Reply in thread
+            thread_ts: thread_ts || ts,
             text: "Hmm, I didn't find enough context to work with. Try tagging me in a conversation where someone makes a commitment or agrees to an action item!",
           },
           token
@@ -368,7 +397,7 @@ export const processSlackMention = inngest.createFunction(
           ? commitmentTitles[0]
           : (cleanText.slice(0, 120) || `Mention in #${channelName}`)
 
-        await supabase.from('wren_mentions').insert({
+        const { error: mentionError } = await supabase.from('wren_mentions').insert({
           team_id: teamId,
           user_id: mentionUserId,
           channel: 'slack',
@@ -380,6 +409,10 @@ export const processSlackMention = inngest.createFunction(
           commitments_extracted: stored.length,
           created_at: new Date().toISOString(),
         } as any)
+
+        if (mentionError) {
+          console.error('[process-slack-mention] wren_mentions insert failed:', mentionError.message, mentionError.code, { teamId, mentionUserId, channel_id })
+        }
       }
     })
 
