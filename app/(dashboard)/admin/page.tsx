@@ -103,7 +103,7 @@ function HealthBadge({ value, threshold, label }: { value: number; threshold: nu
 }
 
 function AdminContent() {
-  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health'>('overview')
+  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag'>('overview')
   const [teams, setTeams] = useState<TeamHealth[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -123,6 +123,8 @@ function AdminContent() {
   const [healthLoading, setHealthLoading] = useState(false)
   const [celebrationRate, setCelebrationRate] = useState<number>(30)
   const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
+  const [emailDiag, setEmailDiag] = useState<any>(null)
+  const [emailDiagLoading, setEmailDiagLoading] = useState(false)
 
   useEffect(() => { loadOverview(); loadCelebrationRate() }, [])
 
@@ -164,6 +166,19 @@ function AdminContent() {
       else toast.error('Failed to save')
     } catch { toast.error('Failed to save') }
     setCelebrationRateSaving(false)
+  }
+
+  const loadEmailDiag = async () => {
+    setEmailDiagLoading(true)
+    try {
+      const res = await fetch('/api/admin/email-diagnostics')
+      if (res.ok) {
+        setEmailDiag(await res.json())
+      } else {
+        toast.error('Failed to load email diagnostics')
+      }
+    } catch { toast.error('Failed to load email diagnostics') }
+    setEmailDiagLoading(false)
   }
 
   const loadOverview = async () => {
@@ -397,6 +412,212 @@ function AdminContent() {
     )
   }
 
+  // Email Diagnostics view
+  if (view === 'email-diag') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <PageHeader title="Email Diagnostics" description="Check Resend connectivity, Inngest scheduling, and send history" />
+        </div>
+
+        {emailDiagLoading && !emailDiag ? (
+          <div className="text-center py-12 text-gray-500">Loading diagnostics...</div>
+        ) : emailDiag ? (
+          <div className="space-y-4">
+            {/* Environment Variables */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Key className="w-4 h-4 text-gray-500" />
+                Environment Variables
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(emailDiag.envVars || {}).map(([key, val]) => (
+                  <div key={key} className="flex items-center gap-2 text-sm">
+                    {val === true ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    ) : val === false ? (
+                      <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    )}
+                    <span className="font-mono text-xs text-gray-700">{key}</span>
+                    {val === false && <span className="text-xs text-red-600 font-medium">NOT SET</span>}
+                    {typeof val === 'string' && <span className="text-xs text-gray-400">{val as string}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Resend Connectivity */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Mail className="w-4 h-4 text-gray-500" />
+                Resend Connectivity
+              </h3>
+              {emailDiag.resend?.connected ? (
+                <div>
+                  <div className="flex items-center gap-2 text-sm text-green-700 mb-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Connected — API key is valid
+                  </div>
+                  {emailDiag.resend.domains?.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500 font-medium">Verified domains:</p>
+                      {emailDiag.resend.domains.map((d: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded font-medium ${
+                            d.status === 'verified' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                          }`}>{d.status}</span>
+                          <span className="text-gray-700">{d.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <XCircle className="w-4 h-4" />
+                  {emailDiag.resend?.error || 'Not connected'}
+                </div>
+              )}
+            </div>
+
+            {/* Send History */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Activity className="w-4 h-4 text-gray-500" />
+                Send History (Last 7 Days)
+              </h3>
+              {emailDiag.totalSends === 0 && typeof emailDiag.totalSends === 'number' ? (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  No emails have ever been sent. This likely means Inngest cron jobs are not executing.
+                  Check that INNGEST_SIGNING_KEY and INNGEST_EVENT_KEY are set and that Inngest Cloud is connected to your deployment.
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-4 mb-3 text-sm">
+                    <span className="text-gray-500">All time: <strong className="text-gray-900">{emailDiag.totalSends}</strong> emails</span>
+                    {emailDiag.recentSends && (
+                      <>
+                        <span className="text-gray-500">Last 7d: <strong className="text-gray-900">{emailDiag.recentSends.total}</strong></span>
+                        <span className="text-green-600">Sent: {emailDiag.recentSends.sent}</span>
+                        {emailDiag.recentSends.failed > 0 && (
+                          <span className="text-red-600">Failed: {emailDiag.recentSends.failed}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {emailDiag.recentSends?.entries?.length > 0 ? (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium text-gray-500">Type</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-500">Recipient</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-500">Subject</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-500">Status</th>
+                            <th className="text-left px-3 py-2 font-medium text-gray-500">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {emailDiag.recentSends.entries.slice(0, 20).map((e: any, i: number) => (
+                            <tr key={i} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-mono">{e.type}</td>
+                              <td className="px-3 py-2 text-gray-600 truncate max-w-[180px]">{e.recipient}</td>
+                              <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{e.subject}</td>
+                              <td className="px-3 py-2">
+                                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                  e.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>{e.status}</span>
+                                {e.error && <span className="ml-1 text-red-500" title={e.error}>(!)</span>}
+                              </td>
+                              <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No sends in the last 7 days.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Welcome Drip State */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Send className="w-4 h-4 text-gray-500" />
+                Welcome Drip Sequence
+              </h3>
+              {emailDiag.welcomeDrip?.error ? (
+                <p className="text-sm text-amber-600">{emailDiag.welcomeDrip.error}</p>
+              ) : emailDiag.welcomeDrip?.totalTracked === 0 ? (
+                <p className="text-sm text-amber-600">No users in drip sequence yet. The hourly cron may not be firing.</p>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">{emailDiag.welcomeDrip.totalTracked} users tracked (showing most recent)</p>
+                  <div className="space-y-1">
+                    {emailDiag.welcomeDrip.recent?.map((d: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3 text-xs">
+                        <span className="font-mono text-gray-500">{d.user_id}</span>
+                        {['d0', 'd1', 'd3', 'd7'].map(day => (
+                          <span key={day} className={`px-1.5 py-0.5 rounded ${
+                            d[day] === 'sent' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                          }`}>{day}: {d[day]}</span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notification Preferences */}
+            <div className="bg-white border border-gray-200 rounded-lg p-5">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Eye className="w-4 h-4 text-gray-500" />
+                Notification Preferences
+              </h3>
+              {emailDiag.preferences?.error ? (
+                <p className="text-sm text-amber-600">{emailDiag.preferences.error}</p>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">{emailDiag.preferences?.totalUsers || 0} users with preferences configured</p>
+                  {emailDiag.preferences?.optedOut && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {Object.entries(emailDiag.preferences.optedOut).map(([key, count]) => (
+                        <div key={key} className="flex items-center gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded font-medium ${
+                            (count as number) > 0 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                          }`}>{count as number} opted out</span>
+                          <span className="text-gray-600">{key.replace(/_/g, ' ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={loadEmailDiag}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   // Overview: all companies
   if (view === 'overview') {
     return (
@@ -406,13 +627,22 @@ function AdminContent() {
             title="Support Dashboard"
             description={`${teams.length} companies on the platform`}
           />
-          <button
-            onClick={() => { setView('health'); loadHealth() }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium"
-          >
-            <Activity className="w-4 h-4" />
-            System Health
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setView('email-diag'); loadEmailDiag() }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+            >
+              <Mail className="w-4 h-4" />
+              Email Diagnostics
+            </button>
+            <button
+              onClick={() => { setView('health'); loadHealth() }}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium"
+            >
+              <Activity className="w-4 h-4" />
+              System Health
+            </button>
+          </div>
         </div>
 
         {/* Platform Settings */}
