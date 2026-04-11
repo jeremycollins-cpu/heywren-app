@@ -5,8 +5,9 @@ import { PageHeader } from '@/components/ui/page-header'
 import {
   AtSign, Mail, MessageSquare, Mic,
   CheckCircle2, ExternalLink, Clock, Filter,
-  ChevronDown, Loader2, Inbox, ListChecks,
+  ChevronDown, Loader2, Inbox, ListChecks, Bell,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useTodo } from '@/lib/contexts/todo-context'
 
 interface WrenMention {
@@ -64,6 +65,26 @@ function formatDate(dateStr: string): string {
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays < 7) return `${diffDays}d ago`
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+async function addReminder(title: string, sourceType: string, sourceId: string) {
+  try {
+    const res = await fetch('/api/reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, sourceType, sourceId }),
+    })
+    const data = await res.json()
+    if (data.existing) {
+      toast('Reminder already exists', { icon: '🔔' })
+    } else if (res.ok) {
+      toast.success('Reminder added')
+    } else {
+      toast.error(data.error || 'Failed to add reminder')
+    }
+  } catch {
+    toast.error('Failed to add reminder')
+  }
 }
 
 function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: (title: string, source?: { type: string; id?: string }) => void }) {
@@ -146,6 +167,13 @@ function MentionCard({ mention, onAddTodo }: { mention: WrenMention; onAddTodo: 
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => addReminder(mention.commitment_titles?.[0] || mention.source_title, 'mention', mention.id)}
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition"
+            title="Remind me"
+          >
+            <Bell className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={() => onAddTodo(mention.commitment_titles?.[0] || mention.source_snippet || mention.source_title, { type: 'mention', id: mention.id })}
             className="flex items-center justify-center w-7 h-7 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30 transition"

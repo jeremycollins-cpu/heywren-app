@@ -145,6 +145,23 @@ export const emailWeeklyRecap = inngest.createFunction(
     })
     const achievements = new Map(achievementsData.map(a => [a.user_id, { name: a.name, tier: a.tier }]))
 
+    // Get active reminder counts per user
+    const remindersData = await step.run('fetch-reminder-counts', async () => {
+      const userIds = scores.map(s => s.user_id)
+      const { data } = await supabase
+        .from('reminders')
+        .select('user_id, title')
+        .in('user_id', userIds)
+        .eq('status', 'active')
+      return data || []
+    })
+    const remindersByUser = new Map<string, string[]>()
+    for (const r of remindersData) {
+      const list = remindersByUser.get(r.user_id) || []
+      list.push(r.title)
+      remindersByUser.set(r.user_id, list)
+    }
+
     let emailsSent = 0
     let emailsSkipped = 0
 
@@ -183,6 +200,8 @@ export const emailWeeklyRecap = inngest.createFunction(
           insight = `${ms.current_streak}-week streak! Consistency is your superpower.`
         }
 
+        const userReminders = remindersByUser.get(score.user_id) || []
+
         const { subject, html } = buildWeeklyRecapEmail({
           userName: profile.full_name?.split(' ')[0] || 'there',
           weekLabel,
@@ -198,8 +217,10 @@ export const emailWeeklyRecap = inngest.createFunction(
           responseRate: score.response_rate || 0,
           achievementEarned: achievement,
           insight,
+          reminders: userReminders,
           dashboardUrl: `${appUrl}/dashboard`,
           overdueUrl: `${appUrl}/commitments?status=overdue`,
+          remindersUrl: `${appUrl}/reminders`,
           unsubscribeUrl: `${appUrl}/settings?tab=notifications`,
         })
 

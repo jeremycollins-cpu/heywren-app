@@ -76,9 +76,10 @@ interface NudgeCardProps {
   onDone: (id: string) => void
   onSnooze: (id: string) => void
   onDismiss: (id: string) => void
+  onRemind?: (id: string, title: string) => void
 }
 
-export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeCardProps) {
+export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss, onRemind }: NudgeCardProps) {
   const age = daysSince(c.created_at)
   const urgency = age > 7 ? 'URGENT' : age > 5 ? 'GENTLE' : 'DIGEST'
   const score = Math.max(100 - age * 5, 30)
@@ -144,6 +145,9 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss }: NudgeC
       {/* Action buttons */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
         <button onClick={() => onDone(c.id)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">Done</button>
+        {onRemind && (
+          <button onClick={() => onRemind(c.id, c.title)} className="px-3 py-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg text-sm font-medium hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors" title="Add reminder">Remind me</button>
+        )}
         <SnoozeButton onSnooze={onSnooze} commitmentId={c.id} />
         <button onClick={() => onDismiss(c.id)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Dismiss</button>
         <Link
