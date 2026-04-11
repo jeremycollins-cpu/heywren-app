@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getOutlookIntegration, graphFetch, markMessageAsRead } from '@/lib/outlook/graph-client'
 import { resolveTeamId } from '@/lib/team/resolve-team'
+import { reportError } from '@/lib/monitoring/report-error'
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
@@ -119,6 +120,7 @@ export async function GET() {
 
       if (data.error) {
         console.error('[inbox-zero] Graph API error:', data.error)
+        await reportError({ source: 'api/inbox-zero', message: data.error.message || 'Graph API error', userId: user.id, errorKey: 'inbox_zero_graph_error', details: { error: data.error } })
         return NextResponse.json({ error: 'Failed to fetch emails from Outlook' }, { status: 500 })
       }
 

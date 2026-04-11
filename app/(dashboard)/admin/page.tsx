@@ -103,7 +103,7 @@ function HealthBadge({ value, threshold, label }: { value: number; threshold: nu
 }
 
 function AdminContent() {
-  const [view, setView] = useState<'overview' | 'team' | 'user'>('overview')
+  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health'>('overview')
   const [teams, setTeams] = useState<TeamHealth[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -119,8 +119,24 @@ function AdminContent() {
   const [adminNotes, setAdminNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(true)
   const [testEmailTemplate, setTestEmailTemplate] = useState('recap')
+  const [healthData, setHealthData] = useState<any>(null)
+  const [healthLoading, setHealthLoading] = useState(false)
 
   useEffect(() => { loadOverview() }, [])
+
+  const loadHealth = async () => {
+    setHealthLoading(true)
+    try {
+      const res = await fetch('/api/admin/system-health')
+      if (res.ok) {
+        const data = await res.json()
+        setHealthData(data)
+      } else {
+        toast.error('Failed to load system health')
+      }
+    } catch { toast.error('Failed to load system health') }
+    setHealthLoading(false)
+  }
 
   const loadOverview = async () => {
     setLoading(true)
@@ -203,14 +219,173 @@ function AdminContent() {
     t.domain?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  // System Health monitoring view
+  if (view === 'health') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <PageHeader title="System Health" description="Real-time monitoring and error tracking" />
+          <button onClick={loadHealth} className="ml-auto flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
+            <RefreshCw className={`w-4 h-4 ${healthLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {healthLoading && !healthData ? (
+          <div className="text-center py-12 text-gray-400">Loading health data...</div>
+        ) : healthData ? (
+          <>
+            {/* Health Score */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className={`p-4 rounded-lg border ${healthData.healthScore >= 80 ? 'bg-green-50 border-green-200' : healthData.healthScore >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="text-3xl font-bold">{healthData.healthScore}</div>
+                <div className="text-sm text-gray-600">Health Score</div>
+              </div>
+              <div className="p-4 rounded-lg border bg-white">
+                <div className="text-3xl font-bold">{healthData.errorCounts?.total || 0}</div>
+                <div className="text-sm text-gray-600">Errors (24h)</div>
+              </div>
+              <div className="p-4 rounded-lg border bg-white">
+                <div className="text-3xl font-bold text-red-600">{healthData.errorCounts?.critical || 0}</div>
+                <div className="text-sm text-gray-600">Critical</div>
+              </div>
+              <div className="p-4 rounded-lg border bg-white">
+                <div className="text-3xl font-bold">{healthData.integrationHealth?.expired || 0}</div>
+                <div className="text-sm text-gray-600">Expired Tokens</div>
+              </div>
+              <div className="p-4 rounded-lg border bg-white">
+                <div className="text-3xl font-bold">{healthData.activeUsers7d || 0}</div>
+                <div className="text-sm text-gray-600">Active (7d)</div>
+              </div>
+            </div>
+
+            {/* Integration Health */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-white">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Link2 className="w-4 h-4" /> Integration Health
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Object.entries(healthData.integrationHealth?.byProvider || {}).map(([provider, stats]: [string, any]) => (
+                  <div key={provider} className="p-3 rounded-lg bg-gray-50 border">
+                    <div className="font-medium text-sm capitalize">{provider}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-green-600 text-sm">{stats.healthy} healthy</span>
+                      {stats.expired > 0 && <span className="text-red-600 text-sm">{stats.expired} expired</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {healthData.integrationHealth?.missingRefreshToken > 0 && (
+                <div className="mt-3 text-sm text-amber-600">
+                  <AlertTriangle className="w-3 h-3 inline mr-1" />
+                  {healthData.integrationHealth.missingRefreshToken} integration(s) missing refresh token — cannot self-heal
+                </div>
+              )}
+            </div>
+
+            {/* Data Integrity */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-white">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Database className="w-4 h-4" /> Data Integrity
+              </h3>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-gray-50">
+                  <div className={`text-xl font-bold ${healthData.dataIntegrity?.stuckSlackMessages > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {healthData.dataIntegrity?.stuckSlackMessages || 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Stuck Slack msgs</div>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-50">
+                  <div className={`text-xl font-bold ${healthData.dataIntegrity?.stuckOutlookEmails > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {healthData.dataIntegrity?.stuckOutlookEmails || 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Stuck Outlook emails</div>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-50">
+                  <div className={`text-xl font-bold ${(healthData.dataIntegrity?.orphanedProfiles?.length || 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {healthData.dataIntegrity?.orphanedProfiles?.length || 0}
+                  </div>
+                  <div className="text-xs text-gray-500">Orphaned profiles</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top Error Sources */}
+            {healthData.topErrorSources?.length > 0 && (
+              <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" /> Top Error Sources (24h)
+                </h3>
+                <div className="space-y-2">
+                  {healthData.topErrorSources.map((src: any) => (
+                    <div key={src.source} className="flex items-center justify-between py-2 border-b last:border-0">
+                      <code className="text-sm bg-gray-100 px-2 py-0.5 rounded">{src.source}</code>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-600">{src.count} errors</span>
+                        {src.critical > 0 && <span className="text-sm text-red-600 font-medium">{src.critical} critical</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent Errors Feed */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-white">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Activity className="w-4 h-4" /> Recent Errors
+              </h3>
+              {(healthData.recentErrors?.length || 0) === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-400" />
+                  No errors in the last 24 hours
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {healthData.recentErrors.map((err: any) => (
+                    <div key={err.id} className={`p-3 rounded-lg border text-sm ${err.severity === 'critical' ? 'bg-red-50 border-red-200' : err.severity === 'error' ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${err.severity === 'critical' ? 'bg-red-100 text-red-700' : err.severity === 'error' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {err.severity}
+                          </span>
+                          <code className="text-xs text-gray-500">{err.source}</code>
+                        </div>
+                        <span className="text-xs text-gray-400">{new Date(err.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-gray-700">{err.message}</p>
+                      {err.user_id && <p className="text-xs text-gray-400 mt-1">User: {err.user_id.slice(0, 8)}...</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+    )
+  }
+
   // Overview: all companies
   if (view === 'overview') {
     return (
       <div className="space-y-6">
-        <PageHeader
-          title="Support Dashboard"
-          description={`${teams.length} companies on the platform`}
-        />
+        <div className="flex items-center justify-between">
+          <PageHeader
+            title="Support Dashboard"
+            description={`${teams.length} companies on the platform`}
+          />
+          <button
+            onClick={() => { setView('health'); loadHealth() }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium"
+          >
+            <Activity className="w-4 h-4" />
+            System Health
+          </button>
+        </div>
 
         {/* Search */}
         <div className="relative">

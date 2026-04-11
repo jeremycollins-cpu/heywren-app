@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { reportError } from '@/lib/monitoring/report-error'
 
 function getAdminClient() {
   return createClient(
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
 
     if (queryError) {
       console.error('OOO query error:', queryError)
+      await reportError({ source: 'api/ooo', message: queryError.message, userId: callerId, errorKey: 'ooo_query_failed' })
       return NextResponse.json({ error: 'Failed to load' }, { status: 500 })
     }
 
