@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { stripe } from '@/lib/stripe/server'
 
 interface CheckoutRequest {
@@ -64,15 +65,63 @@ export async function POST(request: NextRequest) {
     const fullName = userData.user.user_metadata?.full_name || ''
     const companyName = userData.user.user_metadata?.company_name || ''
 
-    // Create a Stripe customer for this user (not team — team doesn't exist yet for new signups)
-    const customer = await stripe.customers.create({
-      email: userEmail,
-      name: fullName,
-      metadata: {
-        userId,
-        supabaseUserId: userId,
-      },
-    })
+    // Check if user's organization already has a Stripe customer (reuse it)
+    const adminDb = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    let customerId: string | null = null
+    let organizationId: string | null = null
+
+    // Check if joining an existing team/org
+    if (joiningTeamId) {
+      const { data: team } = await adminDb
+        .from('teams')
+        .select('organization_id')
+        .eq('id', joiningTeamId)
+        .single()
+      if (team?.organization_id) {
+        const { data: org } = await adminDb
+          .from('organizations')
+          .select('id, stripe_customer_id')
+          .eq('id', team.organization_id)
+          .single()
+        if (org) {
+          organizationId = org.id
+          customerId = org.stripe_customer_id
+        }
+      }
+    }
+
+    // Check by email domain
+    if (!customerId) {
+      const domain = userEmail.includes('@') ? userEmail.split('@')[1].toLowerCase() : null
+      if (domain) {
+        const { data: orgByDomain } = await adminDb
+          .from('organizations')
+          .select('id, stripe_customer_id')
+          .eq('domain', domain)
+          .limit(1)
+          .single()
+        if (orgByDomain?.stripe_customer_id) {
+          organizationId = orgByDomain.id
+          customerId = orgByDomain.stripe_customer_id
+        }
+      }
+    }
+
+    // Create new Stripe customer if org doesn't have one
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: userEmail,
+        name: companyName || fullName,
+        metadata: {
+          userId,
+          organizationId: organizationId || '',
+        },
+      })
+      customerId = customer.id
+    }
 
     // Build metadata — this is what provision-account reads after payment
     const metadata: Record<string, string> = {
@@ -84,10 +133,8 @@ export async function POST(request: NextRequest) {
       companyName,
     }
 
-    // If joining an existing team, include that info
-    if (joiningTeamId) {
-      metadata.joiningTeamId = joiningTeamId
-    }
+    if (organizationId) metadata.organizationId = organizationId
+    if (joiningTeamId) metadata.joiningTeamId = joiningTeamId
 
     // Resolve promo code if provided from the billing page
     let discounts: Array<{ promotion_code: string }> | undefined
@@ -105,7 +152,7 @@ export async function POST(request: NextRequest) {
     // Create checkout session with 14-day trial
     // Note: allow_promotion_codes and discounts are mutually exclusive in Stripe
     const session = await stripe.checkout.sessions.create({
-      customer: customer.id,
+      customer: customerId,
       line_items: [
         {
           price: priceId,
