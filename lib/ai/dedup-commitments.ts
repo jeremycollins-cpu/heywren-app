@@ -50,6 +50,7 @@ export function buildCommitmentMetadata(commitment: DetectedCommitment): Record<
 
 interface InsertParams {
   teamId: string
+  organizationId?: string | null
   userId: string
   source: 'slack' | 'outlook' | 'recording' | 'manual' | 'email' | 'calendar'
   sourceRef: string
@@ -147,6 +148,7 @@ export async function insertCommitmentIfNotDuplicate(
     .from('commitments')
     .insert({
       team_id: params.teamId,
+      organization_id: params.organizationId || null,
       creator_id: params.userId,
       title,
       description: commitment.description || null,

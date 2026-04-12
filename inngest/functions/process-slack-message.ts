@@ -52,6 +52,17 @@ export const processSlackMessage = inngest.createFunction(
 
     const teamId = integration.team_id
 
+    // Resolve organization_id from team for data scoping
+    const orgLookup = await step.run('resolve-org', async () => {
+      const { data: team } = await supabase
+        .from('teams')
+        .select('organization_id')
+        .eq('id', teamId)
+        .single()
+      return team?.organization_id || null
+    })
+    const organizationId = orgLookup
+
     // ── Store the Slack message ──
     const messageData = await step.run('store-message', async () => {
       const { data, error } = await supabase
@@ -257,10 +268,11 @@ export const processSlackMessage = inngest.createFunction(
             .from('commitments')
             .insert({
               team_id: teamId,
-              creator_id: creatorId,          // NOT NULL — resolved above
+              organization_id: organizationId,
+              creator_id: creatorId,
               title: commitment.title,
               description: commitment.description || null,
-              status: 'pending_review',       // Auto-detected → needs user confirmation
+              status: 'pending_review',
               priority_score: calculatePriorityScore(commitment),
               source: 'slack',                // commitment_source enum
               source_ref: messageData.id,     // NOT 'source_message_id'
