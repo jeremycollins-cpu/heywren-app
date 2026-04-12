@@ -35,38 +35,55 @@ export async function GET(request: NextRequest) {
   const userId = searchParams.get('userId')
   const teamId = searchParams.get('teamId')
 
-  // Overview: all teams with health metrics
+  // Overview: all organizations (companies) with health metrics
   if (view === 'overview') {
-    const { data: teams } = await adminDb
-      .from('teams')
-      .select('id, name, slug, domain, created_at')
+    const { data: orgs } = await adminDb
+      .from('organizations')
+      .select('id, name, slug, domain, billing_type, subscription_plan, subscription_status, created_at')
       .order('created_at', { ascending: false })
 
-    const teamHealth = await Promise.all((teams || []).map(async (team) => {
-      const [teamMembers, orgMembers, profileMembers, integrations, commitments, outlookMsgs, slackMsgs] = await Promise.all([
-        adminDb.from('team_members').select('user_id').eq('team_id', team.id),
-        adminDb.from('organization_members').select('user_id').eq('team_id', team.id),
-        adminDb.from('profiles').select('id').eq('current_team_id', team.id),
-        adminDb.from('integrations').select('id, provider, user_id', { count: 'exact' }).eq('team_id', team.id),
-        adminDb.from('commitments').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
-        adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
-        adminDb.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
+    const teamHealth = await Promise.all((orgs || []).map(async (org) => {
+      // Get all teams in this org to aggregate their data
+      const { data: orgTeams } = await adminDb
+        .from('teams')
+        .select('id')
+        .eq('organization_id', org.id)
+      const orgTeamIds = (orgTeams || []).map(t => t.id)
+
+      const [orgMembers, integrations, commitments, outlookMsgs, slackMsgs] = await Promise.all([
+        adminDb.from('organization_members').select('user_id').eq('organization_id', org.id),
+        orgTeamIds.length > 0
+          ? adminDb.from('integrations').select('id, provider, user_id', { count: 'exact' }).in('team_id', orgTeamIds)
+          : Promise.resolve({ data: [], count: 0 }),
+        orgTeamIds.length > 0
+          ? adminDb.from('commitments').select('id', { count: 'exact', head: true }).in('team_id', orgTeamIds)
+          : Promise.resolve({ count: 0 }),
+        orgTeamIds.length > 0
+          ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).in('team_id', orgTeamIds)
+          : Promise.resolve({ count: 0 }),
+        orgTeamIds.length > 0
+          ? adminDb.from('slack_messages').select('id', { count: 'exact', head: true }).in('team_id', orgTeamIds)
+          : Promise.resolve({ count: 0 }),
       ])
 
-      // Deduplicate member count across all sources
       const memberIds = new Set<string>()
-      for (const m of teamMembers.data || []) memberIds.add(m.user_id)
       for (const m of orgMembers.data || []) memberIds.add(m.user_id)
-      for (const p of profileMembers.data || []) memberIds.add(p.id)
 
       return {
-        ...team,
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        domain: org.domain,
+        billing_type: org.billing_type,
+        subscription_plan: org.subscription_plan,
+        subscription_status: org.subscription_status,
+        created_at: org.created_at,
         memberCount: memberIds.size,
-        integrationCount: integrations.count || 0,
-        integrations: integrations.data || [],
-        commitmentCount: commitments.count || 0,
-        emailCount: outlookMsgs.count || 0,
-        slackMessageCount: slackMsgs.count || 0,
+        integrationCount: (integrations as any).count || 0,
+        integrations: (integrations as any).data || [],
+        commitmentCount: (commitments as any).count || 0,
+        emailCount: (outlookMsgs as any).count || 0,
+        slackMessageCount: (slackMsgs as any).count || 0,
       }
     }))
 

@@ -182,6 +182,46 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Auto-confirm email for invited users (they were explicitly invited)
+    if (!user.email_confirmed_at) {
+      try {
+        await admin.auth.admin.updateUserById(user.id, { email_confirm: true })
+      } catch { /* non-fatal */ }
+    }
+
+    // Resolve team_id: if invite doesn't specify one, find the org's default team
+    let resolvedTeamId = invitation.team_id || null
+    let resolvedDeptId = invitation.department_id || null
+    if (!resolvedTeamId) {
+      // Find the first team in this org
+      const { data: orgTeam } = await admin
+        .from('teams')
+        .select('id, department_id')
+        .eq('organization_id', invitation.organization_id)
+        .limit(1)
+        .single()
+      if (orgTeam) {
+        resolvedTeamId = orgTeam.id
+        if (!resolvedDeptId) resolvedDeptId = orgTeam.department_id
+      }
+    }
+
+    // Ensure profile exists (upsert — new invite users may not have a profiles row)
+    const { error: profileUpsertError } = await admin
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: user.email || '',
+        display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+        organization_id: invitation.organization_id,
+        department_id: resolvedDeptId,
+        current_team_id: resolvedTeamId,
+      }, { onConflict: 'id' })
+
+    if (profileUpsertError) {
+      console.error('[invites/accept/POST] Profile upsert failed:', profileUpsertError.message)
+    }
+
     // Create organization_members record
     const { error: memberError } = await admin
       .from('organization_members')
@@ -189,8 +229,8 @@ export async function POST(request: NextRequest) {
         organization_id: invitation.organization_id,
         user_id: user.id,
         role: invitation.role,
-        department_id: invitation.department_id || null,
-        team_id: invitation.team_id || null,
+        department_id: resolvedDeptId,
+        team_id: resolvedTeamId,
       })
 
     if (memberError) {
@@ -198,15 +238,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to join organization' }, { status: 500 })
     }
 
-    // If a team_id is specified, also add to team_members
-    if (invitation.team_id) {
+    // Add to team_members (legacy table, keep in sync)
+    if (resolvedTeamId) {
       const { error: teamError } = await admin
         .from('team_members')
-        .insert({
-          team_id: invitation.team_id,
+        .upsert({
+          team_id: resolvedTeamId,
           user_id: user.id,
           role: invitation.role === 'team_lead' ? 'team_lead' : 'member',
-        })
+        }, { onConflict: 'team_id,user_id' })
 
       if (teamError) {
         console.error('[invites/accept/POST] Failed to add to team:', teamError.message)
@@ -214,26 +254,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update profile with organization/department info
-    const profileUpdate: Record<string, string | null> = {
-      organization_id: invitation.organization_id,
-    }
-    if (invitation.department_id) {
-      profileUpdate.department_id = invitation.department_id
-    }
-    if (invitation.team_id) {
-      profileUpdate.current_team_id = invitation.team_id
-    }
-
-    const { error: profileError } = await admin
-      .from('profiles')
-      .update(profileUpdate)
-      .eq('id', user.id)
-
-    if (profileError) {
-      console.error('[invites/accept/POST] Failed to update profile:', profileError.message)
-      // Non-fatal
-    }
+    // Profile already upserted above with org/dept/team info
 
     // Mark invitation as accepted
     const { error: updateError } = await admin
