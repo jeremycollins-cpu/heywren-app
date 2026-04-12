@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, Bell, Lock, Users, Mail, MailWarning,
   Star, ShieldBan, Plus, X, ThumbsUp, ThumbsDown, AlertTriangle,
   Trophy, Folder, RefreshCw, Check, Clock, Palmtree, Plane, Stethoscope,
-  CalendarDays, Trash2, Smartphone
+  CalendarDays, Trash2, Smartphone, Pencil, Building2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -135,6 +135,16 @@ export default function SettingsPage() {
   const [savingDomains, setSavingDomains] = useState(false)
   const [isOrgAdmin, setIsOrgAdmin] = useState(false)
 
+  // Department management
+  interface DeptItem { id: string; name: string; memberCount: number }
+  const [departments, setDepartments] = useState<DeptItem[]>([])
+  const [deptsLoading, setDeptsLoading] = useState(false)
+  const [showAddDept, setShowAddDept] = useState(false)
+  const [newDeptName, setNewDeptName] = useState('')
+  const [savingDept, setSavingDept] = useState(false)
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null)
+  const [editingDeptName, setEditingDeptName] = useState('')
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -248,7 +258,74 @@ export default function SettingsPage() {
       setMfaLoading(false)
     }
     checkMfaStatus()
+
+    const fetchDepartments = async () => {
+      setDeptsLoading(true)
+      try {
+        const res = await fetch('/api/admin/departments')
+        if (res.ok) {
+          const data = await res.json()
+          setDepartments(data.departments || [])
+        }
+      } catch { /* not an admin or no org */ }
+      setDeptsLoading(false)
+    }
+    fetchDepartments()
   }, [])
+
+  const addDepartment = async () => {
+    if (!newDeptName.trim()) return
+    setSavingDept(true)
+    try {
+      const res = await fetch('/api/admin/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newDeptName.trim() }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        setDepartments(prev => [...prev, data.department].sort((a: DeptItem, b: DeptItem) => a.name.localeCompare(b.name)))
+        setNewDeptName('')
+        setShowAddDept(false)
+        toast.success('Department created')
+      }
+    } catch { toast.error('Failed to create department') }
+    setSavingDept(false)
+  }
+
+  const renameDepartment = async (id: string) => {
+    if (!editingDeptName.trim()) return
+    try {
+      const res = await fetch('/api/admin/departments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name: editingDeptName.trim() }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        setDepartments(prev => prev.map(d => d.id === id ? { ...d, name: editingDeptName.trim() } : d))
+        setEditingDeptId(null)
+        toast.success('Department renamed')
+      }
+    } catch { toast.error('Failed to rename') }
+  }
+
+  const deleteDepartment = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/departments?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        setDepartments(prev => prev.filter(d => d.id !== id))
+        toast.success('Department deleted')
+      }
+    } catch { toast.error('Failed to delete department') }
+  }
 
   const addCompanyHoliday = async () => {
     if (!newHoliday.name.trim() || !newHoliday.date) {
@@ -1514,6 +1591,84 @@ export default function SettingsPage() {
               className="w-full px-4 py-2 border border-gray-300 dark:border-border-dark rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-surface-dark dark:text-white"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Saved with profile changes above</p>
+          </div>
+
+          {/* Departments */}
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
+                <Building2 className="w-4 h-4" />
+                Departments
+              </h3>
+              {!showAddDept && (
+                <button onClick={() => setShowAddDept(true)} className="text-xs text-indigo-600 dark:text-indigo-400 font-medium hover:underline flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Organize your team into departments for better reporting and team health insights.
+            </p>
+
+            {showAddDept && (
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newDeptName}
+                  onChange={e => setNewDeptName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addDepartment()}
+                  placeholder="e.g. Engineering, Sales, Operations"
+                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+                <button onClick={addDepartment} disabled={savingDept || !newDeptName.trim()} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                  {savingDept ? 'Adding...' : 'Add'}
+                </button>
+                <button onClick={() => { setShowAddDept(false); setNewDeptName('') }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {deptsLoading ? (
+              <p className="text-sm text-gray-400">Loading...</p>
+            ) : departments.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">No departments yet. Add your first one above.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {departments.map(dept => (
+                  <div key={dept.id} className="flex items-center gap-2 group">
+                    {editingDeptId === dept.id ? (
+                      <div className="flex-1 flex gap-2">
+                        <input
+                          type="text"
+                          value={editingDeptName}
+                          onChange={e => setEditingDeptName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') renameDepartment(dept.id); if (e.key === 'Escape') setEditingDeptId(null) }}
+                          className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                          autoFocus
+                        />
+                        <button onClick={() => renameDepartment(dept.id)} className="text-emerald-600 hover:text-emerald-700"><Check className="w-4 h-4" /></button>
+                        <button onClick={() => setEditingDeptId(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="flex-1 text-sm text-gray-800 dark:text-gray-200">{dept.name}</span>
+                        <span className="text-[10px] text-gray-400">{dept.memberCount} member{dept.memberCount !== 1 ? 's' : ''}</span>
+                        <button onClick={() => { setEditingDeptId(dept.id); setEditingDeptName(dept.name) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition" title="Rename">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {dept.memberCount === 0 && (
+                          <button onClick={() => deleteDepartment(dept.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition" title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Company Domains */}
