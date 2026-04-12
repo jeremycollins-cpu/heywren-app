@@ -480,7 +480,8 @@ export async function GET(request: NextRequest) {
       progress: c.target_value > 0 ? Math.min(100, Math.round(c.current_value / c.target_value * 100)) : 0,
     }))
 
-    // ── Team IDs for scoped queries ─────────────────────────────────────
+    // ── Scoping: use organization_id for queries (covers all teams in org)
+    // Fall back to team_id list for tables without organization_id
     const teamIds = [...new Set((profilesRes.data || []).map((m: any) => m.team_id).filter(Boolean))]
 
     // ── Company pulse stats ───────────────────────────────────────────────
@@ -502,11 +503,11 @@ export async function GET(request: NextRequest) {
     const prevTrend = trends.length > 1 ? trends[trends.length - 2] : null
 
     // Also fetch live overdue count as a fallback/supplement
-    const { count: liveOverdueCount } = teamIds.length > 0
+    const { count: liveOverdueCount } = organization_id
       ? await admin
           .from('commitments')
           .select('*', { count: 'exact', head: true })
-          .in('team_id', teamIds)
+          .eq('organization_id', organization_id)
           .eq('status', 'overdue')
           .is('deleted_at', null)
       : { count: 0 }
@@ -580,14 +581,13 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Workload Balance ─────────────────────────────────────────────────
-    // Fetch open commitments per person — use team_id scope since not all
-    // commitments have organization_id backfilled
-    const { data: openCommitmentsData } = teamIds.length > 0
+    // Fetch open commitments per person — scoped by organization_id
+    const { data: openCommitmentsData } = organization_id
       ? await admin
           .from('commitments')
           .select('assignee_id, status')
-          .in('team_id', teamIds)
-          .in('status', ['pending', 'in_progress', 'overdue'])
+          .eq('organization_id', organization_id)
+          .in('status', ['open', 'pending', 'in_progress', 'overdue'])
           .is('deleted_at', null)
           .not('assignee_id', 'is', null)
       : { data: [] }
