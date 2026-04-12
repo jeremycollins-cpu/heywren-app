@@ -166,8 +166,10 @@ async function getOrgHierarchyMembers(
   const deptIds = [...new Set(orgMembers.map((m: any) => m.department_id))]
   const teamIds = [...new Set(orgMembers.map((m: any) => m.team_id))]
 
-  const [{ data: departments }, { data: teams }] = await Promise.all([
+  const [{ data: departments }, { data: allDepartments }, { data: teams }] = await Promise.all([
     admin.from('departments').select('id, name, slug').in('id', deptIds),
+    // Fetch ALL departments for the org (not just those with members) so dropdowns show the full list
+    admin.from('departments').select('id, name, slug').eq('organization_id', organization_id).order('name'),
     admin.from('teams').select('id, name, slug, department_id').in('id', teamIds),
   ])
 
@@ -196,7 +198,7 @@ async function getOrgHierarchyMembers(
   return NextResponse.json({
     members,
     organization: org,
-    departments: departments || [],
+    departments: allDepartments || departments || [],
     teams: teams || [],
     callerRole: role,
     callerDepartmentId: department_id,
