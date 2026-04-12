@@ -105,6 +105,8 @@ function HealthBadge({ value, threshold, label }: { value: number; threshold: nu
 function AdminContent() {
   const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag' | 'subscriptions'>('overview')
   const [subscriptions, setSubscriptions] = useState<any[]>([])
+  const [subsRevenue, setSubsRevenue] = useState<any>(null)
+  const [subsInvoices, setSubsInvoices] = useState<any[]>([])
   const [subsLoading, setSubsLoading] = useState(false)
   const [teams, setTeams] = useState<TeamHealth[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
@@ -137,6 +139,8 @@ function AdminContent() {
       if (res.ok) {
         const data = await res.json()
         setSubscriptions(data.organizations || [])
+        setSubsRevenue(data.revenue || null)
+        setSubsInvoices(data.invoices || [])
       }
     } catch { toast.error('Failed to load subscriptions') }
     setSubsLoading(false)
@@ -323,7 +327,27 @@ function AdminContent() {
           </button>
         </div>
 
-        {/* Summary stats */}
+        {/* Revenue metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-4 rounded-lg border bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+            <div className="text-2xl font-bold text-green-700">${subsRevenue?.mrr?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</div>
+            <div className="text-sm text-green-600 font-medium">MRR</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
+            <div className="text-2xl font-bold text-indigo-700">${subsRevenue?.arr?.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '0'}</div>
+            <div className="text-sm text-indigo-600 font-medium">ARR</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold">{subsRevenue?.activeSubscriptions || 0}</div>
+            <div className="text-sm text-gray-500">Paid Subscriptions</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold">${subsRevenue?.totalRevenue?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</div>
+            <div className="text-sm text-gray-500">Total Collected</div>
+          </div>
+        </div>
+
+        {/* Customer counts */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-4 rounded-lg border bg-white">
             <div className="text-2xl font-bold">{subscriptions.length}</div>
@@ -342,6 +366,43 @@ function AdminContent() {
             <div className="text-sm text-gray-500">Enterprise</div>
           </div>
         </div>
+
+        {/* Recent Invoices */}
+        {subsInvoices.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <CreditCard className="w-4 h-4" />
+              Recent Invoices
+            </h3>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {subsInvoices.map((inv: any) => (
+                <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0 border-gray-50">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 truncate">{inv.organizationName}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${inv.status === 'paid' ? 'bg-green-100 text-green-700' : inv.status === 'open' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {inv.status}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400">
+                      {inv.number || inv.id.slice(0, 20)} · {new Date(inv.created * 1000).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-sm font-bold text-gray-900">
+                      ${(inv.amount / 100).toFixed(2)}
+                    </span>
+                    {inv.hostedUrl && (
+                      <a href={inv.hostedUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-600 hover:underline">
+                        View
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Org list */}
         <div className="space-y-3">
@@ -408,15 +469,22 @@ function AdminContent() {
                 <span className="text-[10px] text-gray-400 self-center">max seats</span>
               </div>
 
-              {/* Stripe IDs */}
+              {/* Revenue & billing details */}
+              <div className="flex flex-wrap gap-3 mt-2 text-[10px] text-gray-400">
+                {org.monthlyRevenue > 0 && (
+                  <span className="text-green-600 font-medium">${(org.monthlyRevenue / 100).toFixed(2)}/mo</span>
+                )}
+                {org.seatCount > 0 && <span>{org.seatCount} seat{org.seatCount !== 1 ? 's' : ''}</span>}
+                {org.currentPeriodEnd && <span>Renews {new Date(org.currentPeriodEnd).toLocaleDateString()}</span>}
+                {org.trial_ends_at && (
+                  <span className={org.trialExpired ? 'text-red-500' : ''}>
+                    Trial {org.trialExpired ? 'expired' : 'ends'} {new Date(org.trial_ends_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
               {org.stripe_customer_id && (
-                <p className="text-[10px] text-gray-300 mt-2 font-mono">
-                  Customer: {org.stripe_customer_id} · Sub: {org.stripe_subscription_id || 'none'}
-                </p>
-              )}
-              {org.trial_ends_at && (
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Trial {org.trialExpired ? 'expired' : 'ends'}: {new Date(org.trial_ends_at).toLocaleDateString()}
+                <p className="text-[10px] text-gray-300 mt-1 font-mono">
+                  {org.stripe_customer_id} · {org.stripe_subscription_id || 'no sub'}
                 </p>
               )}
             </div>
