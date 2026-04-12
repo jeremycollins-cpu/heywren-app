@@ -581,24 +581,26 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Workload Balance ─────────────────────────────────────────────────
-    // Fetch open commitments per person — scoped by organization_id
+    // Fetch open commitments per person — use both assignee_id and creator_id
+    // since most AI-detected commitments only set creator_id
     const { data: openCommitmentsData } = organization_id
       ? await admin
           .from('commitments')
-          .select('assignee_id, status')
+          .select('assignee_id, creator_id, status')
           .eq('organization_id', organization_id)
           .in('status', ['open', 'pending', 'in_progress', 'overdue'])
           .is('deleted_at', null)
-          .not('assignee_id', 'is', null)
       : { data: [] }
 
     const workloadMap = new Map<string, { open: number; overdue: number }>()
     for (const c of openCommitmentsData || []) {
-      if (!c.assignee_id) continue
-      const entry = workloadMap.get(c.assignee_id) || { open: 0, overdue: 0 }
+      // Attribute to assignee if set, otherwise to creator
+      const userId = c.assignee_id || c.creator_id
+      if (!userId) continue
+      const entry = workloadMap.get(userId) || { open: 0, overdue: 0 }
       entry.open++
       if (c.status === 'overdue') entry.overdue++
-      workloadMap.set(c.assignee_id, entry)
+      workloadMap.set(userId, entry)
     }
 
     // Calculate team average for thresholds
