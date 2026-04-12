@@ -2,6 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdmin() {
+  return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 
 export async function GET() {
   const supabase = await createClient()
@@ -12,7 +17,8 @@ export async function GET() {
   }
 
   // Get the user's Outlook integration token
-  const { data: integration } = await supabase
+  const admin = getAdmin()
+  const { data: integration } = await admin
     .from('integrations')
     .select('access_token, refresh_token, config, id')
     .eq('user_id', user.id)
@@ -54,7 +60,7 @@ export async function GET() {
 
       // Update stored token + expiry timestamp
       const newExpiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString()
-      await supabase
+      await admin
         .from('integrations')
         .update({
           access_token: tokenData.access_token,

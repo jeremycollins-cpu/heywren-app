@@ -2,6 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdmin() {
+  return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 
 export async function GET() {
   const supabase = await createClient()
@@ -84,7 +89,7 @@ export async function PUT(req: Request) {
     excluded_folders,
   } = body
 
-  const { error } = await supabase
+  const { error } = await getAdmin()
     .from('email_preferences')
     .upsert({
       team_id: profile.current_team_id,

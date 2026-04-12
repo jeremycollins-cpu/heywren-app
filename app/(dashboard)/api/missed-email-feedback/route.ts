@@ -2,7 +2,12 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { resolveTeamId } from '@/lib/team/resolve-team'
+
+function getAdmin() {
+  return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -37,7 +42,10 @@ export async function POST(req: Request) {
   // Extract domain from email
   const from_domain = from_email.split('@')[1] || ''
 
-  const { error } = await supabase
+  // Use admin client for all writes to bypass RLS (auth verified above)
+  const admin = getAdmin()
+
+  const { error } = await admin
     .from('missed_email_feedback')
     .insert({
       team_id: teamId,
@@ -56,7 +64,7 @@ export async function POST(req: Request) {
   // If marked invalid, dismiss this email AND all other pending emails from the same sender
   if (feedback === 'invalid') {
     if (missed_email_id) {
-      await supabase
+      await admin
         .from('missed_emails')
         .update({ status: 'dismissed' })
         .eq('id', missed_email_id)
@@ -64,7 +72,7 @@ export async function POST(req: Request) {
     }
 
     // Auto-dismiss all other pending emails from this sender
-    await supabase
+    await admin
       .from('missed_emails')
       .update({ status: 'dismissed' })
       .eq('team_id', teamId)
@@ -73,7 +81,7 @@ export async function POST(req: Request) {
       .eq('status', 'pending')
 
     // Check if this domain now has 2+ rejections — if so, dismiss ALL pending from that domain
-    const { data: domainFeedback } = await supabase
+    const { data: domainFeedback } = await admin
       .from('missed_email_feedback')
       .select('id')
       .eq('team_id', teamId)
@@ -82,7 +90,7 @@ export async function POST(req: Request) {
       .eq('feedback', 'invalid')
 
     if ((domainFeedback?.length || 0) >= 2) {
-      await supabase
+      await admin
         .from('missed_emails')
         .update({ status: 'dismissed' })
         .eq('team_id', teamId)

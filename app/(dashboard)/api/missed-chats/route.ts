@@ -510,7 +510,12 @@ export async function PATCH(request: NextRequest) {
     updateData.snoozed_until = snoozed_until
   }
 
-  const { error } = await supabase
+  // Use admin client to bypass RLS (auth already verified above)
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const { error } = await admin
     .from('missed_chats')
     .update(updateData)
     .eq('id', id)

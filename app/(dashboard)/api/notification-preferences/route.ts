@@ -2,6 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdmin() {
+  return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 
 const DEFAULTS = {
   achievement_notifications: true,
@@ -97,7 +102,7 @@ export async function PUT(req: Request) {
       celebration_posts,
     } = body
 
-    const { error } = await supabase
+    const { error } = await getAdmin()
       .from('notification_preferences')
       .upsert(
         {
