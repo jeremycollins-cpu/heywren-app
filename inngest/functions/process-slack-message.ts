@@ -260,7 +260,7 @@ export const processSlackMessage = inngest.createFunction(
               creator_id: creatorId,          // NOT NULL — resolved above
               title: commitment.title,
               description: commitment.description || null,
-              status: 'open',                 // NOT 'pending' — correct enum
+              status: 'pending_review',       // Auto-detected → needs user confirmation
               priority_score: calculatePriorityScore(commitment),
               source: 'slack',                // commitment_source enum
               source_ref: messageData.id,     // NOT 'source_message_id'

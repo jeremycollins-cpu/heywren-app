@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
 import { useCelebration } from '@/lib/contexts/celebration-context'
+import { CommitmentReviewSection } from '@/components/commitments/review-section'
 
 interface CommitmentStakeholder {
   name: string
@@ -194,6 +195,7 @@ export default function CommitmentsPage() {
         .select('*')
         .eq('team_id', teamId)
         .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+        .not('status', 'eq', 'pending_review')
         .order('created_at', { ascending: false })
         .limit(200)
 
@@ -460,6 +462,9 @@ export default function CommitmentsPage() {
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 text-sm font-medium">Dismiss</button>
         </div>
       )}
+
+      {/* Review Gate — pending auto-detected commitments */}
+      <CommitmentReviewSection onReviewComplete={() => loadCommitments(true)} />
 
       {/* Quick Add Form */}
       {showQuickAdd && (

@@ -192,6 +192,7 @@ export const processMeetingTranscript = inngest.createFunction(
             source: 'recording',
             sourceRef: transcriptId,
             metadata,
+            status: 'pending_review',
           })
 
           if (id) {

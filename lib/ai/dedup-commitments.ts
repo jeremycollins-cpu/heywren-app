@@ -58,6 +58,8 @@ interface InsertParams {
   metadata?: Record<string, unknown>
   // For email thread dedup — checks within the same conversation
   conversationId?: string | null
+  // Override status — defaults to 'open'. Use 'pending_review' for auto-detected commitments.
+  status?: string
 }
 
 /**
@@ -148,7 +150,7 @@ export async function insertCommitmentIfNotDuplicate(
       creator_id: params.userId,
       title,
       description: commitment.description || null,
-      status: 'open',
+      status: params.status || 'open',
       priority_score: calculatePriorityScore(commitment),
       source: params.source,
       source_ref: params.sourceRef,
