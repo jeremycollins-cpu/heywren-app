@@ -766,6 +766,35 @@ export default function TeamManagementPage() {
                         </div>
                       )
                     })}
+                    {/* Members in this department but not assigned to a specific team */}
+                    {(() => {
+                      const teamIds = new Set(deptTeams.map(t => t.id))
+                      const unassigned = deptMembers.filter(m => !m.team_id || !teamIds.has(m.team_id))
+                      if (unassigned.length === 0) return null
+                      return (
+                        <div className="px-4 py-3">
+                          {deptTeams.length > 0 && (
+                            <div className="flex items-center gap-2 mb-2 pl-4 sm:pl-6">
+                              <Users className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-xs font-medium text-gray-500">No team assigned</span>
+                              <span className="text-xs text-gray-400">({unassigned.length})</span>
+                            </div>
+                          )}
+                          <div className={`space-y-2 ${deptTeams.length > 0 ? 'pl-4 sm:pl-6' : 'pl-2 sm:pl-4'}`}>
+                            {unassigned.map(member => (
+                              <MemberRow
+                                key={member.id}
+                                member={member}
+                                anomalyCount={memberAnomalyCount.get(member.user_id) || 0}
+                                onSelect={() => setSelectedMember(member)}
+                                onRemove={callerRole === 'org_admin' ? removeMember : undefined}
+                                canRemove={callerRole === 'org_admin'}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
