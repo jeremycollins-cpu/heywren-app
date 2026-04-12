@@ -106,7 +106,7 @@ export default function InviteAcceptPage() {
 
       // Redirect to dashboard after a brief delay
       setTimeout(() => {
-        router.push('/dashboard')
+        router.push('/')
       }, 2500)
     } catch {
       setError('An unexpected error occurred')
@@ -197,7 +197,7 @@ export default function InviteAcceptPage() {
             This invitation has already been accepted.
           </p>
           <a
-            href="/dashboard"
+            href="/"
             className="mt-6 inline-block rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
           >
             Go to Dashboard
