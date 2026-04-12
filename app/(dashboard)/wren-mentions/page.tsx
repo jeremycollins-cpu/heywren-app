@@ -92,116 +92,122 @@ function MentionCard({ mention, onAddTodo, onDismiss }: { mention: WrenMention; 
   const Icon = cfg.icon
   const [expanded, setExpanded] = useState(false)
 
-  // Clean up snippet: strip Slack user mentions like <@U12345>
-  const cleanSnippet = mention.source_snippet?.replace(/<@[A-Z0-9]+>/g, '@someone') || null
+  // Clean up snippet: replace raw Slack user mentions with resolved names or "a teammate"
+  const cleanSnippet = mention.source_snippet
+    ?.replace(/<@[A-Z0-9]+>/g, 'a teammate')
+    .replace(/\s+/g, ' ')
+    .trim() || null
+
+  // Clean up channel ref: hide raw Slack channel IDs like #C0ASPC8DZEV
+  const channelRef = mention.source_ref && /^#[A-Z0-9]{8,}$/i.test(mention.source_ref)
+    ? null
+    : mention.source_ref
+
+  // Clean up title: if it's a raw channel ID, show "Slack mention" instead
+  const displayTitle = mention.source_title && /^#[A-Z0-9]{8,}$/i.test(mention.source_title)
+    ? 'Slack mention'
+    : (mention.source_title || 'Mention')
 
   return (
-    <div className={`border ${cfg.border} rounded-xl p-4 bg-white dark:bg-surface-dark-secondary hover:shadow-sm transition`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <div className={`flex items-center justify-center w-9 h-9 rounded-lg ${cfg.bg} flex-shrink-0 mt-0.5`}>
-            <Icon className={`w-4 h-4 ${cfg.color}`} />
-          </div>
-          <div className="min-w-0 flex-1">
-            {/* Header: channel tag, source channel, time */}
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${cfg.color} ${cfg.bg}`}>
-                {cfg.label}
-              </span>
-              {mention.source_ref && (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium">
-                  {mention.source_ref}
-                </span>
-              )}
-              {mention.participant_name && (
-                <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                  by {mention.participant_name}
-                </span>
-              )}
-              <span className="text-[11px] text-gray-400 dark:text-gray-500 flex items-center gap-0.5 ml-auto">
-                <Clock className="w-2.5 h-2.5" />
-                {formatDate(mention.created_at)}
-              </span>
-            </div>
-
-            {/* Title: commitment or message summary */}
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">
-              {mention.source_title && /^#[A-Z0-9]{8,}$/i.test(mention.source_title)
-                ? 'Slack mention'
-                : mention.source_title || 'Mention'}
-            </h3>
-
-            {/* Full context (expandable) */}
-            {cleanSnippet && (
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="text-left w-full mt-1.5"
-              >
-                <p className={`text-xs text-gray-500 dark:text-gray-400 leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>
-                  &ldquo;{cleanSnippet}&rdquo;
-                </p>
-                {cleanSnippet.length > 120 && (
-                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-medium mt-0.5 inline-block">
-                    {expanded ? 'Show less' : 'Show more'}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Extracted commitments */}
-            {mention.commitment_titles?.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {mention.commitment_titles.map((title, i) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">{title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Status line */}
-            {mention.commitments_extracted === 0 && (
-              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2 italic">
-                No action items found — add one manually with the to-do button
-              </p>
-            )}
-          </div>
+    <div className={`border ${cfg.border} rounded-xl p-3 sm:p-4 bg-white dark:bg-surface-dark-secondary hover:shadow-sm transition`}>
+      {/* Header row */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-md ${cfg.bg} flex-shrink-0`}>
+          <Icon className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${cfg.color}`} />
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={() => addReminder(mention.commitment_titles?.[0] || mention.source_title, 'mention', mention.id)}
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition"
-            title="Remind me"
-          >
-            <Bell className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => onAddTodo(mention.commitment_titles?.[0] || mention.source_snippet || mention.source_title, { type: 'mention', id: mention.id })}
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30 transition"
-            title="Add to To-Dos"
-          >
-            <ListChecks className="w-3.5 h-3.5" />
-          </button>
-          {mention.source_url && (
-            <a
-              href={mention.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition"
-              title="View in Slack"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cfg.color} ${cfg.bg}`}>
+          {cfg.label}
+        </span>
+        {channelRef && (
+          <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium truncate max-w-[100px]">
+            {channelRef}
+          </span>
+        )}
+        {mention.participant_name && (
+          <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]">
+            by {mention.participant_name}
+          </span>
+        )}
+        <span className="text-[11px] text-gray-400 dark:text-gray-500 flex items-center gap-0.5 ml-auto flex-shrink-0">
+          <Clock className="w-2.5 h-2.5" />
+          {formatDate(mention.created_at)}
+        </span>
+      </div>
+
+      {/* Title */}
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug mb-1">
+        {displayTitle}
+      </h3>
+
+      {/* Expandable snippet */}
+      {cleanSnippet && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-left w-full"
+        >
+          <p className={`text-xs text-gray-500 dark:text-gray-400 leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>
+            &ldquo;{cleanSnippet}&rdquo;
+          </p>
+          {cleanSnippet.length > 100 && (
+            <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-medium mt-0.5 inline-block">
+              {expanded ? 'Show less' : 'Show more'}
+            </span>
           )}
-          <button
-            onClick={() => onDismiss(mention.id)}
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition"
-            title="Dismiss"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-          </button>
+        </button>
+      )}
+
+      {/* Extracted commitments */}
+      {mention.commitment_titles?.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {mention.commitment_titles.map((title, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-xs">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <span className="text-gray-700 dark:text-gray-300 font-medium">{title}</span>
+            </div>
+          ))}
         </div>
+      )}
+
+      {mention.commitments_extracted === 0 && (
+        <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5 italic">
+          No action items found
+        </p>
+      )}
+
+      {/* Action buttons — horizontal row below content */}
+      <div className="flex items-center gap-1 mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <button
+          onClick={() => addReminder(mention.commitment_titles?.[0] || mention.source_title, 'mention', mention.id)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 transition"
+        >
+          <Bell className="w-3 h-3" />
+          Remind
+        </button>
+        <button
+          onClick={() => onAddTodo(mention.commitment_titles?.[0] || mention.source_snippet || mention.source_title, { type: 'mention', id: mention.id })}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition"
+        >
+          <ListChecks className="w-3 h-3" />
+          To-do
+        </button>
+        {mention.source_url && (
+          <a
+            href={mention.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition"
+          >
+            <ExternalLink className="w-3 h-3" />
+            View
+          </a>
+        )}
+        <button
+          onClick={() => onDismiss(mention.id)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition ml-auto"
+        >
+          <XCircle className="w-3 h-3" />
+          Dismiss
+        </button>
       </div>
     </div>
   )
