@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     }).eq('id', userId)
 
     // Decrement Stripe seat count (no refund — billing stops going forward)
+    // Organization subscription is the single source of truth
     try {
       const { data: orgBilling } = await admin
         .from('organizations')
@@ -89,27 +90,6 @@ export async function POST(request: NextRequest) {
         const item = subscription.items.data[0]
         if (item && (item.quantity || 1) > 1) {
           await stripe.subscriptions.update(orgBilling.stripe_subscription_id, {
-            items: [{ id: item.id, quantity: (item.quantity || 1) - 1 }],
-            proration_behavior: 'none', // No refund — billing stops forward
-          })
-        }
-      }
-
-      // Also check team-level subscription
-      const { data: teams } = await admin
-        .from('teams')
-        .select('stripe_subscription_id')
-        .eq('organization_id', orgId)
-        .not('stripe_subscription_id', 'is', null)
-        .limit(1)
-
-      if (teams?.[0]?.stripe_subscription_id && !orgBilling?.stripe_subscription_id) {
-        const Stripe = (await import('stripe')).default
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' as any })
-        const subscription = await stripe.subscriptions.retrieve(teams[0].stripe_subscription_id)
-        const item = subscription.items.data[0]
-        if (item && (item.quantity || 1) > 1) {
-          await stripe.subscriptions.update(teams[0].stripe_subscription_id, {
             items: [{ id: item.id, quantity: (item.quantity || 1) - 1 }],
             proration_behavior: 'none',
           })

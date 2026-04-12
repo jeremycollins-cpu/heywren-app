@@ -103,7 +103,9 @@ function HealthBadge({ value, threshold, label }: { value: number; threshold: nu
 }
 
 function AdminContent() {
-  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag'>('overview')
+  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag' | 'subscriptions'>('overview')
+  const [subscriptions, setSubscriptions] = useState<any[]>([])
+  const [subsLoading, setSubsLoading] = useState(false)
   const [teams, setTeams] = useState<TeamHealth[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -127,6 +129,35 @@ function AdminContent() {
   const [emailDiagLoading, setEmailDiagLoading] = useState(false)
 
   useEffect(() => { loadOverview(); loadCelebrationRate() }, [])
+
+  const loadSubscriptions = async () => {
+    setSubsLoading(true)
+    try {
+      const res = await fetch('/api/admin/subscriptions')
+      if (res.ok) {
+        const data = await res.json()
+        setSubscriptions(data.organizations || [])
+      }
+    } catch { toast.error('Failed to load subscriptions') }
+    setSubsLoading(false)
+  }
+
+  const updateSubscription = async (orgId: string, updates: Record<string, any>) => {
+    try {
+      const res = await fetch('/api/admin/subscriptions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: orgId, ...updates }),
+      })
+      if (res.ok) {
+        toast.success('Subscription updated')
+        loadSubscriptions()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to update')
+      }
+    } catch { toast.error('Failed to update') }
+  }
 
   const loadHealth = async () => {
     setHealthLoading(true)
@@ -261,6 +292,139 @@ function AdminContent() {
     !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.domain?.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Subscriptions management view
+  if (view === 'subscriptions') {
+    const planColors: Record<string, string> = {
+      trial: 'bg-gray-100 text-gray-600',
+      pro: 'bg-indigo-100 text-indigo-700',
+      team: 'bg-purple-100 text-purple-700',
+      enterprise: 'bg-emerald-100 text-emerald-700',
+    }
+    const statusColors: Record<string, string> = {
+      trialing: 'bg-amber-100 text-amber-700',
+      active: 'bg-green-100 text-green-700',
+      past_due: 'bg-red-100 text-red-700',
+      cancelled: 'bg-gray-100 text-gray-500',
+      incomplete: 'bg-red-100 text-red-700',
+      cancelling: 'bg-amber-100 text-amber-700',
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <PageHeader title="Subscription Management" description="Manage billing for all organizations" />
+          <button onClick={loadSubscriptions} className="ml-auto flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
+            <RefreshCw className={`w-4 h-4 ${subsLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {/* Summary stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold">{subscriptions.length}</div>
+            <div className="text-sm text-gray-500">Organizations</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold text-green-600">{subscriptions.filter(s => s.subscription_status === 'active').length}</div>
+            <div className="text-sm text-gray-500">Active</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold text-amber-600">{subscriptions.filter(s => s.subscription_status === 'trialing').length}</div>
+            <div className="text-sm text-gray-500">Trialing</div>
+          </div>
+          <div className="p-4 rounded-lg border bg-white">
+            <div className="text-2xl font-bold text-emerald-600">{subscriptions.filter(s => s.billing_type === 'enterprise').length}</div>
+            <div className="text-sm text-gray-500">Enterprise</div>
+          </div>
+        </div>
+
+        {/* Org list */}
+        <div className="space-y-3">
+          {subscriptions.map(org => (
+            <div key={org.id} className="bg-white border border-gray-200 rounded-lg p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="font-semibold text-gray-900">{org.name}</h3>
+                  <p className="text-xs text-gray-400">{org.domain || 'No domain'} · {org.memberCount} member{org.memberCount !== 1 ? 's' : ''} · Created {new Date(org.created_at).toLocaleDateString()}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${planColors[org.subscription_plan] || planColors.trial}`}>
+                    {org.subscription_plan || 'trial'}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[org.subscription_status] || statusColors.trialing}`}>
+                    {org.subscription_status || 'trialing'}
+                  </span>
+                  {org.billing_type === 'enterprise' && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">Enterprise</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick actions */}
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={org.subscription_plan || 'trial'}
+                  onChange={e => updateSubscription(org.id, { plan: e.target.value })}
+                  className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+                >
+                  <option value="trial">Trial</option>
+                  <option value="pro">Pro</option>
+                  <option value="team">Team</option>
+                </select>
+                <select
+                  value={org.subscription_status || 'trialing'}
+                  onChange={e => updateSubscription(org.id, { status: e.target.value })}
+                  className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+                >
+                  <option value="trialing">Trialing</option>
+                  <option value="active">Active</option>
+                  <option value="past_due">Past Due</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <select
+                  value={org.billing_type || 'stripe'}
+                  onChange={e => updateSubscription(org.id, { billingType: e.target.value })}
+                  className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+                >
+                  <option value="stripe">Stripe</option>
+                  <option value="enterprise">Enterprise</option>
+                  <option value="trial">Trial</option>
+                </select>
+                <input
+                  type="number"
+                  defaultValue={org.max_users || 25}
+                  onBlur={e => {
+                    const val = parseInt(e.target.value)
+                    if (val > 0) updateSubscription(org.id, { maxUsers: val })
+                  }}
+                  className="w-16 px-2 py-1 text-xs border border-gray-200 rounded bg-white text-center"
+                  title="Max users"
+                />
+                <span className="text-[10px] text-gray-400 self-center">max seats</span>
+              </div>
+
+              {/* Stripe IDs */}
+              {org.stripe_customer_id && (
+                <p className="text-[10px] text-gray-300 mt-2 font-mono">
+                  Customer: {org.stripe_customer_id} · Sub: {org.stripe_subscription_id || 'none'}
+                </p>
+              )}
+              {org.trial_ends_at && (
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Trial {org.trialExpired ? 'expired' : 'ends'}: {new Date(org.trial_ends_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // System Health monitoring view
   if (view === 'health') {
@@ -628,6 +792,13 @@ function AdminContent() {
             description={`${teams.length} companies on the platform`}
           />
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setView('subscriptions'); loadSubscriptions() }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+            >
+              <CreditCard className="w-4 h-4" />
+              Subscriptions
+            </button>
             <button
               onClick={() => { setView('email-diag'); loadEmailDiag() }}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"

@@ -3,10 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { stripe } from '@/lib/stripe/server'
 
 function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
 const PRICE_IDS: Record<string, Record<string, string | undefined>> = {
@@ -21,9 +18,8 @@ const PRICE_IDS: Record<string, Record<string, string | undefined>> = {
 }
 
 export async function POST(request: NextRequest) {
-  const supabaseAdmin = getAdminClient()
+  const admin = getAdminClient()
   try {
-    // Origin validation
     const origin = request.headers.get('origin')
     const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
     if (origin && allowedOrigin && origin !== allowedOrigin) {
@@ -32,25 +28,19 @@ export async function POST(request: NextRequest) {
 
     const { teamId, newPlan, billingInterval = 'monthly', promoCode } = await request.json()
 
-    if (!teamId || !newPlan) {
-      return NextResponse.json({ error: 'Missing teamId or newPlan' }, { status: 400 })
-    }
-
-    if (!['pro', 'team'].includes(newPlan)) {
+    if (!newPlan || !['pro', 'team'].includes(newPlan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
     }
-
     if (!['monthly', 'annual'].includes(billingInterval)) {
       return NextResponse.json({ error: 'Invalid billing interval' }, { status: 400 })
     }
 
-    // Fall back to monthly if annual price isn't configured yet
     const newPriceId = PRICE_IDS[newPlan]?.[billingInterval] || PRICE_IDS[newPlan]?.monthly
     if (!newPriceId) {
-      return NextResponse.json({ error: 'Price ID not configured for this plan' }, { status: 500 })
+      return NextResponse.json({ error: 'Price ID not configured' }, { status: 500 })
     }
 
-    // Get user from session cookie to verify permissions
+    // Auth
     const { createClient: createSessionClient } = await import('@/lib/supabase/server')
     const supabase = await createSessionClient()
     const { data: userData } = await supabase.auth.getUser()
@@ -58,42 +48,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user is owner/admin
-    const { data: membership } = await supabaseAdmin
-      .from('team_members')
-      .select('role')
-      .eq('team_id', teamId)
+    // Verify org admin
+    const { data: membership } = await admin
+      .from('organization_members')
+      .select('organization_id, role')
       .eq('user_id', userData.user.id)
+      .limit(1)
       .single()
 
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    if (!membership || membership.role !== 'org_admin') {
+      return NextResponse.json({ error: 'Only org admins can change plans' }, { status: 403 })
     }
 
-    // Get team's Stripe subscription
-    const { data: team } = await supabaseAdmin
-      .from('teams')
-      .select('stripe_subscription_id, stripe_customer_id, subscription_plan')
-      .eq('id', teamId)
+    const orgId = membership.organization_id
+
+    // Get organization's subscription (source of truth)
+    const { data: org } = await admin
+      .from('organizations')
+      .select('stripe_subscription_id, subscription_plan')
+      .eq('id', orgId)
       .single()
 
-    if (!team?.stripe_subscription_id) {
+    // Fall back to team subscription for legacy orgs
+    let subId = org?.stripe_subscription_id
+    if (!subId && teamId) {
+      const { data: team } = await admin
+        .from('teams')
+        .select('stripe_subscription_id')
+        .eq('id', teamId)
+        .single()
+      subId = team?.stripe_subscription_id
+    }
+
+    if (!subId) {
       return NextResponse.json({ error: 'No active subscription found' }, { status: 404 })
     }
 
-    if (team.subscription_plan === newPlan) {
+    if (org?.subscription_plan === newPlan) {
       return NextResponse.json({ error: 'Already on this plan' }, { status: 400 })
     }
 
-    // Get the current subscription to find the item ID
-    const subscription = await stripe.subscriptions.retrieve(team.stripe_subscription_id)
+    const subscription = await stripe.subscriptions.retrieve(subId)
     const subscriptionItemId = subscription.items.data[0]?.id
-
     if (!subscriptionItemId) {
       return NextResponse.json({ error: 'Subscription item not found' }, { status: 500 })
     }
 
-    // Resolve promo code to a Stripe promotion code ID if provided
     let promotionCodeId: string | undefined
     if (promoCode && typeof promoCode === 'string') {
       const promoCodes = await stripe.promotionCodes.list({
@@ -106,50 +106,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update the subscription with the new price
-    // proration_behavior: 'create_prorations' handles the billing adjustment automatically
     const updateParams: Record<string, any> = {
-      items: [
-        {
-          id: subscriptionItemId,
-          price: newPriceId,
-        },
-      ],
+      items: [{ id: subscriptionItemId, price: newPriceId }],
       proration_behavior: 'create_prorations',
-      // If subscription was set to cancel, undo that
       cancel_at_period_end: false,
-      metadata: {
-        ...subscription.metadata,
-        plan: newPlan,
-      },
+      metadata: { ...subscription.metadata, plan: newPlan, organizationId: orgId },
     }
+    if (promotionCodeId) updateParams.promotion_code = promotionCodeId
 
-    // Apply promotion code / coupon discount if provided
-    if (promotionCodeId) {
-      updateParams.promotion_code = promotionCodeId
-    }
+    const updatedSubscription = await stripe.subscriptions.update(subId, updateParams)
 
-    const updatedSubscription = await stripe.subscriptions.update(team.stripe_subscription_id, updateParams)
+    // Update organization (source of truth)
+    await admin.from('organizations').update({
+      subscription_plan: newPlan,
+      subscription_status: updatedSubscription.status,
+    }).eq('id', orgId)
 
-    // Update the database immediately
-    await supabaseAdmin
-      .from('teams')
-      .update({
-        subscription_plan: newPlan,
-        subscription_status: updatedSubscription.status,
-      })
-      .eq('id', teamId)
+    // Keep teams in sync
+    await admin.from('teams').update({
+      subscription_plan: newPlan,
+      subscription_status: updatedSubscription.status,
+    }).eq('organization_id', orgId)
 
-    return NextResponse.json({
-      success: true,
-      plan: newPlan,
-      status: updatedSubscription.status,
-    })
+    return NextResponse.json({ success: true, plan: newPlan, status: updatedSubscription.status })
   } catch (error: any) {
     console.error('Change plan error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to change plan' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message || 'Failed to change plan' }, { status: 500 })
   }
 }

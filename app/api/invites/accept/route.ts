@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
       teamName = team?.name || null
     }
 
-    // Increment Stripe seat count if the org uses Stripe billing
+    // Increment Stripe seat count (org subscription is source of truth)
     try {
       const { data: orgBilling } = await admin
         .from('organizations')
@@ -291,17 +291,8 @@ export async function POST(request: NextRequest) {
         .eq('id', invitation.organization_id)
         .single()
 
-      if (orgBilling?.billing_type !== 'enterprise' && orgBilling?.stripe_subscription_id) {
-        // Find the team's Stripe subscription
-        const { data: teamBilling } = await admin
-          .from('teams')
-          .select('stripe_subscription_id')
-          .eq('organization_id', invitation.organization_id)
-          .not('stripe_subscription_id', 'is', null)
-          .limit(1)
-          .single()
-
-        const subId = orgBilling.stripe_subscription_id || teamBilling?.stripe_subscription_id
+      if (orgBilling?.billing_type !== 'enterprise') {
+        const subId = orgBilling?.stripe_subscription_id
         if (subId) {
           try {
             const Stripe = (await import('stripe')).default
