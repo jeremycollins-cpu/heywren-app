@@ -89,6 +89,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .select('*')
           .eq('team_id', teamId)
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
+          .not('status', 'eq', 'pending_review')
           .order('created_at', { ascending: false })
           .limit(200),
         profile.slack_user_id

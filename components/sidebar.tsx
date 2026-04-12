@@ -31,6 +31,7 @@ interface BadgeCounts {
   missedChats: number
   waitingRoom: number
   openCommitments: number
+  pendingReview: number
   securityAlerts: number
 }
 
@@ -39,7 +40,7 @@ const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation',
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, securityAlerts: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
 
@@ -97,7 +98,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         if (profile?.current_team_id) {
           const teamId = profile.current_team_id
 
-          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
+          const [commitResult, pendingReviewResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
             supabase
               .from('commitments')
               .select('status, created_at')
@@ -105,6 +106,12 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
               .in('status', ['open', 'overdue'])
               .limit(500),
+            supabase
+              .from('commitments')
+              .select('id', { count: 'exact', head: true })
+              .eq('team_id', teamId)
+              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
+              .eq('status', 'pending_review'),
             supabase
               .from('drafts')
               .select('id')
@@ -149,6 +156,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           setBadges({
             overdue: overdueCount,
             urgent: urgentCount,
+            pendingReview: pendingReviewResult.count || 0,
             draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
             missedEmails: new Set((missedResult.data || []).map((e: any) => {
               const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
@@ -189,8 +197,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           if (!profile?.current_team_id) return
           const teamId = profile.current_team_id
 
-          const [commitResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
+          const [commitResult, pendingReviewResult2, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
             supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
+            supabase.from('commitments').select('id', { count: 'exact', head: true }).eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).eq('status', 'pending_review'),
             supabase.from('drafts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
             supabase.from('missed_chats').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
@@ -203,6 +212,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           setBadges({
             overdue: commitments.filter(c => c.status === 'overdue').length,
             urgent: commitments.filter(c => c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000).length,
+            pendingReview: pendingReviewResult2.count || 0,
             draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
             missedEmails: new Set((missedResult.data || []).map((e: any) => {
               const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
@@ -233,7 +243,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       label: 'Overview',
       links: [
         { href: '/', label: 'Dashboard', icon: BarChart3, tourId: 'nav-dashboard', badge: badges.overdue > 0 ? badges.overdue : 0, badgeColor: 'bg-red-500' },
-        { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments', badge: badges.openCommitments, badgeColor: 'bg-indigo-500' },
+        { href: '/commitments', label: 'Commitments', icon: CheckCircle2, tourId: 'nav-commitments', badge: badges.pendingReview > 0 ? badges.pendingReview : badges.openCommitments, badgeColor: badges.pendingReview > 0 ? 'bg-amber-500' : 'bg-indigo-500' },
         { href: '/wren-mentions', label: 'Wren Mentions', icon: AtSign, tourId: 'nav-wren-mentions', badge: 0, badgeColor: '' },
         { href: '/reminders', label: 'Reminders', icon: Bell, tourId: 'nav-reminders', badge: 0, badgeColor: '' },
         { href: '/triage', label: 'Triage', icon: SlidersHorizontal, tourId: 'nav-triage', badge: 0, badgeColor: '' },
