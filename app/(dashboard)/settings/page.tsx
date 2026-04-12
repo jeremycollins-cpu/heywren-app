@@ -145,6 +145,13 @@ export default function SettingsPage() {
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null)
   const [editingDeptName, setEditingDeptName] = useState('')
 
+  // Team management within departments
+  interface TeamItem { id: string; name: string; department_id: string; memberCount: number }
+  const [orgTeams, setOrgTeams] = useState<TeamItem[]>([])
+  const [showAddTeam, setShowAddTeam] = useState<string | null>(null)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [savingTeam, setSavingTeam] = useState(false)
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -271,6 +278,17 @@ export default function SettingsPage() {
       setDeptsLoading(false)
     }
     fetchDepartments()
+
+    const fetchTeams = async () => {
+      try {
+        const res = await fetch('/api/admin/teams')
+        if (res.ok) {
+          const data = await res.json()
+          setOrgTeams(data.teams || [])
+        }
+      } catch { /* not admin */ }
+    }
+    fetchTeams()
   }, [])
 
   const addDepartment = async () => {
@@ -325,6 +343,40 @@ export default function SettingsPage() {
         toast.success('Department deleted')
       }
     } catch { toast.error('Failed to delete department') }
+  }
+
+  const addTeam = async (departmentId: string) => {
+    if (!newTeamName.trim()) return
+    setSavingTeam(true)
+    try {
+      const res = await fetch('/api/admin/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newTeamName.trim(), departmentId }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(data.error)
+      } else {
+        setOrgTeams(prev => [...prev, data.team])
+        setNewTeamName('')
+        setShowAddTeam(null)
+        toast.success('Team created')
+      }
+    } catch { toast.error('Failed to create team') }
+    setSavingTeam(false)
+  }
+
+  const deleteTeam = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/teams?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) toast.error(data.error)
+      else {
+        setOrgTeams(prev => prev.filter(t => t.id !== id))
+        toast.success('Team deleted')
+      }
+    } catch { toast.error('Failed to delete team') }
   }
 
   const addCompanyHoliday = async () => {
@@ -1635,38 +1687,77 @@ export default function SettingsPage() {
             ) : departments.length === 0 ? (
               <p className="text-sm text-gray-400 italic">No departments yet. Add your first one above.</p>
             ) : (
-              <div className="space-y-1.5">
-                {departments.map(dept => (
-                  <div key={dept.id} className="flex items-center gap-2 group">
-                    {editingDeptId === dept.id ? (
-                      <div className="flex-1 flex gap-2">
-                        <input
-                          type="text"
-                          value={editingDeptName}
-                          onChange={e => setEditingDeptName(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') renameDepartment(dept.id); if (e.key === 'Escape') setEditingDeptId(null) }}
-                          className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                          autoFocus
-                        />
-                        <button onClick={() => renameDepartment(dept.id)} className="text-emerald-600 hover:text-emerald-700"><Check className="w-4 h-4" /></button>
-                        <button onClick={() => setEditingDeptId(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              <div className="space-y-3">
+                {departments.map(dept => {
+                  const deptTeams = orgTeams.filter(t => t.department_id === dept.id)
+                  return (
+                    <div key={dept.id} className="border border-gray-100 dark:border-gray-800 rounded-lg p-2.5">
+                      <div className="flex items-center gap-2 group">
+                        {editingDeptId === dept.id ? (
+                          <div className="flex-1 flex gap-2">
+                            <input
+                              type="text"
+                              value={editingDeptName}
+                              onChange={e => setEditingDeptName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') renameDepartment(dept.id); if (e.key === 'Escape') setEditingDeptId(null) }}
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                              autoFocus
+                            />
+                            <button onClick={() => renameDepartment(dept.id)} className="text-emerald-600 hover:text-emerald-700"><Check className="w-4 h-4" /></button>
+                            <button onClick={() => setEditingDeptId(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200">{dept.name}</span>
+                            <span className="text-[10px] text-gray-400">{dept.memberCount} member{dept.memberCount !== 1 ? 's' : ''}</span>
+                            <button onClick={() => { setEditingDeptId(dept.id); setEditingDeptName(dept.name) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition" title="Rename">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            {dept.memberCount === 0 && (
+                              <button onClick={() => deleteDepartment(dept.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
-                    ) : (
-                      <>
-                        <span className="flex-1 text-sm text-gray-800 dark:text-gray-200">{dept.name}</span>
-                        <span className="text-[10px] text-gray-400">{dept.memberCount} member{dept.memberCount !== 1 ? 's' : ''}</span>
-                        <button onClick={() => { setEditingDeptId(dept.id); setEditingDeptName(dept.name) }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 transition" title="Rename">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        {dept.memberCount === 0 && (
-                          <button onClick={() => deleteDepartment(dept.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition" title="Delete">
-                            <Trash2 className="w-3.5 h-3.5" />
+                      {/* Teams within this department */}
+                      <div className="ml-4 mt-1.5 space-y-1">
+                        {deptTeams.map(team => (
+                          <div key={team.id} className="flex items-center gap-2 group/team text-xs">
+                            <span className="text-gray-400">└</span>
+                            <span className="flex-1 text-gray-600 dark:text-gray-400">{team.name}</span>
+                            <span className="text-[10px] text-gray-400">{team.memberCount}</span>
+                            {team.memberCount === 0 && (
+                              <button onClick={() => deleteTeam(team.id)} className="opacity-0 group-hover/team:opacity-100 text-gray-400 hover:text-red-500 transition" title="Delete team">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {showAddTeam === dept.id ? (
+                          <div className="flex gap-1.5 ml-4">
+                            <input
+                              type="text"
+                              value={newTeamName}
+                              onChange={e => setNewTeamName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') addTeam(dept.id); if (e.key === 'Escape') setShowAddTeam(null) }}
+                              placeholder="Team name"
+                              className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
+                              autoFocus
+                            />
+                            <button onClick={() => addTeam(dept.id)} disabled={savingTeam} className="px-2 py-1 text-xs bg-indigo-600 text-white rounded disabled:opacity-50">Add</button>
+                            <button onClick={() => { setShowAddTeam(null); setNewTeamName('') }} className="text-gray-400"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setShowAddTeam(dept.id)} className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline ml-4">
+                            + Add team
                           </button>
                         )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
