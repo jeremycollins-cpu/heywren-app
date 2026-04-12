@@ -12,6 +12,7 @@ CREATE TABLE wren_mentions (
   source_url TEXT,
   participant_name TEXT,
   commitments_extracted INTEGER NOT NULL DEFAULT 0,
+  dismissed BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

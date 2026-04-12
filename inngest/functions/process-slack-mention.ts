@@ -392,17 +392,31 @@ export const processSlackMention = inngest.createFunction(
 
         // Build a descriptive title from the first commitment, or clean message text
         const commitmentTitles = stored.map((c: any) => c.title)
-        const cleanText = text?.replace(/<@[^>]+>/g, '').trim() || ''
+        // Resolve Slack user mentions in the text to real names
+        let resolvedText = text || ''
+        const mentionMatches = resolvedText.match(/<@([A-Z0-9]+)>/g) || []
+        for (const match of mentionMatches) {
+          const uid = match.replace(/<@|>/g, '')
+          try {
+            const info = await slackApi('users.info', { user: uid }, token)
+            const name = info.ok ? (info.user?.profile?.display_name || info.user?.profile?.real_name || info.user?.real_name || uid) : uid
+            resolvedText = resolvedText.replace(match, name)
+          } catch {
+            resolvedText = resolvedText.replace(match, uid)
+          }
+        }
+        const cleanText = resolvedText.trim()
+
         const descriptiveTitle = commitmentTitles.length > 0
           ? commitmentTitles[0]
-          : (cleanText.slice(0, 120) || `Mention in #${channelName}`)
+          : (cleanText.replace(/<@[^>]+>/g, '').trim().slice(0, 120) || `Mention in #${channelName}`)
 
         const { error: mentionError } = await supabase.from('wren_mentions').insert({
           team_id: teamId,
           user_id: mentionUserId,
           channel: 'slack',
           source_title: descriptiveTitle,
-          source_snippet: text?.slice(0, 300) || null,
+          source_snippet: cleanText.slice(0, 300) || null,
           source_url: permalink,
           source_ref: `#${channelName}`,
           participant_name: participantName,
