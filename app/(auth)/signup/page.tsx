@@ -5,8 +5,8 @@
 
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { createBrowserClient } from '@supabase/ssr'
@@ -24,8 +24,10 @@ interface DomainCheckResult {
   team?: TeamInfo
 }
 
-export default function SignupPage() {
+function SignupPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const inviteToken = searchParams.get('invite')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -117,8 +119,14 @@ export default function SignupPage() {
           // sessionStorage might not be available — that's okay
         }
 
-        toast.success('Account created! Choose your plan.')
-        router.push('/signup/plan')
+        if (inviteToken) {
+          // Invited user — skip billing, go accept the invite
+          toast.success('Account created! Accepting your invitation...')
+          router.push(`/invite/${inviteToken}`)
+        } else {
+          toast.success('Account created! Choose your plan.')
+          router.push('/signup/plan')
+        }
       }
     } catch (err) {
       toast.error('An error occurred')
@@ -290,5 +298,13 @@ export default function SignupPage() {
         <a href="https://heywren.ai/privacy" className="text-indigo-600 hover:underline">Privacy Policy</a>
       </p>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full" /></div>}>
+      <SignupPageInner />
+    </Suspense>
   )
 }

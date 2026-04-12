@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Mail, MessageSquare, Calendar, ArrowLeft,
   RotateCcw, Zap, UserX, RefreshCw, Clock, Key, Link2, Trash2,
   Globe, Database, Activity, Eye, Send, Plus, X, Copy,
-  TrendingUp, Sparkles,
+  TrendingUp, Sparkles, CreditCard,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -1555,6 +1555,27 @@ function AdminContent() {
                 >
                   <Mail className="w-3.5 h-3.5" />
                   {actionLoading === 'send_test_email' ? 'Sending...' : `Send Test to ${profile.email}`}
+                </button>
+              </div>
+
+              {/* Billing */}
+              <p className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Billing</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button
+                  onClick={() => runAction('set_billing_type', { userId: profile.id, billingType: 'enterprise' })}
+                  disabled={!!actionLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 text-emerald-700"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  Set Enterprise
+                </button>
+                <button
+                  onClick={() => runAction('set_billing_type', { userId: profile.id, billingType: 'stripe' })}
+                  disabled={!!actionLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 text-blue-700"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Set Stripe Billing
                 </button>
               </div>
 

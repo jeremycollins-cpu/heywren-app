@@ -675,6 +675,68 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Toggle enterprise billing mode for an organization
+  if (action === 'set_billing_type') {
+    const billingType = body.billingType as string
+    if (!billingType || !['stripe', 'enterprise', 'trial'].includes(billingType)) {
+      return NextResponse.json({ error: 'Invalid billing_type' }, { status: 400 })
+    }
+
+    // Find the user's organization
+    const { data: membership } = await adminDb
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .single()
+
+    if (!membership?.organization_id) {
+      return NextResponse.json({ error: 'User has no organization' }, { status: 400 })
+    }
+
+    const updates: Record<string, any> = { billing_type: billingType }
+    // Enterprise accounts get unlimited seats and active status
+    if (billingType === 'enterprise') {
+      updates.subscription_plan = 'team'
+      updates.subscription_status = 'active'
+      updates.max_users = 500
+    }
+
+    const { error } = await adminDb
+      .from('organizations')
+      .update(updates)
+      .eq('id', membership.organization_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Also update the team
+    const { data: team } = await adminDb
+      .from('teams')
+      .select('id')
+      .eq('organization_id', membership.organization_id)
+      .limit(1)
+      .single()
+
+    if (team) {
+      const teamUpdates: Record<string, any> = {}
+      if (billingType === 'enterprise') {
+        teamUpdates.subscription_plan = 'team'
+        teamUpdates.subscription_status = 'active'
+        teamUpdates.max_users = 500
+      }
+      if (Object.keys(teamUpdates).length > 0) {
+        await adminDb.from('teams').update(teamUpdates).eq('id', team.id)
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Billing type set to ${billingType}${billingType === 'enterprise' ? ' — plan upgraded to team, 500 seat limit' : ''}`,
+    })
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 

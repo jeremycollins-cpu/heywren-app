@@ -131,6 +131,8 @@ export default function TeamManagementPage() {
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set())
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<string>('member')
+  const [inviteSending, setInviteSending] = useState(false)
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [anomalySummary, setAnomalySummary] = useState<AnomalySummary | null>(null)
   const [showAnomalies, setShowAnomalies] = useState(true)
@@ -335,31 +337,60 @@ export default function TeamManagementPage() {
       {/* ── Invite Form ─────────────────────────────────────────────────── */}
       {showInvite && (
         <div className="bg-white dark:bg-surface-dark-secondary border border-indigo-200 dark:border-indigo-800/50 rounded-xl p-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <Mail className="w-5 h-5 text-indigo-500 flex-shrink-0 hidden sm:block" />
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={e => setInviteEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              className="flex-1 px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  if (inviteEmail) {
-                    toast.success(`Invitation sent to ${inviteEmail}`)
-                    setInviteEmail('')
-                    setShowInvite(false)
-                  }
-                }}
-                className="flex-1 sm:flex-initial px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 transition"
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <Mail className="w-5 h-5 text-indigo-500 flex-shrink-0 hidden sm:block" />
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                className="flex-1 px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
+              />
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                className="px-3 py-2 border border-gray-200 dark:border-border-dark rounded-lg text-sm bg-white dark:bg-surface-dark"
               >
-                Send
-              </button>
-              <button onClick={() => setShowInvite(false)} className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 transition">
-                Cancel
-              </button>
+                <option value="member">Member</option>
+                <option value="team_lead">Team Lead</option>
+                {callerRole === 'org_admin' && <option value="dept_manager">Dept Manager</option>}
+                {callerRole === 'org_admin' && <option value="org_admin">Org Admin</option>}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  disabled={inviteSending || !inviteEmail.trim()}
+                  onClick={async () => {
+                    if (!inviteEmail.trim()) return
+                    setInviteSending(true)
+                    try {
+                      const res = await fetch('/api/invites', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+                      })
+                      const data = await res.json()
+                      if (res.ok) {
+                        toast.success(`Invitation sent to ${inviteEmail}`)
+                        setInviteEmail('')
+                        setInviteRole('member')
+                        setShowInvite(false)
+                      } else {
+                        toast.error(data.error || 'Failed to send invite')
+                      }
+                    } catch {
+                      toast.error('Failed to send invite')
+                    }
+                    setInviteSending(false)
+                  }}
+                  className="flex-1 sm:flex-initial px-4 py-2 text-sm font-medium text-white rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition"
+                >
+                  {inviteSending ? 'Sending...' : 'Send Invite'}
+                </button>
+                <button onClick={() => setShowInvite(false)} className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 transition">
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

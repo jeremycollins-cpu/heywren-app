@@ -262,6 +262,48 @@ export async function POST(request: NextRequest) {
       teamName = team?.name || null
     }
 
+    // Increment Stripe seat count if the org uses Stripe billing
+    try {
+      const { data: orgBilling } = await admin
+        .from('organizations')
+        .select('billing_type, stripe_subscription_id')
+        .eq('id', invitation.organization_id)
+        .single()
+
+      if (orgBilling?.billing_type !== 'enterprise' && orgBilling?.stripe_subscription_id) {
+        // Find the team's Stripe subscription
+        const { data: teamBilling } = await admin
+          .from('teams')
+          .select('stripe_subscription_id')
+          .eq('organization_id', invitation.organization_id)
+          .not('stripe_subscription_id', 'is', null)
+          .limit(1)
+          .single()
+
+        const subId = orgBilling.stripe_subscription_id || teamBilling?.stripe_subscription_id
+        if (subId) {
+          try {
+            const Stripe = (await import('stripe')).default
+            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' as any })
+            const subscription = await stripe.subscriptions.retrieve(subId)
+            if (subscription.items.data[0]) {
+              await stripe.subscriptions.update(subId, {
+                items: [{
+                  id: subscription.items.data[0].id,
+                  quantity: (subscription.items.data[0].quantity || 1) + 1,
+                }],
+                proration_behavior: 'create_prorations',
+              })
+            }
+          } catch (stripeErr) {
+            console.error('[invites/accept] Stripe seat increment failed (non-fatal):', stripeErr)
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — billing update can be reconciled later
+    }
+
     return NextResponse.json({
       success: true,
       organization_id: invitation.organization_id,
