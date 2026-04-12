@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureTeamForUser } from '@/lib/team/ensure-team'
 
 // Use service role to bypass RLS — this is a server-only route
 function getAdminClient() {
@@ -50,37 +51,42 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Create team
-    const teamName = companyName || 'My Team'
-    const { data: newTeam, error: teamError } = await supabaseAdmin
-      .from('teams')
-      .insert([{
-        name: teamName,
-        slug: `team-${Date.now()}`,
-      }])
-      .select()
-      .single()
-
-    if (teamError || !newTeam) {
-      console.error('Team creation error:', teamError)
+    // Create full org hierarchy (org → dept → team) using shared utility
+    let teamResult
+    try {
+      teamResult = await ensureTeamForUser(resolvedUserId, {
+        companyName: companyName || 'My Team',
+      })
+    } catch (err: any) {
+      console.error('Team creation error:', err)
       return NextResponse.json({ error: 'Failed to create team' }, { status: 500 })
     }
 
-    // Add user as owner
-    const { error: memberError } = await supabaseAdmin
-      .from('team_members')
-      .insert([{
-        team_id: newTeam.id,
-        user_id: resolvedUserId,
-        role: 'owner',
-      }])
+    const newTeamId = teamResult.teamId
 
-    if (memberError) {
-      console.error('Member creation error:', memberError)
-      return NextResponse.json({ error: 'Failed to add user to team' }, { status: 500 })
+    // Update org with Stripe billing info
+    if (teamResult.organizationId) {
+      const orgBilling: Record<string, any> = {}
+      const sub = typeof checkoutSession.subscription === 'object' ? checkoutSession.subscription : null
+      if (checkoutSession.customer) {
+        const custId = typeof checkoutSession.customer === 'string' ? checkoutSession.customer : checkoutSession.customer?.id
+        if (custId) orgBilling.stripe_customer_id = custId
+      }
+      if (checkoutSession.subscription) {
+        const subId = typeof checkoutSession.subscription === 'string' ? checkoutSession.subscription : (checkoutSession.subscription as any)?.id
+        if (subId) orgBilling.stripe_subscription_id = subId
+      }
+      orgBilling.subscription_plan = resolvedPlan
+      orgBilling.subscription_status = 'trialing'
+      if (sub?.trial_end) {
+        orgBilling.trial_ends_at = new Date((sub as any).trial_end * 1000).toISOString()
+      }
+      await supabaseAdmin.from('organizations').update(orgBilling).eq('id', teamResult.organizationId)
+      // Keep team in sync
+      await supabaseAdmin.from('teams').update(orgBilling).eq('id', newTeamId)
     }
 
-    // Upsert profile — handles both existing and new profiles
+    // Upsert profile
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
@@ -88,7 +94,8 @@ export async function POST(request: NextRequest) {
         email: email || '',
         display_name: companyName ? `${companyName} Admin` : 'User',
         role: 'super_admin',
-        current_team_id: newTeam.id,
+        current_team_id: newTeamId,
+        organization_id: teamResult.organizationId,
       }, { onConflict: 'id' })
 
     if (profileError) {
@@ -98,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      teamId: newTeam.id,
+      teamId: newTeamId,
     })
   } catch (error: any) {
     console.error('Setup account error:', error)

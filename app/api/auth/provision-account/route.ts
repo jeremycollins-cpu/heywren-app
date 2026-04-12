@@ -116,16 +116,23 @@ export async function POST(request: NextRequest) {
           updateFields.trial_ends_at = new Date(sub.trial_end * 1000).toISOString()
         }
 
-        await supabaseAdmin
+        // Update organization (source of truth)
+        const { data: existingTeam } = await supabaseAdmin
           .from('teams')
-          .update(updateFields)
+          .select('organization_id')
           .eq('id', existingProfile.current_team_id)
+          .single()
+        if (existingTeam?.organization_id) {
+          await supabaseAdmin.from('organizations').update(updateFields).eq('id', existingTeam.organization_id)
+        }
+        // Keep team in sync
+        await supabaseAdmin.from('teams').update(updateFields).eq('id', existingProfile.current_team_id)
 
-        // Also update Stripe metadata with real team ID
+        const existingOrgId = existingTeam?.organization_id || existingProfile.current_team_id
         if (subscriptionId) {
           try {
             await stripeClient.subscriptions.update(subscriptionId, {
-              metadata: { userId, teamId: existingProfile.current_team_id, plan },
+              metadata: { userId, teamId: existingProfile.current_team_id, organizationId: existingOrgId, plan },
             })
           } catch {}
         }
@@ -157,8 +164,7 @@ export async function POST(request: NextRequest) {
     const teamId = teamResult.teamId
     const flow: 'joined' | 'created' = teamResult.flow === 'created' ? 'created' : 'joined'
 
-    // ─── 6b. SET STRIPE BILLING FIELDS ON TEAM ─────────────────────────
-    // The shared utility doesn't know about Stripe, so we update billing fields here
+    // ─── 6b. SET STRIPE BILLING FIELDS ON ORGANIZATION (source of truth) ──
     if (customerId || subscriptionId) {
       const stripeFields: Record<string, any> = {}
       if (customerId) stripeFields.stripe_customer_id = customerId
@@ -173,6 +179,13 @@ export async function POST(request: NextRequest) {
         stripeFields.trial_ends_at = new Date(sub.trial_end * 1000).toISOString()
       }
 
+      // Update organization (source of truth for billing)
+      await supabaseAdmin
+        .from('organizations')
+        .update(stripeFields)
+        .eq('id', teamResult.organizationId)
+
+      // Keep team in sync (backward compat)
       await supabaseAdmin
         .from('teams')
         .update(stripeFields)
@@ -208,11 +221,12 @@ export async function POST(request: NextRequest) {
         .eq('id', userId)
     }
 
-    // ─── 8. UPDATE STRIPE METADATA WITH REAL TEAM ID ────────────────────
+    // ─── 8. UPDATE STRIPE METADATA WITH ORG + TEAM ID ─────────────────
+    const orgId = teamResult.organizationId
     if (subscriptionId) {
       try {
         await stripeClient.subscriptions.update(subscriptionId, {
-          metadata: { userId, teamId, plan },
+          metadata: { userId, teamId, organizationId: orgId, plan },
         })
       } catch (err) {
         console.error('Stripe subscription metadata update failed (non-critical):', err)
@@ -222,7 +236,7 @@ export async function POST(request: NextRequest) {
     if (customerId) {
       try {
         await stripeClient.customers.update(customerId, {
-          metadata: { userId, teamId, plan },
+          metadata: { userId, teamId, organizationId: orgId, plan },
         })
       } catch (err) {
         console.error('Stripe customer metadata update failed (non-critical):', err)
