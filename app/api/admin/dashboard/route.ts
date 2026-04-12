@@ -128,7 +128,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Resolve team ID with fallbacks (same as themes API)
+    // Resolve org ID and team ID with fallbacks
+    const userOrgId = resolvedProfile.organization_id || null
     let userTeamId = resolvedProfile.current_team_id
     if (!userTeamId) {
       const { data: membership } = await adminDb.from('team_members').select('team_id').eq('user_id', userId).limit(1).single()
@@ -149,7 +150,11 @@ export async function GET(request: NextRequest) {
       teamIntegrations,
     ] = await Promise.all([
       adminDb.from('integrations').select('id, provider, updated_at').eq('user_id', userId),
-      userTeamId ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`) : Promise.resolve({ data: [] }),
+      userOrgId
+        ? adminDb.from('commitments').select('id, status, source, created_at').eq('organization_id', userOrgId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+        : userTeamId
+          ? adminDb.from('commitments').select('id, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+          : Promise.resolve({ data: [] }),
       // Outlook messages scoped to user (only user_id match — accurate ownership)
       userTeamId
         ? adminDb.from('outlook_messages').select('id, processed, commitments_found, user_id').eq('team_id', userTeamId).eq('user_id', userId)
@@ -161,7 +166,11 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).or(`user_id.eq.${userId}${userEmail ? `,organizer_email.eq.${userEmail}` : ''}`) : Promise.resolve({ count: 0 }),
       userTeamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
       // Recent activity for support debugging
-      userTeamId ? adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+      userOrgId
+        ? adminDb.from('commitments').select('title, status, source, created_at').eq('organization_id', userOrgId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10)
+        : userTeamId
+          ? adminDb.from('commitments').select('title, status, source, created_at').eq('team_id', userTeamId).or(`creator_id.eq.${userId},assignee_id.eq.${userId}`).order('created_at', { ascending: false }).limit(10)
+          : Promise.resolve({ data: [] }),
       userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Recent emails scoped to user (by user_id or email match)
       userTeamId && userEmail
@@ -564,11 +573,19 @@ export async function GET(request: NextRequest) {
           .from('integrations')
           .select('provider')
           .eq('user_id', userId),
-        adminDb
-          .from('commitments')
-          .select('id', { count: 'exact', head: true })
-          .eq('team_id', teamId)
-          .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`),
+        organizationId
+          ? adminDb
+              .from('commitments')
+              .select('id', { count: 'exact', head: true })
+              .eq('organization_id', organizationId)
+              .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+          : teamId
+            ? adminDb
+                .from('commitments')
+                .select('id', { count: 'exact', head: true })
+                .eq('team_id', teamId)
+                .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+            : Promise.resolve({ count: 0 }),
       ])
 
       // If profile has no name, try to get it from auth user metadata
