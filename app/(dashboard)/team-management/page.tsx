@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, Building2, Layers,
   ChevronDown, ChevronRight, Star, Eye,
   Ghost, Moon, Clock, TrendingDown, AlertCircle,
-  X,
+  X, Upload, Download, UserMinus, HelpCircle, Send, XCircle, Loader2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import UpgradeGate from '@/components/upgrade-gate'
@@ -133,6 +133,17 @@ export default function TeamManagementPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('member')
   const [inviteSending, setInviteSending] = useState(false)
+  // Pending invites
+  interface PendingInvite { id: string; email: string; role: string; status: string; created_at: string; expires_at: string }
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([])
+  const [showPendingInvites, setShowPendingInvites] = useState(false)
+  // Bulk invite
+  const [showBulkInvite, setShowBulkInvite] = useState(false)
+  const [bulkCsvText, setBulkCsvText] = useState('')
+  const [bulkSending, setBulkSending] = useState(false)
+  const [bulkResults, setBulkResults] = useState<any>(null)
+  // Remove member
+  const [removingMember, setRemovingMember] = useState<string | null>(null)
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [anomalySummary, setAnomalySummary] = useState<AnomalySummary | null>(null)
   const [showAnomalies, setShowAnomalies] = useState(true)
@@ -278,6 +289,101 @@ export default function TeamManagementPage() {
 
   if (loading) return <LoadingSkeleton variant="dashboard" />
 
+  // Fetch pending invites
+  const loadPendingInvites = async () => {
+    try {
+      const res = await fetch('/api/invites')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingInvites(data.invitations || [])
+      }
+    } catch { /* silent */ }
+  }
+
+  // Remove member
+  const removeMember = async (userId: string, name: string) => {
+    if (!confirm(`Remove ${name} from the organization? Their billing will stop going forward (no refund).`)) return
+    setRemovingMember(userId)
+    try {
+      const res = await fetch('/api/remove-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(`${name} removed from organization`)
+        setMembers(prev => prev.filter(m => m.user_id !== userId))
+        if (selectedMember?.user_id === userId) setSelectedMember(null)
+      } else {
+        toast.error(data.error || 'Failed to remove member')
+      }
+    } catch { toast.error('Failed to remove member') }
+    setRemovingMember(null)
+  }
+
+  // Revoke invite
+  const revokeInvite = async (id: string) => {
+    try {
+      const res = await fetch(`/api/invites?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setPendingInvites(prev => prev.filter(i => i.id !== id))
+        toast.success('Invite revoked')
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to revoke')
+      }
+    } catch { toast.error('Failed to revoke invite') }
+  }
+
+  // Bulk invite
+  const handleBulkInvite = async () => {
+    if (!bulkCsvText.trim()) return
+    setBulkSending(true)
+    setBulkResults(null)
+    try {
+      const lines = bulkCsvText.trim().split('\n').filter(l => l.trim() && !l.trim().toLowerCase().startsWith('email'))
+      const invites = lines.map(line => {
+        const parts = line.split(',').map(p => p.trim())
+        return { email: parts[0], role: parts[1] || 'member', department: parts[2] || '' }
+      })
+      const res = await fetch('/api/invites/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invites }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setBulkResults(data)
+        if (data.summary.sent > 0) {
+          toast.success(`${data.summary.sent} invite${data.summary.sent !== 1 ? 's' : ''} sent`)
+          loadPendingInvites()
+        }
+      } else {
+        toast.error(data.error || 'Bulk invite failed')
+      }
+    } catch { toast.error('Bulk invite failed') }
+    setBulkSending(false)
+  }
+
+  const downloadTemplate = () => {
+    const csv = 'email,role,department\njohn@company.com,member,Engineering\njane@company.com,team_lead,Sales\n'
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'heywren-invite-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const ROLE_DESCRIPTIONS: Record<string, string> = {
+    org_admin: 'Full access: manage members, departments, billing, and all settings',
+    dept_manager: 'Manage members in their department, view department reports and team health',
+    team_lead: 'View team reports and manage members within their team',
+    member: 'Standard access: track own commitments, view personal dashboards',
+  }
+
   const hasDeptView = departments.length > 0 && callerRole !== 'member'
   const isManager = callerRole !== 'member'
   const headerTitle = organization?.name || 'Your Team'
@@ -393,6 +499,129 @@ export default function TeamManagementPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Admin Actions Bar ────────────────────────────────────────────── */}
+      {callerRole === 'org_admin' && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => { setShowBulkInvite(!showBulkInvite); setBulkResults(null) }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Bulk Invite
+          </button>
+          <button
+            onClick={() => { setShowPendingInvites(!showPendingInvites); if (!showPendingInvites) loadPendingInvites() }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+          >
+            <Clock className="w-3.5 h-3.5" />
+            Pending Invites {pendingInvites.length > 0 && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold">{pendingInvites.length}</span>}
+          </button>
+          <div className="ml-auto relative group">
+            <button className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 transition">
+              <HelpCircle className="w-3.5 h-3.5" />
+              Role Permissions
+            </button>
+            <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 p-3">
+              <p className="text-[10px] text-gray-400 uppercase font-bold mb-2">What each role can do</p>
+              {Object.entries(ROLE_DESCRIPTIONS).map(([role, desc]) => (
+                <div key={role} className="mb-2 last:mb-0">
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 capitalize">{role.replace(/_/g, ' ')}</span>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Invite ───────────────────────────────────────────────────── */}
+      {showBulkInvite && callerRole === 'org_admin' && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Bulk Invite from CSV</h3>
+            <button onClick={downloadTemplate} className="flex items-center gap-1 text-xs text-indigo-600 hover:underline">
+              <Download className="w-3 h-3" />
+              Download Template
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">Paste CSV data below. Format: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">email,role,department</code> (role and department are optional)</p>
+          <textarea
+            value={bulkCsvText}
+            onChange={e => setBulkCsvText(e.target.value)}
+            placeholder="john@company.com,member,Engineering&#10;jane@company.com,team_lead,Sales&#10;bob@company.com"
+            rows={6}
+            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 font-mono resize-none"
+          />
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={handleBulkInvite}
+              disabled={bulkSending || !bulkCsvText.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {bulkSending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...</> : <><Send className="w-3.5 h-3.5" /> Send Invites</>}
+            </button>
+            <button onClick={() => setShowBulkInvite(false)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+          </div>
+          {bulkResults && (
+            <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                {bulkResults.summary.sent} sent, {bulkResults.summary.skipped} skipped, {bulkResults.summary.errors} errors
+              </p>
+              {bulkResults.results.filter((r: any) => r.status !== 'sent').length > 0 && (
+                <div className="space-y-1 mt-2 max-h-32 overflow-y-auto">
+                  {bulkResults.results.filter((r: any) => r.status !== 'sent').map((r: any, i: number) => (
+                    <p key={i} className={`text-[11px] ${r.status === 'error' ? 'text-red-600' : 'text-gray-500'}`}>
+                      {r.email}: {r.reason}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Pending Invites ───────────────────────────────────────────────── */}
+      {showPendingInvites && callerRole === 'org_admin' && (
+        <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Pending Invitations</h3>
+          {pendingInvites.length === 0 ? (
+            <p className="text-sm text-gray-400 italic">No pending invites</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingInvites.map(invite => {
+                const daysLeft = Math.max(0, Math.ceil((new Date(invite.expires_at).getTime() - Date.now()) / 86400000))
+                return (
+                  <div key={invite.id} className="flex items-center gap-3 py-2 border-b last:border-0 border-gray-100 dark:border-gray-800">
+                    <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{invite.email}</p>
+                      <p className="text-[10px] text-gray-400">
+                        <span className="capitalize">{invite.role.replace(/_/g, ' ')}</span>
+                        {' · '}
+                        {daysLeft > 0 ? `Expires in ${daysLeft}d` : 'Expired'}
+                      </p>
+                    </div>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                      invite.status === 'pending' && daysLeft > 0 ? 'bg-amber-100 text-amber-700' :
+                      invite.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-500'
+                    }`}>
+                      {invite.status === 'pending' && daysLeft === 0 ? 'expired' : invite.status}
+                    </span>
+                    {invite.status === 'pending' && (
+                      <button onClick={() => revokeInvite(invite.id)} className="text-gray-400 hover:text-red-500 transition" title="Revoke">
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -529,6 +758,8 @@ export default function TeamManagementPage() {
                                 member={member}
                                 anomalyCount={memberAnomalyCount.get(member.user_id) || 0}
                                 onSelect={() => setSelectedMember(member)}
+                                onRemove={callerRole === 'org_admin' ? removeMember : undefined}
+                                canRemove={callerRole === 'org_admin'}
                               />
                             ))}
                           </div>
@@ -558,6 +789,8 @@ export default function TeamManagementPage() {
                   member={member}
                   anomalyCount={memberAnomalyCount.get(member.user_id) || 0}
                   onSelect={() => setSelectedMember(member)}
+                  onRemove={callerRole === 'org_admin' ? removeMember : undefined}
+                  canRemove={callerRole === 'org_admin'}
                 />
               ))
             )}
@@ -665,10 +898,12 @@ function AnomalyRow({ anomaly, onDismiss }: { anomaly: Anomaly; onDismiss: (a: A
   )
 }
 
-function MemberRow({ member, anomalyCount, onSelect }: {
+function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
   member: OrgMember
   anomalyCount: number
   onSelect: () => void
+  onRemove?: (userId: string, name: string) => void
+  canRemove?: boolean
 }) {
   const roleConfig = ROLE_CONFIG[member.role] || ROLE_CONFIG.member
   const RoleIcon = roleConfig.icon
@@ -679,7 +914,7 @@ function MemberRow({ member, anomalyCount, onSelect }: {
   return (
     <button
       onClick={onSelect}
-      className="w-full bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-3 sm:p-4 hover:shadow-sm hover:border-indigo-200 dark:hover:border-indigo-800/50 transition text-left"
+      className="w-full group bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-3 sm:p-4 hover:shadow-sm hover:border-indigo-200 dark:hover:border-indigo-800/50 transition text-left"
     >
       <div className="flex items-center gap-3">
         {/* Avatar */}
@@ -738,8 +973,19 @@ function MemberRow({ member, anomalyCount, onSelect }: {
           )}
         </div>
 
-        {/* Chevron hint */}
-        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0 hidden sm:block" />
+        {/* Actions */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {canRemove && onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(member.user_id, member.full_name) }}
+              className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+              title="Remove from org"
+            >
+              <UserMinus className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 hidden sm:block" />
+        </div>
       </div>
     </button>
   )
