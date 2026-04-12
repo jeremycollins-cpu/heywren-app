@@ -112,6 +112,10 @@ export default function DashboardLayout({
               return
             }
           }
+          // User has a team (likely from invite) but no integrations yet
+          // Skip profile/company setup, go straight to integrations
+          router.replace('/onboarding/integrations')
+          return
         }
         router.replace('/onboarding/profile')
         return
