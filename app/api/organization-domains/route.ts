@@ -2,6 +2,14 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 // GET — fetch allowed domains for the user's organization
 export async function GET() {
@@ -21,7 +29,8 @@ export async function GET() {
     return NextResponse.json({ domains: [], organizationId: null })
   }
 
-  const { data: org } = await supabase
+  const admin = getAdminClient()
+  const { data: org } = await admin
     .from('organizations')
     .select('domain, allowed_domains')
     .eq('id', membership.organization_id)
@@ -73,9 +82,10 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Only org admins can update domains' }, { status: 403 })
   }
 
-  // Update: set primary domain to first entry, allowed_domains to all
+  // Update using admin client to bypass RLS (auth already verified above)
+  const admin = getAdminClient()
   const primaryDomain = cleanDomains[0] || null
-  const { error } = await supabase
+  const { error } = await admin
     .from('organizations')
     .update({
       domain: primaryDomain,
