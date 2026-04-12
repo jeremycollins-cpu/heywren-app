@@ -32,18 +32,21 @@ export async function GET() {
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('current_team_id')
+      .select('current_team_id, organization_id')
       .eq('id', callerId)
       .single()
 
-    if (!profile?.current_team_id) {
+    if (!profile?.current_team_id && !profile?.organization_id) {
       return NextResponse.json({ groups: [], total: 0 })
     }
+
+    const scopeField = profile.organization_id ? 'organization_id' : 'team_id'
+    const scopeValue = profile.organization_id || profile.current_team_id
 
     const { data: pending, error } = await admin
       .from('commitments')
       .select('id, title, description, source, source_ref, source_url, category, metadata, created_at')
-      .eq('team_id', profile.current_team_id)
+      .eq(scopeField, scopeValue)
       .or(`creator_id.eq.${callerId},assignee_id.eq.${callerId}`)
       .eq('status', 'pending_review')
       .order('created_at', { ascending: false })

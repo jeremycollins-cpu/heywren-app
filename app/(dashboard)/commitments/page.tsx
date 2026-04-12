@@ -166,14 +166,15 @@ export default function CommitmentsPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('current_team_id, display_name')
+        .select('current_team_id, organization_id, display_name')
         .eq('id', userData.user.id)
         .single()
 
       let teamId = profile?.current_team_id || null
+      const orgId = profile?.organization_id || null
 
       // Fallback: get team from team_members
-      if (!teamId) {
+      if (!teamId && !orgId) {
         const { data: membership } = await supabase
           .from('team_members')
           .select('team_id')
@@ -183,17 +184,20 @@ export default function CommitmentsPage() {
         teamId = membership?.team_id || null
       }
 
-      if (!teamId) { setLoading(false); setRefreshing(false); return }
+      if (!teamId && !orgId) { setLoading(false); setRefreshing(false); return }
 
       // Store user's name for personal relevance matching
       const name = profile?.display_name || userData.user.email?.split('@')[0] || ''
       setUserName(name)
 
       // Fetch commitments where user is creator OR assignee
+      // Scope by organization_id (covers all teams) with team_id fallback
+      const scopeField = orgId ? 'organization_id' : 'team_id'
+      const scopeValue = orgId || teamId
       const { data } = await supabase
         .from('commitments')
         .select('*')
-        .eq('team_id', teamId)
+        .eq(scopeField, scopeValue!)
         .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
         .not('status', 'eq', 'pending_review')
         .order('created_at', { ascending: false })

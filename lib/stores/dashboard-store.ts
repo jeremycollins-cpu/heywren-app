@@ -71,23 +71,29 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('current_team_id, slack_user_id')
+        .select('current_team_id, organization_id, slack_user_id')
         .eq('id', userData.user.id)
         .single()
 
       if (profileError) throw profileError
 
       const teamId = profile?.current_team_id
-      if (!teamId) {
+      const orgId = profile?.organization_id
+      if (!teamId && !orgId) {
         set({ loading: false })
         return
       }
+
+      // Use organization_id for data scoping (covers all teams in the org)
+      // Fall back to team_id for backward compat if org_id not set
+      const scopeField = orgId ? 'organization_id' : 'team_id'
+      const scopeValue = orgId || teamId
 
       const [commitResult, mentionResult, intStatusRes] = await Promise.all([
         supabase
           .from('commitments')
           .select('*')
-          .eq('team_id', teamId)
+          .eq(scopeField, scopeValue)
           .or(`creator_id.eq.${userData.user.id},assignee_id.eq.${userData.user.id}`)
           .not('status', 'eq', 'pending_review')
           .order('created_at', { ascending: false })
@@ -96,7 +102,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           ? supabase
               .from('slack_messages')
               .select('*')
-              .eq('team_id', teamId)
+              .eq('team_id', teamId || '')
               .eq('user_id', profile.slack_user_id)
               .order('created_at', { ascending: false })
               .limit(10)
