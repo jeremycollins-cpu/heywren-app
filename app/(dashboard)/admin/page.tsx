@@ -235,7 +235,8 @@ function AdminContent() {
     setSelectedTeam(teamId)
     setView('team')
     try {
-      const res = await fetch(`/api/admin/dashboard?view=team&teamId=${teamId}`)
+      // Pass as organizationId since overview now returns org IDs
+      const res = await fetch(`/api/admin/dashboard?view=team&organizationId=${teamId}`)
       if (res.ok) {
         const data = await res.json()
         setTeamMembers(data.members || [])

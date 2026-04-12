@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
   const view = searchParams.get('view') || 'overview'
   const userId = searchParams.get('userId')
   const teamId = searchParams.get('teamId')
+  const organizationId = searchParams.get('organizationId')
 
   // Overview: all organizations (companies) with health metrics
   if (view === 'overview') {
@@ -488,42 +489,66 @@ export async function GET(request: NextRequest) {
 
   // Team detail: all users in a team with their status
   // Check ALL membership sources: team_members, organization_members, and profiles.current_team_id
-  if (view === 'team' && teamId) {
+  if (view === 'team' && (teamId || organizationId)) {
     const userIdSet = new Set<string>()
     const roleMap = new Map<string, string>()
     const joinedMap = new Map<string, string>()
 
-    // Source 1: team_members (legacy)
-    const { data: teamMembers } = await adminDb
-      .from('team_members')
-      .select('user_id, role, created_at')
-      .eq('team_id', teamId)
-    for (const m of teamMembers || []) {
-      userIdSet.add(m.user_id)
-      roleMap.set(m.user_id, m.role)
-      joinedMap.set(m.user_id, m.created_at)
-    }
+    // If organizationId provided, query by organization (covers all teams)
+    if (organizationId) {
+      const { data: orgMembers } = await adminDb
+        .from('organization_members')
+        .select('user_id, role, created_at')
+        .eq('organization_id', organizationId)
+      for (const m of orgMembers || []) {
+        userIdSet.add(m.user_id)
+        roleMap.set(m.user_id, m.role)
+        joinedMap.set(m.user_id, m.created_at)
+      }
 
-    // Source 2: organization_members
-    const { data: orgMembers } = await adminDb
-      .from('organization_members')
-      .select('user_id, role, created_at')
-      .eq('team_id', teamId)
-    for (const m of orgMembers || []) {
-      userIdSet.add(m.user_id)
-      if (!roleMap.has(m.user_id)) roleMap.set(m.user_id, m.role)
-      if (!joinedMap.has(m.user_id)) joinedMap.set(m.user_id, m.created_at)
-    }
+      // Also check profiles with this org
+      const { data: profileMembers } = await adminDb
+        .from('profiles')
+        .select('id, created_at')
+        .eq('organization_id', organizationId)
+      for (const p of profileMembers || []) {
+        if (!userIdSet.has(p.id)) {
+          userIdSet.add(p.id)
+          roleMap.set(p.id, 'member')
+          joinedMap.set(p.id, p.created_at)
+        }
+      }
+    } else if (teamId) {
+      // Legacy: query by team_id
+      const { data: teamMembers } = await adminDb
+        .from('team_members')
+        .select('user_id, role, created_at')
+        .eq('team_id', teamId)
+      for (const m of teamMembers || []) {
+        userIdSet.add(m.user_id)
+        roleMap.set(m.user_id, m.role)
+        joinedMap.set(m.user_id, m.created_at)
+      }
 
-    // Source 3: profiles with current_team_id
-    const { data: profileMembers } = await adminDb
-      .from('profiles')
-      .select('id, created_at')
-      .eq('current_team_id', teamId)
-    for (const p of profileMembers || []) {
-      userIdSet.add(p.id)
-      if (!roleMap.has(p.id)) roleMap.set(p.id, 'member')
-      if (!joinedMap.has(p.id)) joinedMap.set(p.id, p.created_at)
+      const { data: orgMembers } = await adminDb
+        .from('organization_members')
+        .select('user_id, role, created_at')
+        .eq('team_id', teamId)
+      for (const m of orgMembers || []) {
+        userIdSet.add(m.user_id)
+        if (!roleMap.has(m.user_id)) roleMap.set(m.user_id, m.role)
+        if (!joinedMap.has(m.user_id)) joinedMap.set(m.user_id, m.created_at)
+      }
+
+      const { data: profileMembers } = await adminDb
+        .from('profiles')
+        .select('id, created_at')
+        .eq('current_team_id', teamId)
+      for (const p of profileMembers || []) {
+        userIdSet.add(p.id)
+        if (!roleMap.has(p.id)) roleMap.set(p.id, 'member')
+        if (!joinedMap.has(p.id)) joinedMap.set(p.id, p.created_at)
+      }
     }
 
     const userIds = Array.from(userIdSet)
