@@ -17,8 +17,9 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Find user's organization
-  const { data: membership } = await supabase
+  // Find user's organization (use admin client to bypass RLS)
+  const adminGet = getAdminClient()
+  const { data: membership } = await adminGet
     .from('organization_members')
     .select('organization_id, role')
     .eq('user_id', user.id)
@@ -67,8 +68,9 @@ export async function PUT(req: Request) {
     .map(d => d.trim().toLowerCase().replace(/^@/, ''))
     .filter(d => d && d.includes('.'))
 
-  // Find user's organization and check admin role
-  const { data: membership } = await supabase
+  // Find user's organization and check admin role (admin client bypasses RLS)
+  const adminPut = getAdminClient()
+  const { data: membership } = await adminPut
     .from('organization_members')
     .select('organization_id, role')
     .eq('user_id', user.id)
