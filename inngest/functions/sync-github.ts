@@ -4,7 +4,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectAiSignature, mergeAiSignatures } from '@/lib/github/ai-signature'
+import { detectAiSignature, detectAiSignatureFromBranch, mergeAiSignatures } from '@/lib/github/ai-signature'
 
 const GITHUB_API = 'https://api.github.com'
 const MAX_PAGES = 10
@@ -14,10 +14,11 @@ const INITIAL_SYNC_DAYS = 90
 // Safety cap on per-PR stat hydration calls per sync run.
 // Protects against runaway rate-limit usage for unusually active users.
 const MAX_PR_HYDRATIONS = 100
-// Budget for backfilling line stats on historical PR events that were
-// synced before stat hydration shipped (or were missed). Each daily sync
-// chips away at the backlog until it's drained.
-const MAX_PR_BACKFILLS = 50
+// Budget for backfilling stats + AI signatures on historical PR events
+// that were synced before detection shipped. Each daily sync chips away at
+// the backlog until it's drained. 200 × ~200ms/call = ~40s per sync, well
+// inside both Inngest step timeouts and GitHub's 5000/hr rate limit.
+const MAX_PR_BACKFILLS = 200
 
 function getAdminClient() {
   return createClient(
@@ -199,12 +200,20 @@ export const syncGithubEvents = inngest.createFunction(
         return events
       })
 
-      // ── 2b. Hydrate line-count stats for each unique PR ──
-      // The search API doesn't return additions/deletions/changed_files, so we
-      // fetch the PR detail endpoint once per PR and apply the numbers to all
-      // of its lifecycle events (opened + merged). One API call per PR.
+      // ── 2b. Hydrate line-count stats + branch-based AI signal ──
+      // The search API doesn't return additions/deletions/changed_files or
+      // head.ref, so we fetch the PR detail endpoint once per PR and apply
+      // the numbers + branch-based AI signature upgrade to all lifecycle
+      // events (opened + merged). One API call per PR.
       await step.run('hydrate-pr-stats', async () => {
-        const statsByKey = new Map<string, { additions: number; deletions: number; changed_files: number }>()
+        type Hydrated = {
+          additions: number
+          deletions: number
+          changed_files: number
+          head_ref: string | null
+          branchSig: ReturnType<typeof detectAiSignatureFromBranch>
+        }
+        const detailsByKey = new Map<string, Hydrated>()
         const seen = new Set<string>()
 
         for (const ev of prsAuthored) {
@@ -214,37 +223,46 @@ export const syncGithubEvents = inngest.createFunction(
           if (seen.has(key)) continue
           seen.add(key)
 
-          if (statsByKey.size >= MAX_PR_HYDRATIONS) break
+          if (detailsByKey.size >= MAX_PR_HYDRATIONS) break
 
           try {
             const detail = await githubFetch(
               `${GITHUB_API}/repos/${ev.repo_name}/pulls/${num}`,
               token
             )
-            statsByKey.set(key, {
+            detailsByKey.set(key, {
               additions: Number.isFinite(detail.additions) ? detail.additions : 0,
               deletions: Number.isFinite(detail.deletions) ? detail.deletions : 0,
               changed_files: Number.isFinite(detail.changed_files) ? detail.changed_files : 0,
+              head_ref: detail.head?.ref ?? null,
+              branchSig: detectAiSignatureFromBranch(detail.head?.ref),
             })
           } catch (err: any) {
-            // Don't fail the whole sync over one unreachable PR (could be
-            // private/archived/deleted). Just skip — the metric degrades
-            // gracefully to "no data" for that PR.
             console.warn(`[sync-github] Stat hydration failed for ${key}:`, err?.message)
           }
         }
 
-        // Apply stats in-place to all matching events (opened + merged).
+        // Apply stats + branch-derived AI signal in-place. If the title/body
+        // pass already detected a tool, keep it (more specific than a branch
+        // heuristic). Otherwise, adopt the branch-based result.
         for (const ev of prsAuthored) {
           const key = `${ev.repo_name}#${ev.metadata?.pr_number}`
-          const s = statsByKey.get(key)
-          if (!s) continue
-          ev.additions = s.additions
-          ev.deletions = s.deletions
-          ev.changed_files = s.changed_files
+          const d = detailsByKey.get(key)
+          if (!d) continue
+          ev.additions = d.additions
+          ev.deletions = d.deletions
+          ev.changed_files = d.changed_files
+          if (ev.metadata) {
+            ev.metadata.head_ref = d.head_ref
+            const existingAi = Boolean(ev.metadata.ai_assisted)
+            if (!existingAi && d.branchSig.ai_assisted) {
+              ev.metadata.ai_assisted = true
+              ev.metadata.ai_tool = d.branchSig.tool
+            }
+          }
         }
 
-        return { hydrated: statsByKey.size }
+        return { hydrated: detailsByKey.size }
       })
 
       // ── 3. Fetch PR reviews ──
@@ -316,26 +334,44 @@ export const syncGithubEvents = inngest.createFunction(
         totalEvents = allEvents.length
       }
 
-      // ── 5. Backfill line stats on historical PR events ──
+      // ── 5. Backfill PR metadata on historical events ──
       // The search API above only returns PRs *updated* in the sync window,
-      // so older merged PRs (esp. those synced before hydration shipped)
-      // can have NULL additions/deletions forever. This step finds some of
-      // them and fills them in — bounded by MAX_PR_BACKFILLS to keep rate
-      // usage predictable. Over repeated daily syncs, history drains.
+      // so older merged PRs can have NULL stats AND/OR missing AI-signature
+      // metadata forever. This step finds PRs missing EITHER piece (stats
+      // OR signature) and fills them in — bounded by MAX_PR_BACKFILLS to
+      // keep rate usage predictable. Over repeated daily syncs, history
+      // drains. One API call hydrates both stats and signature plus the
+      // branch-prefix signal (head.ref).
       const backfilled = await step.run('backfill-pr-stats', async () => {
-        const { data: unhydrated } = await supabase
-          .from('github_events')
-          .select('repo_name, metadata')
-          .eq('user_id', user_id)
-          .eq('event_type', 'pr_merged')
-          .is('additions', null)
-          .order('event_at', { ascending: false })
-          .limit(MAX_PR_BACKFILLS)
+        // Two queries unioned in memory: rows missing additions, and rows
+        // missing the ai_assisted metadata key. Supabase/PostgREST doesn't
+        // support "IS NULL on jsonb key" in the client DSL cleanly, so we
+        // use the `metadata->>ai_assisted.is.null` filter.
+        const [missingStats, missingSig] = await Promise.all([
+          supabase
+            .from('github_events')
+            .select('repo_name, metadata')
+            .eq('user_id', user_id)
+            .eq('event_type', 'pr_merged')
+            .is('additions', null)
+            .order('event_at', { ascending: false })
+            .limit(MAX_PR_BACKFILLS),
+          supabase
+            .from('github_events')
+            .select('repo_name, metadata')
+            .eq('user_id', user_id)
+            .eq('event_type', 'pr_merged')
+            .is('metadata->>ai_assisted', null)
+            .order('event_at', { ascending: false })
+            .limit(MAX_PR_BACKFILLS),
+        ])
 
-        if (!unhydrated?.length) return { backfilled: 0 }
+        const unhydrated = [...(missingStats.data || []), ...(missingSig.data || [])]
+        if (!unhydrated.length) return { backfilled: 0 }
 
-        // Dedupe by PR key — the same PR may also have an unhydrated
-        // pr_opened row; we'll update both from a single API call.
+        // Dedupe by PR key — a PR may appear in both queries (unhydrated on
+        // both fronts) or the same PR may also have an unhydrated pr_opened
+        // row. We'll update every matching row from a single API call.
         const prKeys = new Set<string>()
         const targets: Array<{ repo: string; number: number }> = []
         for (const row of unhydrated) {
@@ -346,6 +382,7 @@ export const syncGithubEvents = inngest.createFunction(
           if (prKeys.has(key)) continue
           prKeys.add(key)
           targets.push({ repo, number: num })
+          if (targets.length >= MAX_PR_BACKFILLS) break
         }
 
         let filled = 0
@@ -361,13 +398,14 @@ export const syncGithubEvents = inngest.createFunction(
               changed_files: Number.isFinite(detail.changed_files) ? detail.changed_files : 0,
             }
 
-            // Also capture AI signature from the PR title + body so the
-            // backfill drains both gaps (line stats AND AI authorship) in
-            // a single pass. Backfilled events were likely synced before
-            // this feature existed and have neither.
+            // Three-way AI detection: title + body (content signatures) and
+            // head.ref (branch-prefix signal). A `claude/…` branch is
+            // definitively Claude Code — the tool picked the name, no
+            // human typed it.
             const sig = mergeAiSignatures(
               detectAiSignature(detail.title),
-              detectAiSignature(detail.body)
+              detectAiSignature(detail.body),
+              detectAiSignatureFromBranch(detail.head?.ref)
             )
 
             // We can't patch jsonb keys in a single SQL update across rows
@@ -396,6 +434,7 @@ export const syncGithubEvents = inngest.createFunction(
                   ...((m as any).metadata || {}),
                   ai_assisted: sig.ai_assisted,
                   ai_tool: sig.tool,
+                  head_ref: detail.head?.ref ?? null,
                 }
                 await supabase
                   .from('github_events')
