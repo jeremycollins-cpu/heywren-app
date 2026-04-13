@@ -100,27 +100,30 @@ export async function GET(request: NextRequest) {
     const allUserIds = Array.from(rosterByUser.keys())
 
     // ── Hydrate names + department ids from profiles ──
-    // profiles.department_id is the canonical per-user department when
-    // organization_members isn't populated, so merge both sources.
-    // The display name field in use across the app is `display_name`
-    // (migration 055); `full_name` from the initial schema is largely
-    // unpopulated. Prefer display_name, then full_name, then the local
-    // part of the email so we never show "Unknown" when we have anything.
+    // Uses the same select + fallback chain as /api/team-members/route.ts.
     const nameMap = new Map<string, { full_name: string | null; email: string | null; avatar_url: string | null; job_title: string | null; department_id: string | null }>()
+    let profsError: string | null = null
+    let profsCount = 0
     if (allUserIds.length > 0) {
-      const { data: profs } = await adminDb
+      const { data: profs, error: profsErr } = await adminDb
         .from('profiles')
-        .select('id, display_name, full_name, email, avatar_url, job_title, department_id')
+        .select('id, email, display_name, full_name, avatar_url, job_title, department_id')
         .in('id', allUserIds)
+      if (profsErr) {
+        profsError = profsErr.message
+        console.error('[ai-usage/team] profiles lookup failed:', profsErr, 'userIds=', allUserIds.length)
+      }
+      profsCount = profs?.length ?? 0
       for (const p of profs || []) {
         const emailPrefix = p.email ? (p.email as string).split('@')[0] : null
-        const resolvedName = p.display_name || p.full_name || emailPrefix || null
+        const resolvedName =
+          (p as any).display_name || p.full_name || emailPrefix || null
         nameMap.set(p.id, {
           full_name: resolvedName,
           email: p.email,
           avatar_url: p.avatar_url,
-          job_title: p.job_title,
-          department_id: p.department_id,
+          job_title: (p as any).job_title ?? null,
+          department_id: (p as any).department_id ?? null,
         })
       }
     }
@@ -340,6 +343,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       team: { id: teamId, name: team?.name ?? 'Team' },
+      // Diagnostic block — helps trace the roster->profiles join when
+      // names render as "Unknown". Safe to expose: counts only, plus
+      // the first three user IDs (already visible to this admin
+      // anyway).
+      _diagnostics: {
+        rosterUserCount: allUserIds.length,
+        profilesReturned: profsCount,
+        profilesError: profsError,
+        sampleUserIds: allUserIds.slice(0, 3),
+      },
       filter: {
         days,
         departments: filterDepartments,
