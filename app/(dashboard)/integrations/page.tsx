@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor, Hash, BellOff, Loader2, Cpu, Terminal, Check, Clock } from 'lucide-react'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor, Hash, BellOff, Loader2, Cpu, Terminal, Check, Clock, GitBranch } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -77,6 +77,13 @@ const availableIntegrations = [
     color: '#D97706',
     icon: <Cpu className="w-5 h-5 text-white" />,
     isTokenBased: true,
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: 'Track commits, pull requests, and code reviews for engineering observability',
+    color: '#24292f',
+    icon: <GitBranch className="w-5 h-5 text-white" />,
   },
   {
     id: 'asana',
@@ -712,6 +719,23 @@ function IntegrationsContent() {
     window.location.href = authUrl
   }
 
+  const handleGitHubConnect = async () => {
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/github/connect`
+    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const scopes = 'read:user repo'
+
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`
+    window.location.href = authUrl
+  }
+
   const handleDisconnect = async (id: string, provider?: string) => {
     try {
       // Claude Code uses its own disconnect endpoint
@@ -762,6 +786,8 @@ function IntegrationsContent() {
       handleZoomConnect()
     } else if (integrationId === 'google_meet') {
       handleGoogleMeetConnect()
+    } else if (integrationId === 'github') {
+      handleGitHubConnect()
     }
   }
 

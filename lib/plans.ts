@@ -91,6 +91,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   insights:         def('insights',         'Commitment Insights', 'Behavioral pattern analysis and actionable insights from your commitment history.', 'pro',  '/insights'),
   unsubscribe:      def('unsubscribe',      'Unsubscribe',        'One-click unsubscribe from newsletters and marketing emails.',    'pro',  '/unsubscribe'),
   ai_usage:         def('ai_usage',         'AI Usage',           'Track AI tool usage across sessions for work observability.',     'pro',  '/ai-usage'),
+  dev_activity:     def('dev_activity',     'Dev Activity',       'Track GitHub commits, PRs, and reviews for engineering observability.', 'pro', '/dev-activity'),
 
   // ── Team (5-user minimum) ──────────────────────────────────────────
   playbooks:        def('playbooks',        'Playbooks',          'Automate workflows with trigger-based playbooks.',               'team', '/playbooks'),
