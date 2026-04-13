@@ -1,3 +1,8 @@
+-- Drop the original provider CHECK constraint from migration 001 which only
+-- allowed slack, outlook, teams. New providers (zoom, google_meet, claude_code,
+-- github) are validated at the application layer.
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_provider_check;
+
 -- GitHub Integration: Developer Activity Tracking
 -- Stores GitHub events (commits, PRs, reviews) per user for engineering
 -- work observability and cross-referencing with AI usage data.
