@@ -375,6 +375,9 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
         </div>
       ) : null}
 
+      {/* Backfill historical sessions — only shown when connected */}
+      {connected && <BackfillPanel />}
+
       {/* Setup instructions (shown after connect or if no sessions yet) */}
       {showSetup && step === 'ready' && setupCommand ? (
         <div className="space-y-3">
@@ -434,6 +437,59 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       >
         Disconnect
       </button>
+    </div>
+  )
+}
+
+function BackfillPanel() {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // The command uses the token already installed in the user's local hook,
+  // so no token regeneration is needed and no token leaks through the UI.
+  const backfillCommand = [
+    'TOKEN=$(grep \'^HEYWREN_TOKEN=\' ~/.claude/hooks/heywren-sync.sh | head -1 | cut -d\'"\' -f2)',
+    `curl -fsSL "${typeof window !== 'undefined' ? window.location.origin : ''}/api/integrations/claude-code/backfill?token=\${TOKEN}" | bash`,
+  ].join(' && ')
+
+  const copyCommand = () => {
+    navigator.clipboard.writeText(backfillCommand)
+    setCopied(true)
+    toast.success('Backfill command copied')
+    setTimeout(() => setCopied(false), 3000)
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition"
+      >
+        Backfill historical sessions
+      </button>
+    )
+  }
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-700">Backfill historical sessions</span>
+        <button onClick={() => setOpen(false)} className="text-xs text-gray-400 hover:text-gray-600">close</button>
+      </div>
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Scans every Claude Code session ever stored on this Mac and syncs them. Safe to re-run — existing sessions are updated, not duplicated. Uses the token already in your installed hook, so no regeneration needed.
+      </p>
+      <div className="bg-gray-900 rounded-lg p-3 relative group">
+        <code className="text-[11px] text-green-400 break-all leading-relaxed block select-all whitespace-pre-wrap">
+          {backfillCommand}
+        </code>
+        <button
+          onClick={copyCommand}
+          className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md transition opacity-0 group-hover:opacity-100"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-gray-300" />}
+        </button>
+      </div>
     </div>
   )
 }
