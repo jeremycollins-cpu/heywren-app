@@ -10,6 +10,9 @@ const MAX_PAGES = 10
 const PER_PAGE = 100
 // How far back to look on initial sync (90 days)
 const INITIAL_SYNC_DAYS = 90
+// Safety cap on per-PR stat hydration calls per sync run.
+// Protects against runaway rate-limit usage for unusually active users.
+const MAX_PR_HYDRATIONS = 100
 
 function getAdminClient() {
   return createClient(
@@ -172,6 +175,54 @@ export const syncGithubEvents = inngest.createFunction(
           page++
         }
         return events
+      })
+
+      // ── 2b. Hydrate line-count stats for each unique PR ──
+      // The search API doesn't return additions/deletions/changed_files, so we
+      // fetch the PR detail endpoint once per PR and apply the numbers to all
+      // of its lifecycle events (opened + merged). One API call per PR.
+      await step.run('hydrate-pr-stats', async () => {
+        const statsByKey = new Map<string, { additions: number; deletions: number; changed_files: number }>()
+        const seen = new Set<string>()
+
+        for (const ev of prsAuthored) {
+          const num = ev.metadata?.pr_number
+          if (!num) continue
+          const key = `${ev.repo_name}#${num}`
+          if (seen.has(key)) continue
+          seen.add(key)
+
+          if (statsByKey.size >= MAX_PR_HYDRATIONS) break
+
+          try {
+            const detail = await githubFetch(
+              `${GITHUB_API}/repos/${ev.repo_name}/pulls/${num}`,
+              token
+            )
+            statsByKey.set(key, {
+              additions: Number.isFinite(detail.additions) ? detail.additions : 0,
+              deletions: Number.isFinite(detail.deletions) ? detail.deletions : 0,
+              changed_files: Number.isFinite(detail.changed_files) ? detail.changed_files : 0,
+            })
+          } catch (err: any) {
+            // Don't fail the whole sync over one unreachable PR (could be
+            // private/archived/deleted). Just skip — the metric degrades
+            // gracefully to "no data" for that PR.
+            console.warn(`[sync-github] Stat hydration failed for ${key}:`, err?.message)
+          }
+        }
+
+        // Apply stats in-place to all matching events (opened + merged).
+        for (const ev of prsAuthored) {
+          const key = `${ev.repo_name}#${ev.metadata?.pr_number}`
+          const s = statsByKey.get(key)
+          if (!s) continue
+          ev.additions = s.additions
+          ev.deletions = s.deletions
+          ev.changed_files = s.changed_files
+        }
+
+        return { hydrated: statsByKey.size }
       })
 
       // ── 3. Fetch PR reviews ──

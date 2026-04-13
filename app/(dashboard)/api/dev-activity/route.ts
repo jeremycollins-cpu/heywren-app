@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { computePrMetrics, type GithubEventRow } from '@/lib/github/pr-metrics'
 
 /**
  * GET /api/dev-activity
@@ -113,6 +114,10 @@ export async function GET(request: NextRequest) {
     // ── Recent events ──
     const recentEvents = allEvents.slice(0, 50)
 
+    // ── PR cycle time + stale PR nudges ──
+    // Derived from the same events — no extra queries.
+    const prMetrics = computePrMetrics(allEvents as unknown as GithubEventRow[])
+
     return NextResponse.json({
       summary: {
         totalCommits: commits.length,
@@ -126,6 +131,7 @@ export async function GET(request: NextRequest) {
       dailyActivity: dailyWithAi,
       byRepo,
       recentEvents,
+      prMetrics,
     })
   } catch (err: any) {
     console.error('[dev-activity] GET error:', err)
