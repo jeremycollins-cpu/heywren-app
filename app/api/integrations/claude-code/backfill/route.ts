@@ -130,6 +130,11 @@ def parse_jsonl(path, project_name):
     total_input_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
     cwd_decoded = project_name.lstrip("-")
     cwd_decoded = "/" + cwd_decoded.replace("-", "/") if cwd_decoded else ""
+    # Subagent sessions live under .../<parent-session>/subagents/<agent>.jsonl
+    # They're separate Claude conversations spawned from a parent tool call,
+    # with their own messages and token usage. Tag them so the dashboard can
+    # filter or group them distinctly if desired.
+    is_subagent = "/subagents/" in path
     return {
         "session_id": os.path.splitext(os.path.basename(path))[0],
         "tool": "claude_code",
@@ -149,23 +154,32 @@ def parse_jsonl(path, project_name):
             "input_tokens_fresh": input_tokens,
             "cache_creation_input_tokens": cache_creation_tokens,
             "cache_read_input_tokens": cache_read_tokens,
+            "is_subagent": is_subagent,
         },
     }
 
 count = 0
 skipped = 0
 with open(output_file, "w") as out:
+    # Recursive walk: Claude Code stores most session JSONLs at
+    # projects/<proj>/<id>.jsonl, but subagent / branched sessions
+    # live deeper (e.g. projects/<proj>/<id>/subagents/<agent>.jsonl).
+    # Walk everything under projects/ so we capture all of them.
     for project_path in sorted(glob.glob(os.path.join(projects_dir, "*"))):
         if not os.path.isdir(project_path):
             continue
         project_name = os.path.basename(project_path)
-        for jsonl in sorted(glob.glob(os.path.join(project_path, "*.jsonl"))):
-            session = parse_jsonl(jsonl, project_name)
-            if session is None:
-                skipped += 1
-                continue
-            out.write(json.dumps(session) + "\\n")
-            count += 1
+        for root, _dirs, files in os.walk(project_path):
+            for fname in sorted(files):
+                if not fname.endswith(".jsonl"):
+                    continue
+                jsonl = os.path.join(root, fname)
+                session = parse_jsonl(jsonl, project_name)
+                if session is None:
+                    skipped += 1
+                    continue
+                out.write(json.dumps(session) + "\\n")
+                count += 1
 PYEOF
 
 PARSED_COUNT=\$(wc -l < "\${TMP_NDJSON}" | tr -d ' ')
