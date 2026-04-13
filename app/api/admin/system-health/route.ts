@@ -199,22 +199,29 @@ export async function GET(request: NextRequest) {
 
     // ─── Build integration health + per-user token issues ─────────────────────
     //
-    // Important nuance: Microsoft/Outlook access tokens are intentionally
-    // short-lived (~1 hour). Refresh tokens last ~90 days with sliding-window
-    // renewal, and lib/outlook/graph-client.ts:74-107 transparently refreshes
-    // on 401 and retries. So an "expired access token" with a valid refresh
-    // token is a NON-ISSUE — the next API call repairs it silently.
+    // Different OAuth providers have completely different token lifecycles:
     //
-    // What actually needs admin attention:
-    //   1. Missing refresh token     → user must reconnect (unrecoverable)
-    //   2. Refresh token is stale     → integration row hasn't been updated in
-    //                                   >60 days, so the refresh token may be
-    //                                   approaching Microsoft's 90-day limit.
-    //                                   We trigger a preemptive reconnect.
-    //   3. Access token expired WITH refresh token → noise, not an issue.
+    //   Microsoft / Outlook — Access tokens are short-lived (~1 hour) and
+    //     MUST be refreshed using a refresh token (~90 days). Missing refresh
+    //     token = broken. lib/outlook/graph-client.ts auto-refreshes on 401.
     //
-    // We still report raw expired/expiresSoon counts for debugging, but the
-    // Action Queue only contains category 1 and 2.
+    //   Slack — Access tokens are non-expiring by default (xoxb- / xoxp-).
+    //     Token rotation is opt-in per app; most apps don't enable it. If an
+    //     access token is present, it works until revoked. NO refresh token
+    //     is expected — its absence is normal, not a bug.
+    //
+    //   GitHub — Classic OAuth tokens and PATs are non-expiring. GitHub Apps
+    //     use short-lived installation tokens minted from a JWT, not from a
+    //     refresh token. Again, missing refresh token is normal.
+    //
+    //   Anything else — Be conservative: require an access token; don't
+    //     require a refresh token.
+    //
+    // So the dashboard only surfaces:
+    //   1. Missing *required* credential (refresh_token for Microsoft,
+    //      access_token for everyone else).
+    //   2. Stale refresh token (only meaningful for providers that use one).
+    //   3. Everything else is healthy.
     type TokenIssue = {
       integrationId: string
       provider: string
@@ -222,21 +229,24 @@ export async function GET(request: NextRequest) {
       teamId: string | null
       expiresAt: string | null
       updatedAt: string | null
-      status: 'missing_refresh' | 'stale_refresh'
+      status: 'missing_refresh' | 'missing_access' | 'stale_refresh'
       hasRefreshToken: boolean
       daysSinceRefresh: number | null
     }
 
+    // Providers that use refresh tokens. For these, missing refresh_token is
+    // a broken integration; access-token expiry is routine.
+    const REFRESH_TOKEN_PROVIDERS = new Set(['outlook', 'microsoft'])
+
     const integrations = integrationsRes.data || []
     const integrationHealth = {
       total: integrations.length,
-      // accessTokenExpired / expiresSoon are raw counts for debugging — they
-      // are NOT surfaced as actionable issues when a refresh token exists.
+      // Raw counts for the technical / debug view.
       accessTokenExpired: 0,
       accessTokenExpiresSoon: 0,
-      // These are the counts that actually matter.
-      needsReconnect: 0,        // missing refresh token
-      staleRefresh: 0,          // refresh token likely near 90d limit
+      // Counts that drive the Action Queue.
+      needsReconnect: 0,      // missing required credential
+      staleRefresh: 0,        // refresh token likely near 90d limit
       healthy: 0,
       byProvider: {} as Record<
         string,
@@ -246,6 +256,7 @@ export async function GET(request: NextRequest) {
           staleRefresh: number
           accessTokenExpired: number
           healthy: number
+          usesRefreshToken: boolean
         }
       >,
     }
@@ -257,6 +268,7 @@ export async function GET(request: NextRequest) {
 
     for (const int of integrations) {
       const provider = int.provider
+      const usesRefreshToken = REFRESH_TOKEN_PROVIDERS.has(provider)
       if (!integrationHealth.byProvider[provider]) {
         integrationHealth.byProvider[provider] = {
           total: 0,
@@ -264,6 +276,7 @@ export async function GET(request: NextRequest) {
           staleRefresh: 0,
           accessTokenExpired: 0,
           healthy: 0,
+          usesRefreshToken,
         }
       }
       integrationHealth.byProvider[provider].total++
@@ -275,54 +288,82 @@ export async function GET(request: NextRequest) {
           !tokenExpired
         : false
       const hasRefreshToken = !!int.refresh_token
+      const hasAccessToken = !!int.access_token
       const updatedAt = int.updated_at || null
       const daysSinceRefresh = updatedAt
-        ? Math.floor((nowMs - new Date(updatedAt).getTime()) / (24 * 60 * 60 * 1000))
+        ? Math.floor(
+            (nowMs - new Date(updatedAt).getTime()) / (24 * 60 * 60 * 1000)
+          )
         : null
 
-      // Raw counts for the "technical" view
-      if (tokenExpired) {
-        integrationHealth.accessTokenExpired++
-        integrationHealth.byProvider[provider].accessTokenExpired++
-      } else if (tokenExpiresSoon) {
-        integrationHealth.accessTokenExpiresSoon++
+      // Raw counts (only meaningful for refresh-token providers)
+      if (usesRefreshToken) {
+        if (tokenExpired) {
+          integrationHealth.accessTokenExpired++
+          integrationHealth.byProvider[provider].accessTokenExpired++
+        } else if (tokenExpiresSoon) {
+          integrationHealth.accessTokenExpiresSoon++
+        }
       }
 
-      // Decide what's actionable
-      if (!hasRefreshToken) {
-        integrationHealth.needsReconnect++
-        integrationHealth.byProvider[provider].needsReconnect++
-        tokenIssues.push({
-          integrationId: int.id,
-          provider,
-          userId: int.user_id || null,
-          teamId: int.team_id || null,
-          expiresAt: expiresAt || null,
-          updatedAt,
-          status: 'missing_refresh',
-          hasRefreshToken: false,
-          daysSinceRefresh,
-        })
-      } else if (
-        daysSinceRefresh !== null &&
-        daysSinceRefresh >= STALE_REFRESH_DAYS
-      ) {
-        integrationHealth.staleRefresh++
-        integrationHealth.byProvider[provider].staleRefresh++
-        tokenIssues.push({
-          integrationId: int.id,
-          provider,
-          userId: int.user_id || null,
-          teamId: int.team_id || null,
-          expiresAt: expiresAt || null,
-          updatedAt,
-          status: 'stale_refresh',
-          hasRefreshToken: true,
-          daysSinceRefresh,
-        })
+      // Decide what's actionable based on provider semantics.
+      if (usesRefreshToken) {
+        if (!hasRefreshToken) {
+          integrationHealth.needsReconnect++
+          integrationHealth.byProvider[provider].needsReconnect++
+          tokenIssues.push({
+            integrationId: int.id,
+            provider,
+            userId: int.user_id || null,
+            teamId: int.team_id || null,
+            expiresAt: expiresAt || null,
+            updatedAt,
+            status: 'missing_refresh',
+            hasRefreshToken: false,
+            daysSinceRefresh,
+          })
+        } else if (
+          daysSinceRefresh !== null &&
+          daysSinceRefresh >= STALE_REFRESH_DAYS
+        ) {
+          integrationHealth.staleRefresh++
+          integrationHealth.byProvider[provider].staleRefresh++
+          tokenIssues.push({
+            integrationId: int.id,
+            provider,
+            userId: int.user_id || null,
+            teamId: int.team_id || null,
+            expiresAt: expiresAt || null,
+            updatedAt,
+            status: 'stale_refresh',
+            hasRefreshToken: true,
+            daysSinceRefresh,
+          })
+        } else {
+          integrationHealth.healthy++
+          integrationHealth.byProvider[provider].healthy++
+        }
       } else {
-        integrationHealth.healthy++
-        integrationHealth.byProvider[provider].healthy++
+        // Slack / GitHub / anything else with long-lived access tokens:
+        // only missing access_token counts as broken.
+        if (!hasAccessToken) {
+          integrationHealth.needsReconnect++
+          integrationHealth.byProvider[provider].needsReconnect++
+          tokenIssues.push({
+            integrationId: int.id,
+            provider,
+            userId: int.user_id || null,
+            teamId: int.team_id || null,
+            expiresAt: expiresAt || null,
+            updatedAt,
+            status: 'missing_access',
+            hasRefreshToken: false,
+            daysSinceRefresh,
+          })
+        } else {
+          integrationHealth.healthy++
+          integrationHealth.byProvider[provider].healthy++
+        }
       }
     }
 
@@ -494,6 +535,18 @@ export async function GET(request: NextRequest) {
           label: `${t.provider} integration has no refresh token — user must reconnect`,
           detail:
             'Without a refresh token the app cannot keep this integration working. Send the user a reconnect link.',
+          provider: t.provider,
+          integrationId: t.integrationId,
+          canAutoFix: false,
+          fixAction: 'generate_magic_link',
+        })
+      } else if (t.status === 'missing_access') {
+        addIssue(card, {
+          type: 'missing_refresh_token',
+          severity: 'critical',
+          label: `${t.provider} integration has no access token — user must reconnect`,
+          detail:
+            'The stored access token is missing or empty. Send the user a reconnect link.',
           provider: t.provider,
           integrationId: t.integrationId,
           canAutoFix: false,

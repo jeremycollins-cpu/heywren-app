@@ -945,13 +945,26 @@ function AdminContent() {
                   const hasIssues = (stats.needsReconnect || 0) > 0 || (stats.staleRefresh || 0) > 0
                   return (
                     <div key={provider} className={`p-3 rounded-lg border ${hasIssues ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="font-medium text-sm capitalize">{provider}</div>
+                      <div className="font-medium text-sm capitalize flex items-center gap-1.5">
+                        {provider}
+                        {!stats.usesRefreshToken && (
+                          <span className="text-[9px] text-gray-400 font-normal" title="Long-lived access token — no refresh token needed">
+                            long-lived
+                          </span>
+                        )}
+                      </div>
                       <div className="text-2xl font-bold mt-1">{stats.total}</div>
                       <div className="flex flex-col gap-0.5 mt-1 text-xs">
                         <span className="text-green-700">{stats.healthy} healthy</span>
-                        {stats.needsReconnect > 0 && <span className="text-red-700">{stats.needsReconnect} need reconnect</span>}
-                        {stats.staleRefresh > 0 && <span className="text-amber-700">{stats.staleRefresh} refresh token stale</span>}
-                        {stats.accessTokenExpired > 0 && (
+                        {stats.needsReconnect > 0 && (
+                          <span className="text-red-700">
+                            {stats.needsReconnect} need reconnect
+                          </span>
+                        )}
+                        {stats.usesRefreshToken && stats.staleRefresh > 0 && (
+                          <span className="text-amber-700">{stats.staleRefresh} refresh token stale</span>
+                        )}
+                        {stats.usesRefreshToken && stats.accessTokenExpired > 0 && (
                           <span className="text-gray-400" title="Normal: short-lived access tokens auto-refresh on next API call. Not an issue.">
                             {stats.accessTokenExpired} short-lived token expired (ok)
                           </span>
@@ -964,7 +977,7 @@ function AdminContent() {
               <div className="mt-3 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2 flex items-start gap-2">
                 <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
                 <span>
-                  Microsoft access tokens expire every hour by design. They auto-refresh on the next API call via the refresh token (which lasts ~90 days), so a short-lived token expiry is <strong>not</strong> an issue. We only flag integrations that are missing a refresh token or whose refresh token hasn&apos;t rotated in 60+ days.
+                  Different providers handle tokens differently. <strong>Microsoft/Outlook</strong> uses short-lived access tokens (~1h) that auto-refresh via a refresh token (~90d), so we only flag missing or stale refresh tokens. <strong>Slack</strong> and <strong>GitHub</strong> use long-lived access tokens and don&apos;t need refresh tokens — we only flag a missing access token.
                 </span>
               </div>
               {healthData.integrationHealth?.needsReconnect > 0 && (
