@@ -302,6 +302,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     { href: '/billing', label: 'Billing', icon: CreditCard },
     { href: '/team-dashboard', label: 'Team Dashboard', icon: Trophy },
     { href: '/team-management', label: 'Team Management', icon: Users },
+    { href: '/team-management/dev-activity', label: 'Team Dev Activity', icon: GitBranch },
     { href: '/people-insights', label: 'People Insights', icon: Network },
     { href: '/settings', label: 'Settings', icon: Settings },
   ]
