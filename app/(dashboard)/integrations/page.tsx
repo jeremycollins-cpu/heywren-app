@@ -233,7 +233,7 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
   const [step, setStep] = useState<'idle' | 'generating' | 'ready'>('idle')
   const [setupCommand, setSetupCommand] = useState('')
   const [copied, setCopied] = useState(false)
-  const [status, setStatus] = useState<{ sessions_synced: number; last_used_at: string | null; connected: boolean } | null>(null)
+  const [status, setStatus] = useState<{ sessions_synced: number; connected: boolean; tokens?: Array<{ id: string; created_at: string; last_used_at: string | null; expires_at: string }> } | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(connected)
   const [showSetup, setShowSetup] = useState(false)
 
