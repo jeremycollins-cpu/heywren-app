@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft, ArrowRight, Cpu, Users, Hash, Sparkles, AlertCircle,
-  Info, Mail, Clock, Building2,
+  Info, Mail, Clock, Building2, Key, RefreshCw, Check, Loader2, X,
 } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
@@ -138,6 +138,247 @@ function Avatar({ src, name, size = 32 }: { src: string | null; name: string | n
   )
 }
 
+interface AnthropicAdminStatus {
+  connected: boolean
+  fingerprint: string | null
+  last_sync_at: string | null
+  last_sync_status: 'success' | 'failed' | 'in_progress' | null
+  last_sync_error: string | null
+  last_sync_row_count: number | null
+  subscription_type: string | null
+  connected_at: string | null
+}
+
+function AnthropicAdminCard() {
+  // `access` is 'unknown' while we verify admin privileges with the server.
+  // A 403 from GET means "hide the card entirely" — non-admins don't need
+  // to know this integration exists on this page.
+  const [access, setAccess] = useState<'unknown' | 'hidden' | 'visible'>('unknown')
+  const [status, setStatus] = useState<AnthropicAdminStatus | null>(null)
+  const [mode, setMode] = useState<'idle' | 'connecting' | 'syncing' | 'disconnecting'>('idle')
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+  const [expanded, setExpanded] = useState(false)
+
+  const refresh = async () => {
+    const res = await fetch('/api/integrations/anthropic-admin')
+    if (res.status === 403) {
+      setAccess('hidden')
+      return
+    }
+    if (!res.ok) {
+      setAccess('hidden')
+      return
+    }
+    const json = (await res.json()) as AnthropicAdminStatus
+    setStatus(json)
+    setAccess('visible')
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  const connect = async () => {
+    if (!keyInput.startsWith('sk-ant-admin')) {
+      toast.error('Admin API keys start with "sk-ant-admin"')
+      return
+    }
+    setMode('connecting')
+    try {
+      const res = await fetch('/api/integrations/anthropic-admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ api_key: keyInput }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Failed to save key')
+      toast.success('Admin API key connected — syncing now')
+      setKeyInput('')
+      setShowKeyInput(false)
+      await refresh()
+      // Trigger an immediate sync so data shows up right away.
+      triggerSync()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to connect')
+    } finally {
+      setMode('idle')
+    }
+  }
+
+  const triggerSync = async () => {
+    setMode('syncing')
+    try {
+      const res = await fetch('/api/integrations/anthropic-admin/sync', { method: 'POST' })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Sync failed')
+      toast.success(`Synced ${body.rows ?? 0} row${body.rows === 1 ? '' : 's'}`)
+      await refresh()
+    } catch (err: any) {
+      toast.error(err.message || 'Sync failed')
+      await refresh()
+    } finally {
+      setMode('idle')
+    }
+  }
+
+  const disconnect = async () => {
+    if (!window.confirm(
+      'Disconnect the Anthropic Admin API? Historical rollups stay in the database, but no further daily data will flow in until you reconnect.'
+    )) return
+    setMode('disconnecting')
+    try {
+      const res = await fetch('/api/integrations/anthropic-admin', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to disconnect')
+      toast.success('Disconnected')
+      await refresh()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to disconnect')
+    } finally {
+      setMode('idle')
+    }
+  }
+
+  if (access === 'unknown' || access === 'hidden') return null
+
+  // ── Connected state ──
+  if (status?.connected) {
+    return (
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+            <Check size={18} className="text-emerald-600 dark:text-emerald-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              Anthropic Admin API connected
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              Key {status.fingerprint ? <code className="text-[11px]">…{status.fingerprint}</code> : ''}
+              {status.subscription_type && <> · {status.subscription_type} plan</>}
+              {status.last_sync_at && <> · last sync {new Date(status.last_sync_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</>}
+              {status.last_sync_status === 'failed' && <span className="text-red-600 dark:text-red-400"> · last sync failed</span>}
+            </div>
+          </div>
+          <button
+            onClick={triggerSync}
+            disabled={mode !== 'idle'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg transition"
+          >
+            {mode === 'syncing' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Sync now
+          </button>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            {expanded ? 'Less' : 'More'}
+          </button>
+        </div>
+        {expanded && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 space-y-2 text-xs text-gray-600 dark:text-gray-300">
+            {status.last_sync_error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2">
+                <strong className="text-red-800 dark:text-red-200">Last sync error:</strong> {status.last_sync_error}
+              </div>
+            )}
+            <p>
+              Every 24 hours HeyWren pulls the previous 7 days of per-user Claude Code totals
+              (sessions, tokens, cost, lines of code, commits, PRs, tool acceptance) and merges
+              them into this dashboard.
+            </p>
+            <p>
+              The key is stored AES-256-GCM encrypted at rest. Only the last 8 characters of its
+              fingerprint are shown here.
+            </p>
+            <button
+              onClick={disconnect}
+              disabled={mode !== 'idle'}
+              className="text-xs text-red-600 dark:text-red-400 hover:underline"
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Not connected — connect form ──
+  return (
+    <div className="bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 flex items-center justify-center shrink-0">
+          <Key size={18} className="text-indigo-600 dark:text-indigo-300" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+            Connect the Anthropic Admin API for richer data
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
+            Team-plan orgs can plug in an Admin API key to get authoritative daily totals
+            from Anthropic: session counts, tokens by model, <strong>cost</strong>, lines of code,
+            commits, PRs, and tool acceptance — including cloud-only Claude Code sessions the
+            local hook can&apos;t see.
+          </p>
+          {!showKeyInput ? (
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={() => setShowKeyInput(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
+              >
+                <Key size={12} />
+                Connect
+              </button>
+              <a
+                href="https://console.anthropic.com/settings/admin-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-600 dark:text-indigo-400 underline"
+              >
+                Where do I find my key?
+              </a>
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-200">
+                Admin API key
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  placeholder="sk-ant-admin-..."
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-sm font-mono bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                  autoFocus
+                />
+                <button
+                  onClick={connect}
+                  disabled={mode !== 'idle' || !keyInput}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50"
+                >
+                  {mode === 'connecting' ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
+                </button>
+                <button
+                  onClick={() => { setShowKeyInput(false); setKeyInput('') }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                The key is validated against Anthropic before saving, then encrypted (AES-256-GCM)
+                at rest. It never leaves the server once stored.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PrivacyNote() {
   const [open, setOpen] = useState(false)
   return (
@@ -153,8 +394,13 @@ function PrivacyNote() {
       {open && (
         <div className="text-xs text-blue-900 dark:text-blue-200 mt-2 space-y-1.5 leading-relaxed">
           <p>
-            <strong>Collected:</strong> session IDs, start/end timestamps, message count, tool-call
-            count, model name, project path, git branch.
+            <strong>From the local Claude Code hook:</strong> session IDs, start/end timestamps,
+            message count, tool-call count, model name, project path, git branch.
+          </p>
+          <p>
+            <strong>From the Anthropic Admin API (Team/Enterprise only, optional):</strong> daily
+            per-user totals — sessions, tokens by model, estimated cost, lines of code,
+            commits, PRs, tool acceptance rate.
           </p>
           <p>
             <strong>Never collected:</strong> prompts, Claude&apos;s responses, file contents, tool
@@ -470,6 +716,7 @@ export default function TeamAiUsagePage() {
           </div>
         </div>
 
+        <AnthropicAdminCard />
         <PrivacyNote />
 
         {!data ? null : (
