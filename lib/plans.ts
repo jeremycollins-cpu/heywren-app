@@ -90,6 +90,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   meeting_transcripts: def('meeting_transcripts', 'Meeting Transcripts', 'Upload meeting transcripts to detect commitments. Say "Hey Wren" in meetings to flag action items.', 'pro', '/meetings'),
   insights:         def('insights',         'Commitment Insights', 'Behavioral pattern analysis and actionable insights from your commitment history.', 'pro',  '/insights'),
   unsubscribe:      def('unsubscribe',      'Unsubscribe',        'One-click unsubscribe from newsletters and marketing emails.',    'pro',  '/unsubscribe'),
+  ai_usage:         def('ai_usage',         'AI Usage',           'Track AI tool usage across sessions for work observability.',     'pro',  '/ai-usage'),
 
   // ── Team (5-user minimum) ──────────────────────────────────────────
   playbooks:        def('playbooks',        'Playbooks',          'Automate workflows with trigger-based playbooks.',               'team', '/playbooks'),
