@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { GitCommit, GitPullRequest, Eye, Cpu, Clock, TrendingUp, ExternalLink, Info, ArrowUpRight } from 'lucide-react'
+import { GitCommit, GitPullRequest, Eye, Cpu, Clock, TrendingUp, ExternalLink, Info, ArrowUpRight, Copy, AlarmClock } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import toast from 'react-hot-toast'
@@ -44,11 +44,36 @@ interface Summary {
   days: number
 }
 
+interface CycleTimeSummary {
+  median_hours: number | null
+  mean_hours: number | null
+  merged_count: number
+  open_count: number
+  diagnosis: string
+}
+
+interface StalePr {
+  key: string
+  repo: string
+  pr_number: number | null
+  title: string
+  url: string | null
+  opened_at: string
+  days_open: number
+  suggested_nudge: string
+}
+
+interface PrMetrics {
+  cycleTime: CycleTimeSummary
+  stalePrs: StalePr[]
+}
+
 interface DevActivityData {
   summary: Summary
   dailyActivity: DailyActivity[]
   byRepo: RepoBreakdown[]
   recentEvents: GitHubEvent[]
+  prMetrics?: PrMetrics
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -228,6 +253,128 @@ function AiCorrelation({ data, summary }: { data: DailyActivity[]; summary: Summ
   )
 }
 
+// ── Cycle time card ─────────────────────────────────────────────
+
+function formatHours(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)} min`
+  if (hours < 24) return `${hours.toFixed(1)} hrs`
+  return `${(hours / 24).toFixed(1)} days`
+}
+
+function CycleTimeCard({ cycleTime }: { cycleTime: CycleTimeSummary }) {
+  const hasData = cycleTime.merged_count > 0 || cycleTime.open_count > 0
+  if (!hasData) return null
+
+  const headline =
+    cycleTime.median_hours !== null
+      ? formatHours(cycleTime.median_hours)
+      : '—'
+
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+            <Clock size={16} className="text-sky-500" />
+            <span className="text-xs font-medium uppercase tracking-wide">PR Cycle Time</span>
+          </div>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span className="text-3xl font-bold text-gray-900 dark:text-white">{headline}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              median, open → merged
+            </span>
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">{cycleTime.diagnosis}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Based on <span className="font-semibold text-gray-700 dark:text-gray-300">{cycleTime.merged_count}</span> merged
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-semibold text-gray-700 dark:text-gray-300">{cycleTime.open_count}</span> open now
+          </div>
+          {cycleTime.mean_hours !== null && cycleTime.merged_count > 1 && (
+            <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+              mean {formatHours(cycleTime.mean_hours)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Stale PR list (with copy-nudge action) ──────────────────────
+
+function StalePrList({ prs }: { prs: StalePr[] }) {
+  if (prs.length === 0) return null
+
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('Nudge copied — paste it into Slack')
+    } catch {
+      toast.error('Could not copy to clipboard')
+    }
+  }
+
+  return (
+    <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-amber-200 dark:border-amber-800/50 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <AlarmClock size={16} className="text-amber-600 dark:text-amber-400" />
+          <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            Stale PRs ({prs.length})
+          </h2>
+        </div>
+        <span className="text-xs text-amber-700 dark:text-amber-400">
+          Open 2+ days, not merged or closed
+        </span>
+      </div>
+      <ul className="divide-y divide-amber-200/60 dark:divide-amber-800/30">
+        {prs.map(pr => {
+          const repoShort = repoShortName(pr.repo)
+          return (
+            <li key={pr.key} className="px-5 py-3 flex items-start gap-3 hover:bg-amber-100/40 dark:hover:bg-amber-900/10 transition">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 mb-0.5">
+                  <span className="font-mono">{repoShort}{pr.pr_number ? ` #${pr.pr_number}` : ''}</span>
+                  <span className="text-amber-500">·</span>
+                  <span>{Math.round(pr.days_open)} day{Math.round(pr.days_open) === 1 ? '' : 's'} open</span>
+                </div>
+                <div className="text-sm text-gray-900 dark:text-gray-100 truncate" title={pr.title}>
+                  {pr.title}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => handleCopy(pr.suggested_nudge)}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-gray-700 transition"
+                  title={pr.suggested_nudge}
+                >
+                  <Copy size={12} />
+                  Copy nudge
+                </button>
+                {pr.url && (
+                  <a
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 transition"
+                    title="Open PR on GitHub"
+                  >
+                    <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 // ── Empty state ─────────────────────────────────────────────────
 
 function EmptyState() {
@@ -333,6 +480,10 @@ export default function DevActivityPage() {
                 color="text-indigo-500"
               />
             </div>
+
+            {/* PR cycle time + stale PR nudges */}
+            {data.prMetrics && <CycleTimeCard cycleTime={data.prMetrics.cycleTime} />}
+            {data.prMetrics && <StalePrList prs={data.prMetrics.stalePrs} />}
 
             {/* Activity chart */}
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
