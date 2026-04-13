@@ -252,8 +252,6 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       .then(res => res.json())
       .then(data => {
         setStatus(data)
-        // If connected but no sessions synced, prompt setup
-        if (data.sessions_synced === 0) setShowSetup(true)
       })
       .catch(() => {})
       .finally(() => setLoadingStatus(false))
@@ -280,6 +278,10 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
   }
 
   const handleRegenerate = async () => {
+    const ok = window.confirm(
+      'Generate a new token? This will REVOKE your existing token — any machine where you previously ran the setup command will stop syncing until you re-run it with the new token.'
+    )
+    if (!ok) return
     setStep('generating')
     try {
       const res = await fetch('/api/integrations/claude-code', { method: 'POST' })
@@ -288,7 +290,7 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       setSetupCommand(data.setup_command)
       setStep('ready')
       setShowSetup(true)
-      toast.success('New token generated — run the setup command again')
+      toast.success('New token generated — re-run the setup command on each machine')
     } catch {
       toast.error('Failed to regenerate token')
       setStep('idle')
@@ -404,21 +406,26 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
             </div>
           </div>
         </div>
-      ) : showSetup && step !== 'ready' ? (
-        <button
-          onClick={handleRegenerate}
-          className="w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition"
-        >
-          Show Setup Command
-        </button>
-      ) : !showSetup ? (
-        <button
-          onClick={() => setShowSetup(true)}
-          className="w-full px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition"
-        >
-          Setup Instructions
-        </button>
       ) : null}
+
+      {/* Troubleshooting & regenerate — only when connected but no data */}
+      {connected && status && status.sessions_synced === 0 && step !== 'ready' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+          <p className="text-xs font-medium text-amber-900">No sessions synced yet</p>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            The hook runs when a Claude Code session ends. If you installed it but nothing is showing up, check the log on your machine:
+          </p>
+          <code className="block text-[11px] bg-white border border-amber-200 rounded px-2 py-1.5 text-gray-700 select-all">
+            tail ~/.claude/logs/heywren-sync.log
+          </code>
+          <button
+            onClick={handleRegenerate}
+            className="w-full px-3 py-1.5 text-xs font-medium text-amber-700 bg-white hover:bg-amber-100 border border-amber-300 rounded-lg transition"
+          >
+            Regenerate token (only if you need to reinstall)
+          </button>
+        </div>
+      )}
 
       {/* Disconnect */}
       <button
