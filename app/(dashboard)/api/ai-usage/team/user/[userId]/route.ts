@@ -92,17 +92,17 @@ export async function GET(
 
     const allSessions = sessions || []
 
-    // Target user profile for the header. display_name (migration 055) is
-    // the actively-populated column; full_name is largely empty. Fall back
-    // through display_name → full_name → local part of email.
+    // Target user profile for the header. `display_name` is the actively
+    // populated column (migration 055); the original `full_name` column
+    // has been dropped in this deployment, so we don't query it.
     const { data: target } = await adminDb
       .from('profiles')
-      .select('id, display_name, full_name, email, avatar_url, job_title, department_id')
+      .select('id, display_name, email, avatar_url, job_title, department_id')
       .eq('id', userId)
       .single()
 
     const targetEmailPrefix = target?.email ? (target.email as string).split('@')[0] : null
-    const targetDisplayName = (target as any)?.display_name || target?.full_name || targetEmailPrefix || null
+    const targetDisplayName = (target as any)?.display_name || targetEmailPrefix || null
 
     let departmentName: string | null = null
     if (target?.department_id) {
