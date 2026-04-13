@@ -304,19 +304,22 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
     setTimeout(() => setCopied(false), 3000)
   }
 
-  // ── Not connected: show Connect button ──
+  // ── Not connected: show Connect button + Help ──
   if (!connected && step === 'idle') {
     return (
-      <button
-        onClick={handleGenerate}
-        className="w-full px-4 py-2 text-white rounded-lg transition font-medium text-sm"
-        style={{
-          background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-          boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
-        }}
-      >
-        Connect
-      </button>
+      <div className="space-y-2">
+        <button
+          onClick={handleGenerate}
+          className="w-full px-4 py-2 text-white rounded-lg transition font-medium text-sm"
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+            boxShadow: '0 2px 8px rgba(79, 70, 229, 0.15)',
+          }}
+        >
+          Connect
+        </button>
+        <ClaudeCodeHelp />
+      </div>
     )
   }
 
@@ -378,6 +381,9 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       {/* Backfill historical sessions — only shown when connected */}
       {connected && <BackfillPanel />}
 
+      {/* Help / docs */}
+      {connected && <ClaudeCodeHelp />}
+
       {/* Setup instructions (shown after connect or if no sessions yet) */}
       {showSetup && step === 'ready' && setupCommand ? (
         <div className="space-y-3">
@@ -437,6 +443,157 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       >
         Disconnect
       </button>
+    </div>
+  )
+}
+
+function ClaudeCodeHelp() {
+  const [open, setOpen] = useState(false)
+  const [section, setSection] = useState<'how' | 'privacy' | 'faq' | 'troubleshoot'>('how')
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition flex items-center justify-center gap-1.5"
+      >
+        <span>How does this work?</span>
+        <ChevronDown className="w-3 h-3" />
+      </button>
+    )
+  }
+
+  const tabClass = (key: typeof section) =>
+    `px-2.5 py-1 text-[11px] font-medium rounded-md transition ${
+      section === key
+        ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+        : 'text-gray-500 hover:text-gray-700'
+    }`
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-700">Help</span>
+        <button onClick={() => setOpen(false)} className="text-xs text-gray-400 hover:text-gray-600">close</button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+        <button onClick={() => setSection('how')} className={tabClass('how')}>How it works</button>
+        <button onClick={() => setSection('privacy')} className={tabClass('privacy')}>Privacy</button>
+        <button onClick={() => setSection('faq')} className={tabClass('faq')}>FAQ</button>
+        <button onClick={() => setSection('troubleshoot')} className={tabClass('troubleshoot')}>Fix issues</button>
+      </div>
+
+      {/* Content */}
+      <div className="text-xs text-gray-600 leading-relaxed space-y-2">
+        {section === 'how' && (
+          <>
+            <p className="font-medium text-gray-800">Why this is different from Slack or Outlook</p>
+            <p>
+              Claude Code runs on <strong>your computer</strong>, not in the cloud. There&apos;s no API HeyWren can call
+              to fetch your sessions. Instead, a tiny script runs on your Mac after each session ends and sends
+              a summary to HeyWren.
+            </p>
+            <p className="font-medium text-gray-800 pt-1">What gets installed</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li><code className="text-[11px]">~/.claude/hooks/heywren-sync.sh</code> — the sync script</li>
+              <li>An entry in <code className="text-[11px]">~/.claude/settings.json</code> registering it as a Stop hook</li>
+            </ul>
+            <p className="font-medium text-gray-800 pt-1">The flow</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>You use Claude Code — chat, tools, whatever</li>
+              <li>Session ends (you quit or close it)</li>
+              <li>Claude Code fires the Stop hook → our script reads the session metadata</li>
+              <li>Script POSTs a small JSON summary to HeyWren over HTTPS</li>
+              <li>It appears at <a href="/ai-usage" className="text-indigo-600 underline">/ai-usage</a></li>
+            </ol>
+          </>
+        )}
+
+        {section === 'privacy' && (
+          <>
+            <p className="font-medium text-gray-800">What HeyWren sees</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Session ID (opaque UUID)</li>
+              <li>Start and end timestamps</li>
+              <li>Number of messages you sent</li>
+              <li>Number of tool calls the model made</li>
+              <li>Model name (e.g. <code className="text-[11px]">claude-opus-4-6</code>)</li>
+              <li>Project path (e.g. <code className="text-[11px]">/Users/you/myapp</code>) and git branch</li>
+            </ul>
+            <p className="font-medium text-gray-800 pt-1">What HeyWren does NOT see</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Your prompts or questions</li>
+              <li>Claude&apos;s responses</li>
+              <li>The contents of any file Claude read or wrote</li>
+              <li>Terminal output, tool arguments, or diffs</li>
+            </ul>
+            <p className="pt-1">
+              The script runs locally as you, reads only the session metadata from
+              {' '}<code className="text-[11px]">~/.claude/projects/</code>, and transmits over TLS. Your
+              Claude Code auth is separate from HeyWren and never touches us.
+            </p>
+          </>
+        )}
+
+        {section === 'faq' && (
+          <div className="space-y-2.5">
+            <div>
+              <p className="font-medium text-gray-800">Can I install on multiple Macs?</p>
+              <p>Yes. Run the same setup command on each machine — they&apos;ll all sync to the same account.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">What happens if my Mac is offline when a session ends?</p>
+              <p>That session isn&apos;t synced in real time, but the JSONL file is still on your disk. Use <strong>Backfill historical sessions</strong> above to catch up — it&apos;s safe to run anytime.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">How long does the token last?</p>
+              <p>365 days. It&apos;s stored on HeyWren as a one-way hash — the raw token only ever exists in the hook script on your machine.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">What if I regenerate the token?</p>
+              <p>Every machine where you ran the setup command stops syncing until you re-run it with the new token. Regenerate only if you need to (lost the command, security concern).</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">How do I completely uninstall?</p>
+              <p>Click <strong>Disconnect</strong> above (revokes the token), then on your Mac run <code className="text-[11px]">rm ~/.claude/hooks/heywren-sync.sh</code> and remove the HeyWren entry from <code className="text-[11px]">~/.claude/settings.json</code>.</p>
+            </div>
+          </div>
+        )}
+
+        {section === 'troubleshoot' && (
+          <div className="space-y-2.5">
+            <div>
+              <p className="font-medium text-gray-800">First thing to check: the log</p>
+              <code className="block text-[11px] bg-gray-100 border border-gray-200 rounded px-2 py-1.5 mt-1 select-all">
+                tail ~/.claude/logs/heywren-sync.log
+              </code>
+              <p className="mt-1">Every sync attempt writes a line here with the HTTP status.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">No log file at all</p>
+              <p>You have the old hook (pre-logging). Re-run the setup command from above to update it.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">Log shows <code className="text-[11px]">FAILED HTTP 401</code></p>
+              <p>Your token was revoked. Click <strong>Regenerate token</strong> and re-run the setup command.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">Log shows <code className="text-[11px]">no session jsonl found</code></p>
+              <p>The hook couldn&apos;t locate a session file. Make sure you ended a Claude Code session since re-installing — the hook only fires on Stop events.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">Only seeing new sessions, not history</p>
+              <p>Use <strong>Backfill historical sessions</strong> above.</p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-800">Hook doesn&apos;t seem to fire at all</p>
+              <p>Verify it&apos;s registered: <code className="text-[11px]">cat ~/.claude/settings.json</code> — you should see a <code className="text-[11px]">&quot;Stop&quot;</code> hook pointing at <code className="text-[11px]">heywren-sync.sh</code>.</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
