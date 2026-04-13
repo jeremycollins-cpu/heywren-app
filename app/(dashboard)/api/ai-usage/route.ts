@@ -109,6 +109,17 @@ export async function GET(request: NextRequest) {
     }
     const byModel = Array.from(modelMap.entries()).map(([model, data]) => ({ model, ...data }))
 
+    // Entrypoint breakdown
+    const entrypointMap = new Map<string, { sessions: number; tokens: number }>()
+    for (const s of allSessions) {
+      const ep = s.entrypoint || 'unknown'
+      const existing = entrypointMap.get(ep) || { sessions: 0, tokens: 0 }
+      existing.sessions += 1
+      existing.tokens += (s.input_tokens || 0) + (s.output_tokens || 0)
+      entrypointMap.set(ep, existing)
+    }
+    const byEntrypoint = Array.from(entrypointMap.entries()).map(([entrypoint, data]) => ({ entrypoint, ...data }))
+
     return NextResponse.json({
       summary: {
         totalSessions,
@@ -125,6 +136,7 @@ export async function GET(request: NextRequest) {
       dailyUsage,
       byTool,
       byModel,
+      byEntrypoint,
       recentSessions: allSessions.slice(0, 50),
     })
   } catch (err: any) {
