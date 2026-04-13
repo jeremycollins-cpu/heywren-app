@@ -79,6 +79,10 @@ def parse_jsonl(path, project_name):
     last_ts = ""
     messages = 0
     tool_calls = 0
+    input_tokens = 0
+    output_tokens = 0
+    cache_creation_tokens = 0
+    cache_read_tokens = 0
     model = ""
     git_branch = ""
     try:
@@ -109,6 +113,13 @@ def parse_jsonl(path, project_name):
                             1 for c in content
                             if isinstance(c, dict) and c.get("type") == "tool_use"
                         )
+                    # Token usage lives on the assistant message's usage block.
+                    usage = m.get("usage", {}) if isinstance(m, dict) else {}
+                    if isinstance(usage, dict):
+                        input_tokens += int(usage.get("input_tokens", 0) or 0)
+                        output_tokens += int(usage.get("output_tokens", 0) or 0)
+                        cache_creation_tokens += int(usage.get("cache_creation_input_tokens", 0) or 0)
+                        cache_read_tokens += int(usage.get("cache_read_input_tokens", 0) or 0)
                 b = obj.get("gitBranch", "")
                 if b:
                     git_branch = b
@@ -116,6 +127,7 @@ def parse_jsonl(path, project_name):
         return None
     if not first_ts:
         return None
+    total_input_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
     cwd_decoded = project_name.lstrip("-")
     cwd_decoded = "/" + cwd_decoded.replace("-", "/") if cwd_decoded else ""
     return {
@@ -128,12 +140,15 @@ def parse_jsonl(path, project_name):
         "messages_count": messages,
         "tool_calls_count": tool_calls,
         "model": model or None,
-        "input_tokens": 0,
-        "output_tokens": 0,
+        "input_tokens": total_input_tokens,
+        "output_tokens": output_tokens,
         "estimated_cost_cents": 0,
         "metadata": {
             "git_branch": git_branch or None,
             "sync_source": "backfill",
+            "input_tokens_fresh": input_tokens,
+            "cache_creation_input_tokens": cache_creation_tokens,
+            "cache_read_input_tokens": cache_read_tokens,
         },
     }
 
