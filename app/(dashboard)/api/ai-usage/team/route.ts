@@ -102,15 +102,21 @@ export async function GET(request: NextRequest) {
     // ── Hydrate names + department ids from profiles ──
     // profiles.department_id is the canonical per-user department when
     // organization_members isn't populated, so merge both sources.
+    // The display name field in use across the app is `display_name`
+    // (migration 055); `full_name` from the initial schema is largely
+    // unpopulated. Prefer display_name, then full_name, then the local
+    // part of the email so we never show "Unknown" when we have anything.
     const nameMap = new Map<string, { full_name: string | null; email: string | null; avatar_url: string | null; job_title: string | null; department_id: string | null }>()
     if (allUserIds.length > 0) {
       const { data: profs } = await adminDb
         .from('profiles')
-        .select('id, full_name, email, avatar_url, job_title, department_id')
+        .select('id, display_name, full_name, email, avatar_url, job_title, department_id')
         .in('id', allUserIds)
       for (const p of profs || []) {
+        const emailPrefix = p.email ? (p.email as string).split('@')[0] : null
+        const resolvedName = p.display_name || p.full_name || emailPrefix || null
         nameMap.set(p.id, {
-          full_name: p.full_name,
+          full_name: resolvedName,
           email: p.email,
           avatar_url: p.avatar_url,
           job_title: p.job_title,

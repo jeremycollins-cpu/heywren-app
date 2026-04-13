@@ -122,6 +122,10 @@ first_ts = ""
 last_ts = ""
 messages = 0
 tool_calls = 0
+input_tokens = 0
+output_tokens = 0
+cache_creation_tokens = 0
+cache_read_tokens = 0
 model = ""
 git_branch = ""
 
@@ -155,6 +159,16 @@ try:
                         1 for c in content
                         if isinstance(c, dict) and c.get("type") == "tool_use"
                     )
+                # Sum token usage from each assistant message. Claude Code's
+                # JSONL carries the raw Anthropic API response, so the shape
+                # is message.usage = { input_tokens, output_tokens,
+                # cache_creation_input_tokens, cache_read_input_tokens }.
+                usage = m.get("usage", {}) if isinstance(m, dict) else {}
+                if isinstance(usage, dict):
+                    input_tokens += int(usage.get("input_tokens", 0) or 0)
+                    output_tokens += int(usage.get("output_tokens", 0) or 0)
+                    cache_creation_tokens += int(usage.get("cache_creation_input_tokens", 0) or 0)
+                    cache_read_tokens += int(usage.get("cache_read_input_tokens", 0) or 0)
 
             branch = obj.get("gitBranch", "")
             if branch:
@@ -166,6 +180,10 @@ except Exception as e:
 if not first_ts:
     print("__NO_TIMESTAMP__", file=sys.stderr)
     sys.exit(3)
+
+# Total input tokens the dashboard should show = fresh + cache writes +
+# cache reads. This matches what you'd see billed.
+total_input_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
 
 # Decode project path: Claude Code encodes /Users/foo/bar as -Users-foo-bar.
 # Best-effort decode (paths with literal hyphens are not round-trippable).
@@ -182,12 +200,15 @@ session = {
     "messages_count": messages,
     "tool_calls_count": tool_calls,
     "model": model or None,
-    "input_tokens": 0,
-    "output_tokens": 0,
+    "input_tokens": total_input_tokens,
+    "output_tokens": output_tokens,
     "estimated_cost_cents": 0,
     "metadata": {
         "git_branch": git_branch or None,
         "sync_source": "hook",
+        "input_tokens_fresh": input_tokens,
+        "cache_creation_input_tokens": cache_creation_tokens,
+        "cache_read_input_tokens": cache_read_tokens,
     },
 }
 print(json.dumps({"sessions": [session]}))
