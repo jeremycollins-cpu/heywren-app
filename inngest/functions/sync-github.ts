@@ -6,8 +6,12 @@ import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 
 const GITHUB_API = 'https://api.github.com'
-const MAX_PAGES = 10
-const PER_PAGE = 100
+// GitHub Events API is capped at 300 events (10 pages of 30)
+const EVENTS_MAX_PAGES = 10
+const EVENTS_PER_PAGE = 30
+// Search API allows more
+const SEARCH_MAX_PAGES = 5
+const SEARCH_PER_PAGE = 100
 // How far back to look on initial sync (90 days)
 const INITIAL_SYNC_DAYS = 90
 
@@ -81,12 +85,18 @@ export const syncGithubEvents = inngest.createFunction(
       const commits = await step.run('fetch-commits', async () => {
         const events: any[] = []
         // Use the events API to get push events (which contain commits)
+        // GitHub caps this at 300 events (10 pages of 30)
         let page = 1
-        while (page <= MAX_PAGES) {
-          const data = await githubFetch(
-            `${GITHUB_API}/users/${username}/events?per_page=${PER_PAGE}&page=${page}`,
-            token
-          )
+        while (page <= EVENTS_MAX_PAGES) {
+          let data: any[]
+          try {
+            data = await githubFetch(
+              `${GITHUB_API}/users/${username}/events?per_page=${EVENTS_PER_PAGE}&page=${page}`,
+              token
+            )
+          } catch {
+            break // Hit pagination limit or rate limit — stop gracefully
+          }
           if (!data.length) break
 
           for (const event of data) {
@@ -117,11 +127,16 @@ export const syncGithubEvents = inngest.createFunction(
       const prsAuthored = await step.run('fetch-prs-authored', async () => {
         const events: any[] = []
         let page = 1
-        while (page <= MAX_PAGES) {
-          const data = await githubFetch(
-            `${GITHUB_API}/search/issues?q=author:${username}+type:pr+updated:>=${since.split('T')[0]}&per_page=${PER_PAGE}&page=${page}&sort=updated&order=desc`,
-            token
-          )
+        while (page <= SEARCH_MAX_PAGES) {
+          let data: any
+          try {
+            data = await githubFetch(
+              `${GITHUB_API}/search/issues?q=author:${username}+type:pr+updated:>=${since.split('T')[0]}&per_page=${SEARCH_PER_PAGE}&page=${page}&sort=updated&order=desc`,
+              token
+            )
+          } catch {
+            break
+          }
           if (!data.items?.length) break
 
           for (const pr of data.items) {
@@ -168,7 +183,7 @@ export const syncGithubEvents = inngest.createFunction(
               })
             }
           }
-          if (data.items.length < PER_PAGE) break
+          if (data.items.length < SEARCH_PER_PAGE) break
           page++
         }
         return events
@@ -178,11 +193,16 @@ export const syncGithubEvents = inngest.createFunction(
       const reviews = await step.run('fetch-reviews', async () => {
         const events: any[] = []
         let page = 1
-        while (page <= MAX_PAGES) {
-          const data = await githubFetch(
-            `${GITHUB_API}/search/issues?q=reviewed-by:${username}+type:pr+updated:>=${since.split('T')[0]}&per_page=${PER_PAGE}&page=${page}&sort=updated&order=desc`,
-            token
-          )
+        while (page <= SEARCH_MAX_PAGES) {
+          let data: any
+          try {
+            data = await githubFetch(
+              `${GITHUB_API}/search/issues?q=reviewed-by:${username}+type:pr+updated:>=${since.split('T')[0]}&per_page=${SEARCH_PER_PAGE}&page=${page}&sort=updated&order=desc`,
+              token
+            )
+          } catch {
+            break
+          }
           if (!data.items?.length) break
 
           for (const pr of data.items) {
@@ -201,7 +221,7 @@ export const syncGithubEvents = inngest.createFunction(
               metadata: { pr_number: pr.number, pr_author: pr.user?.login },
             })
           }
-          if (data.items.length < PER_PAGE) break
+          if (data.items.length < SEARCH_PER_PAGE) break
           page++
         }
         return events
