@@ -48,89 +48,85 @@ mkdir -p "\${HOOKS_DIR}"
 cat > "\${HOOK_SCRIPT}" << 'HOOKEOF'
 #!/usr/bin/env bash
 # HeyWren session sync hook
-# Runs after each Claude Code session to sync usage data.
+# Runs after each Claude Code session (Stop hook) to sync usage data.
 # Installed by HeyWren — do not edit manually.
+#
+# Reads session data from ~/.claude/projects/<project>/<session-id>.jsonl
+# (current Claude Code file layout) and POSTs it to HeyWren.
+# Logs outcomes to ~/.claude/logs/heywren-sync.log so failures are diagnosable.
 
-set -euo pipefail
+set -uo pipefail
 
 HEYWREN_TOKEN="${token}"
 HEYWREN_API="${appUrl}/api/ai-usage/sync"
 CLAUDE_DIR="\${HOME}/.claude"
+LOG_DIR="\${CLAUDE_DIR}/logs"
+LOG_FILE="\${LOG_DIR}/heywren-sync.log"
 
-# This hook receives session context from Claude Code via environment
-# SESSION_ID is set by Claude Code when the hook runs
-SESSION_ID="\${CLAUDE_SESSION_ID:-}"
+mkdir -p "\${LOG_DIR}"
 
-# If no session ID from env, try to find the most recent session
-if [[ -z "\${SESSION_ID}" ]]; then
-  LATEST_SESSION=\$(ls -t "\${CLAUDE_DIR}/sessions/"*.json 2>/dev/null | head -1)
-  if [[ -n "\${LATEST_SESSION}" ]]; then
-    SESSION_ID=\$(python3 -c "import json; print(json.load(open('\${LATEST_SESSION}'))['sessionId'])" 2>/dev/null || true)
+log() {
+  echo "[\$(date -u '+%Y-%m-%dT%H:%M:%SZ')] \$*" >> "\${LOG_FILE}"
+}
+
+# Rotate log if it exceeds ~2000 lines (keep last 1000)
+if [[ -f "\${LOG_FILE}" ]]; then
+  line_count=\$(wc -l < "\${LOG_FILE}" 2>/dev/null || echo 0)
+  if [[ "\${line_count}" -gt 2000 ]]; then
+    tail -1000 "\${LOG_FILE}" > "\${LOG_FILE}.tmp" 2>/dev/null && mv "\${LOG_FILE}.tmp" "\${LOG_FILE}"
   fi
 fi
 
-[[ -z "\${SESSION_ID}" ]] && exit 0
+log "=== hook fired ==="
 
-# Find session metadata
-SESSION_META=""
-for f in "\${CLAUDE_DIR}/sessions/"*.json; do
-  [[ -f "\$f" ]] || continue
-  sid=\$(python3 -c "import json; print(json.load(open('\$f')).get('sessionId',''))" 2>/dev/null || true)
-  if [[ "\$sid" == "\${SESSION_ID}" ]]; then
-    SESSION_META="\$f"
-    break
-  fi
-done
-
-[[ -z "\${SESSION_META}" ]] && exit 0
-
-# Parse session metadata
-STARTED_AT_MS=\$(python3 -c "import json; print(json.load(open('\${SESSION_META}')).get('startedAt', 0))" 2>/dev/null || echo "0")
-CWD=\$(python3 -c "import json; print(json.load(open('\${SESSION_META}')).get('cwd', ''))" 2>/dev/null || echo "")
-ENTRYPOINT=\$(python3 -c "import json; print(json.load(open('\${SESSION_META}')).get('entrypoint', 'cli'))" 2>/dev/null || echo "cli")
-
-# Convert ms timestamp to ISO
-STARTED_AT_SEC=\$((STARTED_AT_MS / 1000))
-STARTED_AT=\$(date -u -d "@\${STARTED_AT_SEC}" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \\
-             date -u -r "\${STARTED_AT_SEC}" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
-[[ -z "\${STARTED_AT}" ]] && exit 0
-
-# Find the JSONL conversation file for rich data extraction
+# ── Find the session JSONL to sync ──────────────────────────────
+# Prefer the session id Claude Code provides via env; fall back to
+# the most recently modified JSONL anywhere under projects/.
+SESSION_ID="\${CLAUDE_SESSION_ID:-}"
 JSONL_FILE=""
-for project_dir in "\${CLAUDE_DIR}/projects/"*/; do
-  candidate="\${project_dir}\${SESSION_ID}.jsonl"
-  if [[ -f "\${candidate}" ]]; then
-    JSONL_FILE="\${candidate}"
-    break
-  fi
-  # Check subdirectories (subagents)
-  candidate="\${project_dir}\${SESSION_ID}/\${SESSION_ID}.jsonl"
-  if [[ -f "\${candidate}" ]]; then
-    JSONL_FILE="\${candidate}"
-    break
-  fi
-done
 
-# Extract rich data from JSONL
-MESSAGES_COUNT=0
-TOOL_CALLS=0
-LAST_TIMESTAMP=""
-MODEL=""
-GIT_BRANCH=""
+if [[ -n "\${SESSION_ID}" ]]; then
+  log "CLAUDE_SESSION_ID=\${SESSION_ID}"
+  for candidate in "\${CLAUDE_DIR}/projects/"*/"\${SESSION_ID}.jsonl"; do
+    if [[ -f "\${candidate}" ]]; then
+      JSONL_FILE="\${candidate}"
+      break
+    fi
+  done
+fi
 
-if [[ -n "\${JSONL_FILE}" && -f "\${JSONL_FILE}" ]]; then
-  # Use python for reliable JSON parsing
-  read -r MESSAGES_COUNT TOOL_CALLS LAST_TIMESTAMP MODEL GIT_BRANCH < <(JSONL_FILE="\${JSONL_FILE}" python3 << 'PYEOF'
-import json, os
+if [[ -z "\${JSONL_FILE}" ]]; then
+  log "no session id from env or not found; falling back to most recent jsonl"
+  JSONL_FILE=\$(ls -t "\${CLAUDE_DIR}/projects/"*/*.jsonl 2>/dev/null | head -1 || true)
+fi
 
+if [[ -z "\${JSONL_FILE}" || ! -f "\${JSONL_FILE}" ]]; then
+  log "no session jsonl found, exiting"
+  exit 0
+fi
+
+SESSION_ID=\$(basename "\${JSONL_FILE}" .jsonl)
+PROJECT_NAME=\$(basename "\$(dirname "\${JSONL_FILE}")")
+
+log "syncing session \${SESSION_ID} from \${JSONL_FILE}"
+
+# ── Parse JSONL and build JSON payload in one Python pass ───────
+PAYLOAD=\$(JSONL_FILE="\${JSONL_FILE}" SESSION_ID="\${SESSION_ID}" PROJECT_NAME="\${PROJECT_NAME}" python3 << 'PYEOF'
+import json, os, sys
+
+jsonl_file = os.environ.get("JSONL_FILE", "")
+session_id = os.environ.get("SESSION_ID", "")
+project_name = os.environ.get("PROJECT_NAME", "")
+
+first_ts = ""
+last_ts = ""
 messages = 0
 tool_calls = 0
-last_ts = ""
 model = ""
 git_branch = ""
 
 try:
-    with open(os.environ.get("JSONL_FILE", ""), "r") as f:
+    with open(jsonl_file, "r") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -140,69 +136,92 @@ try:
             except json.JSONDecodeError:
                 continue
 
-            msg_type = obj.get("type", "")
             ts = obj.get("timestamp", "")
             if ts:
+                if not first_ts:
+                    first_ts = ts
                 last_ts = ts
 
+            msg_type = obj.get("type", "")
             if msg_type == "user" and not obj.get("isMeta"):
                 messages += 1
             elif msg_type == "assistant":
                 m = obj.get("message", {})
                 if isinstance(m, dict) and m.get("model"):
                     model = m["model"]
-                # Count tool_use blocks
                 content = m.get("content", []) if isinstance(m, dict) else []
                 if isinstance(content, list):
-                    tool_calls += sum(1 for c in content if isinstance(c, dict) and c.get("type") == "tool_use")
+                    tool_calls += sum(
+                        1 for c in content
+                        if isinstance(c, dict) and c.get("type") == "tool_use"
+                    )
 
             branch = obj.get("gitBranch", "")
             if branch:
                 git_branch = branch
+except Exception as e:
+    print(f"__PARSE_ERROR__: {e}", file=sys.stderr)
+    sys.exit(2)
 
-except Exception:
-    pass
+if not first_ts:
+    print("__NO_TIMESTAMP__", file=sys.stderr)
+    sys.exit(3)
 
-print(f"{messages} {tool_calls} {last_ts} {model} {git_branch}")
+# Decode project path: Claude Code encodes /Users/foo/bar as -Users-foo-bar.
+# Best-effort decode (paths with literal hyphens are not round-trippable).
+cwd = project_name.lstrip("-")
+cwd = "/" + cwd.replace("-", "/") if cwd else ""
+
+session = {
+    "session_id": session_id,
+    "tool": "claude_code",
+    "started_at": first_ts,
+    "ended_at": last_ts or None,
+    "entrypoint": "cli",
+    "project_path": cwd or None,
+    "messages_count": messages,
+    "tool_calls_count": tool_calls,
+    "model": model or None,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "estimated_cost_cents": 0,
+    "metadata": {
+        "git_branch": git_branch or None,
+        "sync_source": "hook",
+    },
+}
+print(json.dumps({"sessions": [session]}))
 PYEOF
-  ) 2>/dev/null || true
+)
+PARSE_EXIT=\$?
+
+if [[ \${PARSE_EXIT} -ne 0 || -z "\${PAYLOAD}" ]]; then
+  log "payload build failed (exit=\${PARSE_EXIT}), skipping sync"
+  exit 0
 fi
 
-ENDED_AT="\${LAST_TIMESTAMP:-}"
+log "posting \${SESSION_ID} to \${HEYWREN_API}"
 
-# Build JSON payload
-PAYLOAD=\$(python3 -c "
-import json, sys
-session = {
-    'session_id': '\${SESSION_ID}',
-    'tool': 'claude_code',
-    'started_at': '\${STARTED_AT}',
-    'ended_at': '\${ENDED_AT}' if '\${ENDED_AT}' else None,
-    'entrypoint': '\${ENTRYPOINT}',
-    'project_path': '\${CWD}',
-    'messages_count': int('\${MESSAGES_COUNT}' or '0'),
-    'tool_calls_count': int('\${TOOL_CALLS}' or '0'),
-    'model': '\${MODEL}' if '\${MODEL}' else None,
-    'input_tokens': 0,
-    'output_tokens': 0,
-    'estimated_cost_cents': 0,
-    'metadata': {
-        'git_branch': '\${GIT_BRANCH}' if '\${GIT_BRANCH}' else None,
-        'sync_source': 'hook',
-    }
-}
-print(json.dumps({'sessions': [session]}))
-" 2>/dev/null)
-
-[[ -z "\${PAYLOAD}" ]] && exit 0
-
-# Send to HeyWren (silent, non-blocking)
-curl -s -f -X POST "\${HEYWREN_API}" \\
+# ── POST to HeyWren and capture the response ────────────────────
+RESPONSE_FILE=\$(mktemp -t heywren-sync-XXXXXX)
+HTTP_STATUS=\$(curl -s -o "\${RESPONSE_FILE}" -w "%{http_code}" \\
+  -X POST "\${HEYWREN_API}" \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer \${HEYWREN_TOKEN}" \\
   -d "\${PAYLOAD}" \\
-  --max-time 10 \\
-  > /dev/null 2>&1 || true
+  --max-time 10 2>/dev/null)
+HTTP_STATUS="\${HTTP_STATUS:-000}"
+
+RESPONSE_BODY=\$(cat "\${RESPONSE_FILE}" 2>/dev/null || echo "")
+rm -f "\${RESPONSE_FILE}"
+
+if [[ "\${HTTP_STATUS}" =~ ^2[0-9][0-9]\$ ]]; then
+  log "success HTTP \${HTTP_STATUS}: \${RESPONSE_BODY}"
+else
+  log "FAILED HTTP \${HTTP_STATUS}: \${RESPONSE_BODY}"
+fi
+
+exit 0
 HOOKEOF
 
 chmod +x "\${HOOK_SCRIPT}"

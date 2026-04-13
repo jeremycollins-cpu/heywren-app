@@ -208,16 +208,18 @@ function EmptyState() {
       <div>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No AI usage data yet</h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
-          Sync your Claude Code sessions to start tracking AI usage. Run the sync script from your terminal to get started.
+          Install the Claude Code integration and your sessions will sync here automatically after each Claude Code session ends.
         </p>
       </div>
-      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 max-w-lg mx-auto text-left">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Quick start</p>
-        <code className="text-sm text-indigo-600 dark:text-indigo-400 block">
-          npx heywren-sync
-        </code>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Or use the Claude Code hook for automatic sync after each session.
+      <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 max-w-lg mx-auto text-left space-y-3">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Quick start</p>
+        <ol className="text-sm text-gray-600 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
+          <li>Go to <a href="/integrations" className="text-indigo-600 dark:text-indigo-400 underline font-medium">Integrations</a> and click Connect under Claude Code.</li>
+          <li>Paste the generated command into your terminal.</li>
+          <li>Start (and end) a Claude Code session — data appears here within seconds.</li>
+        </ol>
+        <p className="text-xs text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-200 dark:border-gray-700">
+          Already installed and not seeing data? Check <code className="text-[11px] bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">~/.claude/logs/heywren-sync.log</code> on your machine.
         </p>
       </div>
     </div>
