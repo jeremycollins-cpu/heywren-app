@@ -206,17 +206,118 @@ export async function GET(request: NextRequest) {
       perUser.set(s.user_id, existing)
     }
 
-    // Build the per-user rows (all roster users — missing = status 'never')
+    // ── Per-user rollup aggregation (Anthropic Admin API source) ──
+    // Daily rows from ai_daily_rollups are authoritative for users on
+    // Team/Enterprise orgs that have connected the Admin API. They carry
+    // extra fields (cost, LOC, commits, PRs, tool acceptance) that the
+    // session-based path doesn't have. We keep both side-by-side so the
+    // dashboard can prefer rollups when present without losing the
+    // per-session detail from ai_sessions.
+    type RollupAgg = {
+      sessions: number
+      input_tokens: number
+      output_tokens: number
+      cost_cents: number
+      lines_added: number
+      lines_removed: number
+      commits: number
+      prs_opened: number
+      tool_acceptance_numer: number
+      tool_acceptance_denom: number
+      days_with_activity: number
+    }
+    const perUserRollup = new Map<string, RollupAgg>()
+    const dailyRollupMap = new Map<string, { sessions: number; tokens: number; costCents: number; userIds: Set<string> }>()
+
+    if (organizationId && allUserIds.length > 0) {
+      const sinceDate = since.toISOString().slice(0, 10)
+      const { data: rollups } = await adminDb
+        .from('ai_daily_rollups')
+        .select('user_id, date, num_sessions, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, estimated_cost_cents, lines_added, lines_removed, commits, prs_opened, tool_acceptance_rate, metadata')
+        .eq('organization_id', organizationId)
+        .gte('date', sinceDate)
+        .not('user_id', 'is', null)
+
+      for (const r of rollups || []) {
+        if (!r.user_id) continue
+        const existing = perUserRollup.get(r.user_id) || {
+          sessions: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cost_cents: 0,
+          lines_added: 0,
+          lines_removed: 0,
+          commits: 0,
+          prs_opened: 0,
+          tool_acceptance_numer: 0,
+          tool_acceptance_denom: 0,
+          days_with_activity: 0,
+        }
+        existing.sessions += r.num_sessions || 0
+        existing.input_tokens += (r.input_tokens || 0) + (r.cache_creation_tokens || 0) + (r.cache_read_tokens || 0)
+        existing.output_tokens += r.output_tokens || 0
+        existing.cost_cents += r.estimated_cost_cents || 0
+        existing.lines_added += r.lines_added || 0
+        existing.lines_removed += r.lines_removed || 0
+        existing.commits += r.commits || 0
+        existing.prs_opened += r.prs_opened || 0
+        // Weight tool_acceptance_rate by the day's activity volume so the
+        // average isn't dominated by a day with one tool use.
+        const weight = (r.metadata as any)?.tool_accepted
+          ? ((r.metadata as any).tool_accepted + ((r.metadata as any).tool_rejected || 0))
+          : r.num_sessions || 1
+        if (r.tool_acceptance_rate !== null && r.tool_acceptance_rate !== undefined) {
+          existing.tool_acceptance_numer += Number(r.tool_acceptance_rate) * weight
+          existing.tool_acceptance_denom += weight
+        }
+        if ((r.num_sessions || 0) > 0) existing.days_with_activity += 1
+        perUserRollup.set(r.user_id, existing)
+
+        // Daily rollup series for the chart (aggregated across users).
+        const day = r.date as string
+        const entry = dailyRollupMap.get(day) || { sessions: 0, tokens: 0, costCents: 0, userIds: new Set<string>() }
+        entry.sessions += r.num_sessions || 0
+        entry.tokens += (r.input_tokens || 0) + (r.output_tokens || 0) + (r.cache_creation_tokens || 0) + (r.cache_read_tokens || 0)
+        entry.costCents += r.estimated_cost_cents || 0
+        entry.userIds.add(r.user_id)
+        dailyRollupMap.set(day, entry)
+      }
+    }
+
+    // Build the per-user rows (all roster users — missing = status 'never').
+    // For users on orgs with the Admin API connected we have authoritative
+    // daily aggregates in perUserRollup. Hook-based session totals live in
+    // perUser. The displayed `sessions`/`tokens`/`cost_cents` prefer the
+    // rollup when present (it includes cloud-only sessions the hook can't
+    // see) but both sources are exposed separately so the UI can call out
+    // the source or allow the viewer to switch.
     const userRows = Array.from(rosterByUser.values()).map(r => {
       const agg = perUser.get(r.user_id)
+      const rollup = perUserRollup.get(r.user_id)
       const prof = nameMap.get(r.user_id)
       const dept = r.department_id ? departmentById.get(r.department_id) || null : null
-      const status: 'active' | 'dormant' | 'never' = agg
+      const status: 'active' | 'dormant' | 'never' = (agg || rollup)
         ? 'active'
         : 'never'
-      // Dormant heuristic: had sessions in the past but not in this window.
-      // Cheap approximation — we only fetched the window. Leave as 'never'
-      // unless we later add a separate "ever synced" check.
+
+      const hookSessions = agg?.sessions ?? 0
+      const hookTokens = agg?.tokens ?? 0
+      const hookCostCents = agg?.cost_cents ?? 0
+      const rollupSessions = rollup?.sessions ?? 0
+      const rollupTokens = (rollup?.input_tokens ?? 0) + (rollup?.output_tokens ?? 0)
+      const rollupCostCents = rollup?.cost_cents ?? 0
+
+      const displaySessions = rollup ? rollupSessions : hookSessions
+      const displayTokens = rollup ? rollupTokens : hookTokens
+      const displayCostCents = rollup ? rollupCostCents : hookCostCents
+      const displaySource: 'rollup' | 'hook' | 'none' = rollup
+        ? 'rollup'
+        : agg ? 'hook' : 'none'
+
+      const toolAcceptance = rollup && rollup.tool_acceptance_denom > 0
+        ? rollup.tool_acceptance_numer / rollup.tool_acceptance_denom
+        : null
+
       return {
         user_id: r.user_id,
         full_name: prof?.full_name ?? null,
@@ -226,12 +327,22 @@ export async function GET(request: NextRequest) {
         role: r.role,
         department_id: r.department_id,
         department_name: dept?.name ?? null,
-        sessions: agg?.sessions ?? 0,
-        tokens: agg?.tokens ?? 0,
-        cost_cents: agg?.cost_cents ?? 0,
+        sessions: displaySessions,
+        tokens: displayTokens,
+        cost_cents: displayCostCents,
         messages: agg?.messages ?? 0,
         tool_calls: agg?.tool_calls ?? 0,
         last_sync: agg?.last_sync ?? null,
+        // Rollup-only fields — exposed but null if no Admin API data.
+        lines_added: rollup?.lines_added ?? null,
+        lines_removed: rollup?.lines_removed ?? null,
+        commits: rollup?.commits ?? null,
+        prs_opened: rollup?.prs_opened ?? null,
+        tool_acceptance_rate: toolAcceptance,
+        // Let the UI explain which source populated each row.
+        source: displaySource,
+        hook_sessions: hookSessions,
+        rollup_sessions: rollupSessions,
         is_opportunity_department:
           r.department_id ? opportunityDepartmentIds.has(r.department_id) : false,
         status,
@@ -249,11 +360,15 @@ export async function GET(request: NextRequest) {
       : sessions
 
     // ── Summary ──
+    // Totals sum from the displayed per-user values (rollup when present,
+    // hook otherwise). Cost is rollup-only — if no user has rollup data,
+    // it stays at 0, which the UI should render as "—" not "$0".
     const eligibleUsers = filteredUserRows.length
     const activeUsers = filteredUserRows.filter(u => u.sessions > 0).length
-    const totalSessions = filteredSessions.length
-    const totalTokens = filteredSessions.reduce((sum, s) => sum + (s.input_tokens || 0) + (s.output_tokens || 0), 0)
-    const totalCostCents = filteredSessions.reduce((sum, s) => sum + (s.estimated_cost_cents || 0), 0)
+    const totalSessions = filteredUserRows.reduce((sum, u) => sum + (u.sessions || 0), 0)
+    const totalTokens = filteredUserRows.reduce((sum, u) => sum + (u.tokens || 0), 0)
+    const totalCostCents = filteredUserRows.reduce((sum, u) => sum + (u.cost_cents || 0), 0)
+    const hasRollupData = filteredUserRows.some(u => u.source === 'rollup')
     const adoptionRate = eligibleUsers > 0 ? Math.round((activeUsers / eligibleUsers) * 100) : 0
 
     // ── Daily breakdown ──
@@ -271,12 +386,19 @@ export async function GET(request: NextRequest) {
     const today = new Date()
     while (cursor <= today) {
       const dayStr = cursor.toISOString().split('T')[0]
-      const data = dailyMap.get(dayStr)
+      const hook = dailyMap.get(dayStr)
+      const rollup = dailyRollupMap.get(dayStr)
+      // Prefer rollup for the chart when available — it includes
+      // cloud-only sessions the hook can't see. Active-user counts are
+      // a union so both sources contribute.
+      const activeUnion = new Set<string>()
+      hook?.userIds.forEach(id => activeUnion.add(id))
+      rollup?.userIds.forEach(id => activeUnion.add(id))
       dailyUsage.push({
         date: dayStr,
-        sessions: data?.sessions || 0,
-        tokens: data?.tokens || 0,
-        activeUsers: data?.userIds.size || 0,
+        sessions: rollup ? rollup.sessions : (hook?.sessions || 0),
+        tokens: rollup ? rollup.tokens : (hook?.tokens || 0),
+        activeUsers: activeUnion.size,
       })
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -352,6 +474,7 @@ export async function GET(request: NextRequest) {
         activeUsers,
         eligibleUsers,
         adoptionRate,
+        hasRollupData,
         days,
       },
       dailyUsage,
