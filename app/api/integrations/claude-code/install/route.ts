@@ -120,8 +120,8 @@ GIT_BRANCH=""
 
 if [[ -n "\${JSONL_FILE}" && -f "\${JSONL_FILE}" ]]; then
   # Use python for reliable JSON parsing
-  read -r MESSAGES_COUNT TOOL_CALLS LAST_TIMESTAMP MODEL GIT_BRANCH < <(python3 << 'PYEOF'
-import json, sys
+  read -r MESSAGES_COUNT TOOL_CALLS LAST_TIMESTAMP MODEL GIT_BRANCH < <(JSONL_FILE="\${JSONL_FILE}" python3 << 'PYEOF'
+import json, os
 
 messages = 0
 tool_calls = 0
@@ -130,7 +130,7 @@ model = ""
 git_branch = ""
 
 try:
-    with open(sys.argv[1] if len(sys.argv) > 1 else "", "r") as f:
+    with open(os.environ.get("JSONL_FILE", ""), "r") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -211,11 +211,11 @@ log "Hook script installed at \${HOOK_SCRIPT}"
 # Update Claude Code settings.json to register the hook
 if [[ -f "\${SETTINGS_FILE}" ]]; then
   # Parse existing settings and add/update the hook
-  python3 << 'PYEOF'
-import json, sys
+  SETTINGS_FILE="\${SETTINGS_FILE}" HOOK_SCRIPT="\${HOOK_SCRIPT}" python3 << 'PYEOF'
+import json, os
 
-settings_file = sys.argv[1] if len(sys.argv) > 1 else ""
-hook_script = sys.argv[2] if len(sys.argv) > 2 else ""
+settings_file = os.environ.get("SETTINGS_FILE", "")
+hook_script = os.environ.get("HOOK_SCRIPT", "")
 
 try:
     with open(settings_file, "r") as f:
@@ -246,7 +246,6 @@ with open(settings_file, "w") as f:
 
 print(f"Updated {settings_file}")
 PYEOF
-  "\${SETTINGS_FILE}" "\${HOOK_SCRIPT}"
 else
   # Create settings with the hook
   cat > "\${SETTINGS_FILE}" << SETTINGSEOF
