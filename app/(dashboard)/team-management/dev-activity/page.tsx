@@ -51,11 +51,18 @@ interface Contributor {
   lines_removed: number
 }
 
+interface RepoOption {
+  name: string         // owner/repo
+  event_count: number  // total events in window
+}
+
 interface TeamDevActivityData {
   team: { id: string; name: string }
   summary: Summary
   prMetrics: PrMetrics
   contributors: Contributor[]
+  repos: RepoOption[]
+  filter: { repo: string | null }
 }
 
 // ── Stat card ───────────────────────────────────────────────────
@@ -227,19 +234,29 @@ export default function TeamDevActivityPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [days, setDays] = useState(30)
+  // Selected repo filter. Empty string = "All repositories".
+  const [repo, setRepo] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/dev-activity/team?days=${days}`)
+        const params = new URLSearchParams({ days: String(days) })
+        if (repo) params.set('repo', repo)
+        const res = await fetch(`/api/dev-activity/team?${params.toString()}`)
         if (res.status === 403) {
           setForbidden(true)
           return
         }
         if (!res.ok) throw new Error('Failed to fetch')
-        const json = await res.json()
+        const json: TeamDevActivityData = await res.json()
         setData(json)
+        // If the selected repo is no longer in the list (e.g. the user
+        // shortened the time window), reset the filter so the dropdown
+        // doesn't show a stale selection.
+        if (repo && !json.repos.some(r => r.name === repo)) {
+          setRepo('')
+        }
       } catch (err) {
         console.error('Failed to load team dev activity:', err)
         toast.error('Failed to load team developer activity')
@@ -248,7 +265,7 @@ export default function TeamDevActivityPage() {
       }
     }
     fetchData()
-  }, [days])
+  }, [days, repo])
 
   if (loading) return <LoadingSkeleton variant="dashboard" />
 
@@ -287,10 +304,31 @@ export default function TeamDevActivityPage() {
               Team Dev Activity {data?.team?.name ? <span className="text-gray-400 font-normal">· {data.team.name}</span> : null}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Aggregated engineering output across your team. Load distribution, not performance ranking.
+              {repo
+                ? <>Filtered to <span className="font-mono text-gray-700 dark:text-gray-300">{repo}</span>. Load distribution, not performance ranking.</>
+                : <>Aggregated engineering output across your team. Load distribution, not performance ranking.</>
+              }
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {data && data.repos.length > 0 && (
+              <select
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white max-w-[220px]"
+                title={repo || 'All repositories'}
+              >
+                <option value="">All repositories ({data.repos.length})</option>
+                {data.repos.map(r => {
+                  const short = r.name.split('/').pop() || r.name
+                  return (
+                    <option key={r.name} value={r.name} title={r.name}>
+                      {short} ({r.event_count})
+                    </option>
+                  )
+                })}
+              </select>
+            )}
             <select
               value={days}
               onChange={(e) => setDays(parseInt(e.target.value))}
