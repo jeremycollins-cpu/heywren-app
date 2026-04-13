@@ -41,6 +41,7 @@ interface TeamAiUsageData {
     activeUsers: number
     eligibleUsers: number
     adoptionRate: number
+    hasRollupData: boolean
     days: number
   }
   dailyUsage: Array<{ date: string; sessions: number; tokens: number; activeUsers: number }>
@@ -721,7 +722,9 @@ export default function TeamAiUsagePage() {
 
         {!data ? null : (
           <>
-            {/* Summary cards */}
+            {/* Summary cards. Cost replaces the redundant Adoption-rate
+                card when we have Admin API rollup data (since that's the
+                only source of cost). Otherwise falls back to adoption. */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard icon={Cpu} label="Sessions" value={data.summary.totalSessions.toString()} color="text-indigo-500" />
               <StatCard
@@ -732,13 +735,23 @@ export default function TeamAiUsagePage() {
                 color="text-emerald-500"
               />
               <StatCard icon={Hash} label="Tokens" value={formatCompact(data.summary.totalTokens)} color="text-violet-500" />
-              <StatCard
-                icon={Sparkles}
-                label="Adoption rate"
-                value={`${data.summary.adoptionRate}%`}
-                sub={`across ${data.summary.eligibleUsers} people`}
-                color="text-amber-500"
-              />
+              {data.summary.hasRollupData ? (
+                <StatCard
+                  icon={Sparkles}
+                  label="Cost"
+                  value={`$${(data.summary.totalCostCents / 100).toFixed(2)}`}
+                  sub="from Anthropic API"
+                  color="text-amber-500"
+                />
+              ) : (
+                <StatCard
+                  icon={Sparkles}
+                  label="Adoption rate"
+                  value={`${data.summary.adoptionRate}%`}
+                  sub={`across ${data.summary.eligibleUsers} people`}
+                  color="text-amber-500"
+                />
+              )}
             </div>
 
             {/* Daily usage */}
