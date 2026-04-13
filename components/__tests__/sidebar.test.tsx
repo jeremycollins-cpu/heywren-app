@@ -95,6 +95,7 @@ jest.mock('lucide-react', () => {
     Inbox: createIcon('Inbox'),
     Bell: createIcon('Bell'),
     Cpu: createIcon('Cpu'),
+    GitBranch: createIcon('GitBranch'),
   }
 })
 

@@ -45,6 +45,7 @@ import { pollWrenMailbox } from '@/inngest/functions/poll-wren-mailbox'
 import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
 import { scheduleRecallBots, dispatchManualRecallBot } from '@/inngest/functions/schedule-recall-bots'
 import { healthMonitor } from '@/inngest/functions/health-monitor'
+import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-github'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -91,5 +92,8 @@ export const { GET, POST, PUT } = serve({
     scheduleRecallBots,          // Every 15 min — auto-dispatch HeyWren Notetaker for 3+ attendee meetings
     dispatchManualRecallBot,     // On-demand — user manually sends notetaker to a meeting
     healthMonitor,               // Hourly — proactive health checks: expired tokens, stuck jobs, data integrity
+    // GitHub
+    syncGithubEvents,            // On-demand + initial connect — sync commits, PRs, reviews from GitHub
+    syncGithubDaily,             // 6 AM UTC daily — refresh GitHub activity for all connected users
   ],
 })

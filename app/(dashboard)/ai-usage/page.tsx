@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { Cpu, Clock, Hash, DollarSign, MessageSquare, Wrench, Calendar, ChevronDown, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { Cpu, Clock, Hash, DollarSign, MessageSquare, Wrench, Calendar, ChevronDown, ArrowUpRight, ArrowDownRight, Minus, Info, Monitor, Smartphone, Terminal, Globe } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import toast from 'react-hot-toast'
@@ -57,11 +57,18 @@ interface ModelBreakdown {
   tokens: number
 }
 
+interface EntrypointBreakdown {
+  entrypoint: string
+  sessions: number
+  tokens: number
+}
+
 interface UsageData {
   summary: Summary
   dailyUsage: DailyUsage[]
   byTool: ToolBreakdown[]
   byModel: ModelBreakdown[]
+  byEntrypoint: EntrypointBreakdown[]
   recentSessions: AiSession[]
 }
 
@@ -100,14 +107,24 @@ function toolDisplayName(tool: string): string {
 function entrypointLabel(ep: string | null): string {
   if (!ep) return 'Unknown'
   const labels: Record<string, string> = {
-    cli: 'CLI',
+    cli: 'Desktop CLI',
     web: 'Web',
     remote_mobile: 'Mobile',
-    ide: 'IDE',
+    ide: 'IDE Extension',
     vscode: 'VS Code',
     jetbrains: 'JetBrains',
   }
   return labels[ep] || ep
+}
+
+const ENTRYPOINT_COLORS: Record<string, string> = {
+  cli: 'bg-emerald-500',
+  web: 'bg-blue-500',
+  remote_mobile: 'bg-amber-500',
+  ide: 'bg-purple-500',
+  vscode: 'bg-purple-500',
+  jetbrains: 'bg-orange-500',
+  unknown: 'bg-gray-400',
 }
 
 function projectName(path: string | null): string {
@@ -374,6 +391,42 @@ export default function AiUsagePage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* By Entrypoint */}
+            {data.byEntrypoint && data.byEntrypoint.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">By Platform</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {data.byEntrypoint.map(ep => (
+                    <div key={ep.entrypoint} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${ENTRYPOINT_COLORS[ep.entrypoint] || ENTRYPOINT_COLORS.unknown}`}>
+                        {ep.entrypoint === 'cli' && <Terminal size={16} className="text-white" />}
+                        {ep.entrypoint === 'web' && <Globe size={16} className="text-white" />}
+                        {ep.entrypoint === 'remote_mobile' && <Smartphone size={16} className="text-white" />}
+                        {!['cli', 'web', 'remote_mobile'].includes(ep.entrypoint) && <Monitor size={16} className="text-white" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{entrypointLabel(ep.entrypoint)}</p>
+                        <p className="text-xs text-gray-500">{ep.sessions} sessions</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Coverage notice */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3">
+              <Info size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">Desktop sessions only</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  AI usage tracking currently captures sessions from the Claude Code desktop CLI and IDE extensions.
+                  Web and mobile sessions (claude.ai/code) are not yet tracked as they don&apos;t run local hooks.
+                  If you see lower numbers than expected, this is likely why.
+                </p>
+              </div>
             </div>
 
             {/* Recent sessions table */}
