@@ -14,9 +14,8 @@ function getAdminClient() {
 // ─── Types shared with the dashboard UI ───────────────────────────────────────
 
 export type IssueType =
-  | 'expired_token'
-  | 'expiring_soon'
   | 'missing_refresh_token'
+  | 'stale_refresh_token'
   | 'stuck_outlook'
   | 'stuck_slack'
   | 'orphaned_profile'
@@ -199,30 +198,53 @@ export async function GET(request: NextRequest) {
     ])
 
     // ─── Build integration health + per-user token issues ─────────────────────
+    //
+    // Important nuance: Microsoft/Outlook access tokens are intentionally
+    // short-lived (~1 hour). Refresh tokens last ~90 days with sliding-window
+    // renewal, and lib/outlook/graph-client.ts:74-107 transparently refreshes
+    // on 401 and retries. So an "expired access token" with a valid refresh
+    // token is a NON-ISSUE — the next API call repairs it silently.
+    //
+    // What actually needs admin attention:
+    //   1. Missing refresh token     → user must reconnect (unrecoverable)
+    //   2. Refresh token is stale     → integration row hasn't been updated in
+    //                                   >60 days, so the refresh token may be
+    //                                   approaching Microsoft's 90-day limit.
+    //                                   We trigger a preemptive reconnect.
+    //   3. Access token expired WITH refresh token → noise, not an issue.
+    //
+    // We still report raw expired/expiresSoon counts for debugging, but the
+    // Action Queue only contains category 1 and 2.
     type TokenIssue = {
       integrationId: string
       provider: string
       userId: string | null
       teamId: string | null
       expiresAt: string | null
-      status: 'expired' | 'expires_soon' | 'missing_refresh'
+      updatedAt: string | null
+      status: 'missing_refresh' | 'stale_refresh'
       hasRefreshToken: boolean
+      daysSinceRefresh: number | null
     }
 
     const integrations = integrationsRes.data || []
     const integrationHealth = {
       total: integrations.length,
-      expired: 0,
-      expiresSoon: 0,
-      missingRefreshToken: 0,
+      // accessTokenExpired / expiresSoon are raw counts for debugging — they
+      // are NOT surfaced as actionable issues when a refresh token exists.
+      accessTokenExpired: 0,
+      accessTokenExpiresSoon: 0,
+      // These are the counts that actually matter.
+      needsReconnect: 0,        // missing refresh token
+      staleRefresh: 0,          // refresh token likely near 90d limit
       healthy: 0,
       byProvider: {} as Record<
         string,
         {
           total: number
-          expired: number
-          expiresSoon: number
-          missingRefresh: number
+          needsReconnect: number
+          staleRefresh: number
+          accessTokenExpired: number
           healthy: number
         }
       >,
@@ -230,14 +252,17 @@ export async function GET(request: NextRequest) {
 
     const tokenIssues: TokenIssue[] = []
 
+    const STALE_REFRESH_DAYS = 60
+    const nowMs = now.getTime()
+
     for (const int of integrations) {
       const provider = int.provider
       if (!integrationHealth.byProvider[provider]) {
         integrationHealth.byProvider[provider] = {
           total: 0,
-          expired: 0,
-          expiresSoon: 0,
-          missingRefresh: 0,
+          needsReconnect: 0,
+          staleRefresh: 0,
+          accessTokenExpired: 0,
           healthy: 0,
         }
       }
@@ -246,43 +271,58 @@ export async function GET(request: NextRequest) {
       const expiresAt = int.config?.token_expires_at
       const tokenExpired = expiresAt ? new Date(expiresAt) < now : false
       const tokenExpiresSoon = expiresAt
-        ? new Date(expiresAt) < new Date(now.getTime() + 60 * 60 * 1000) &&
+        ? new Date(expiresAt) < new Date(nowMs + 60 * 60 * 1000) &&
           !tokenExpired
         : false
       const hasRefreshToken = !!int.refresh_token
+      const updatedAt = int.updated_at || null
+      const daysSinceRefresh = updatedAt
+        ? Math.floor((nowMs - new Date(updatedAt).getTime()) / (24 * 60 * 60 * 1000))
+        : null
 
+      // Raw counts for the "technical" view
       if (tokenExpired) {
-        integrationHealth.expired++
-        integrationHealth.byProvider[provider].expired++
-        tokenIssues.push({
-          integrationId: int.id,
-          provider,
-          userId: int.user_id || null,
-          teamId: int.team_id || null,
-          expiresAt: expiresAt || null,
-          status: hasRefreshToken ? 'expired' : 'missing_refresh',
-          hasRefreshToken,
-        })
+        integrationHealth.accessTokenExpired++
+        integrationHealth.byProvider[provider].accessTokenExpired++
       } else if (tokenExpiresSoon) {
-        integrationHealth.expiresSoon++
-        integrationHealth.byProvider[provider].expiresSoon++
+        integrationHealth.accessTokenExpiresSoon++
+      }
+
+      // Decide what's actionable
+      if (!hasRefreshToken) {
+        integrationHealth.needsReconnect++
+        integrationHealth.byProvider[provider].needsReconnect++
         tokenIssues.push({
           integrationId: int.id,
           provider,
           userId: int.user_id || null,
           teamId: int.team_id || null,
           expiresAt: expiresAt || null,
-          status: 'expires_soon',
-          hasRefreshToken,
+          updatedAt,
+          status: 'missing_refresh',
+          hasRefreshToken: false,
+          daysSinceRefresh,
+        })
+      } else if (
+        daysSinceRefresh !== null &&
+        daysSinceRefresh >= STALE_REFRESH_DAYS
+      ) {
+        integrationHealth.staleRefresh++
+        integrationHealth.byProvider[provider].staleRefresh++
+        tokenIssues.push({
+          integrationId: int.id,
+          provider,
+          userId: int.user_id || null,
+          teamId: int.team_id || null,
+          expiresAt: expiresAt || null,
+          updatedAt,
+          status: 'stale_refresh',
+          hasRefreshToken: true,
+          daysSinceRefresh,
         })
       } else {
         integrationHealth.healthy++
         integrationHealth.byProvider[provider].healthy++
-      }
-
-      if (!hasRefreshToken) {
-        integrationHealth.missingRefreshToken++
-        integrationHealth.byProvider[provider].missingRefresh++
       }
     }
 
@@ -441,7 +481,9 @@ export async function GET(request: NextRequest) {
       card.topSeverity = worstSeverity(card.topSeverity, issue.severity)
     }
 
-    // Token issues → per-user
+    // Token issues → per-user.
+    // Note: short-lived access-token expiry is normal and handled by the
+    // graphFetch() auto-refresh-on-401 helper, so we do NOT surface it here.
     for (const t of tokenIssues) {
       if (!t.userId) continue
       const card = ensureCard(t.userId)
@@ -449,35 +491,21 @@ export async function GET(request: NextRequest) {
         addIssue(card, {
           type: 'missing_refresh_token',
           severity: 'critical',
-          label: `${t.provider} token expired — no refresh token, user must reconnect`,
-          detail: t.expiresAt
-            ? `Expired ${new Date(t.expiresAt).toLocaleString()}`
-            : undefined,
+          label: `${t.provider} integration has no refresh token — user must reconnect`,
+          detail:
+            'Without a refresh token the app cannot keep this integration working. Send the user a reconnect link.',
           provider: t.provider,
           integrationId: t.integrationId,
           canAutoFix: false,
           fixAction: 'generate_magic_link',
         })
-      } else if (t.status === 'expired') {
+      } else if (t.status === 'stale_refresh') {
         addIssue(card, {
-          type: 'expired_token',
-          severity: 'high',
-          label: `${t.provider} token expired — auto-refresh available`,
-          detail: t.expiresAt
-            ? `Expired ${new Date(t.expiresAt).toLocaleString()}`
-            : undefined,
-          provider: t.provider,
-          integrationId: t.integrationId,
-          canAutoFix: true,
-          fixAction: 'refresh_token',
-        })
-      } else if (t.status === 'expires_soon') {
-        addIssue(card, {
-          type: 'expiring_soon',
+          type: 'stale_refresh_token',
           severity: 'medium',
-          label: `${t.provider} token expires within 1 hour`,
-          detail: t.expiresAt
-            ? `Expires ${new Date(t.expiresAt).toLocaleString()}`
+          label: `${t.provider} refresh token may be nearing 90-day limit`,
+          detail: t.daysSinceRefresh
+            ? `Last successful refresh was ${t.daysSinceRefresh} days ago. Refresh now to extend it.`
             : undefined,
           provider: t.provider,
           integrationId: t.integrationId,
@@ -621,21 +649,25 @@ export async function GET(request: NextRequest) {
       stuckOutlookEmails: stuckEmailsRes.count || 0,
     }
 
-    // Health score (same formula as before — familiar to existing users)
+    // Health score. Short-lived access token expiry is normal OAuth2
+    // behavior, so it no longer hurts the score. Only genuinely broken
+    // integrations (no refresh token, or stale refresh) do.
     let healthScore = 100
     if (errorCounts.critical > 0)
       healthScore -= Math.min(40, errorCounts.critical * 10)
     if (errorCounts.error > 0)
       healthScore -= Math.min(30, errorCounts.error * 3)
-    if (integrationHealth.expired > 0)
-      healthScore -= Math.min(20, integrationHealth.expired * 2)
+    if (integrationHealth.needsReconnect > 0)
+      healthScore -= Math.min(20, integrationHealth.needsReconnect * 4)
+    if (integrationHealth.staleRefresh > 0)
+      healthScore -= Math.min(10, integrationHealth.staleRefresh * 2)
     if (dataIntegrity.stuckSlackMessages > 10) healthScore -= 5
     if (dataIntegrity.stuckOutlookEmails > 10) healthScore -= 5
     healthScore = Math.max(0, healthScore)
 
-    // Legacy expiredIntegrations list (now with user identity)
-    const expiredIntegrations = tokenIssues
-      .filter((t) => t.status === 'expired' || t.status === 'missing_refresh')
+    // Integrations needing reconnect — replaces the old "expiredIntegrations"
+    // which conflated access-token expiry (normal) with actual breakage.
+    const integrationsNeedingReconnect = tokenIssues
       .slice(0, 50)
       .map((t) => {
         const p = t.userId ? profileById.get(t.userId) : null
@@ -645,8 +677,10 @@ export async function GET(request: NextRequest) {
           userId: t.userId,
           email: p?.email || null,
           displayName: p?.display_name || p?.full_name || null,
-          expiresAt: t.expiresAt,
+          status: t.status,
           hasRefreshToken: t.hasRefreshToken,
+          daysSinceRefresh: t.daysSinceRefresh,
+          updatedAt: t.updatedAt,
         }
       })
 
@@ -656,7 +690,9 @@ export async function GET(request: NextRequest) {
       recentErrors,
       topErrorSources,
       integrationHealth,
-      expiredIntegrations,
+      integrationsNeedingReconnect,
+      // Legacy alias — prefer integrationsNeedingReconnect in new UI code.
+      expiredIntegrations: integrationsNeedingReconnect,
       dataIntegrity,
       activeUsers7d: activeUsersRes.count || 0,
       // New actionable fields

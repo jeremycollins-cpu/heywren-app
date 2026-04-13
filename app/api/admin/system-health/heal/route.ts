@@ -81,11 +81,17 @@ async function refreshAllTokens(admin: ReturnType<typeof getAdminClient>) {
   }
 
   const now = new Date()
-  const cutoff = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
+  // Refresh tokens that haven't been rotated in 60+ days. Microsoft refresh
+  // tokens expire at 90 days of inactivity, so this keeps them alive.
+  // Access-token expiry on its own is not a reason to refresh — the
+  // graph-client auto-refreshes on 401.
+  const staleCutoff = new Date(
+    now.getTime() - 60 * 24 * 60 * 60 * 1000
+  ).toISOString()
 
   const { data: integrations, error } = await admin
     .from('integrations')
-    .select('id, provider, user_id, refresh_token, config')
+    .select('id, provider, user_id, refresh_token, config, updated_at')
     .in('provider', ['outlook', 'microsoft'])
     .not('refresh_token', 'is', null)
 
@@ -93,12 +99,19 @@ async function refreshAllTokens(admin: ReturnType<typeof getAdminClient>) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Filter to those expired or expiring within the hour.
   const candidates = (integrations || []).filter((i) => {
-    const expiresAt = i.config?.token_expires_at
-    if (!expiresAt) return false
-    return expiresAt < cutoff
+    return !i.updated_at || i.updated_at < staleCutoff
   })
+
+  if (candidates.length === 0) {
+    return NextResponse.json({
+      success: true,
+      message: 'No stale refresh tokens — everything is fine',
+      attempted: 0,
+      succeeded: 0,
+      failed: [],
+    })
+  }
 
   const succeeded: string[] = []
   const failed: { id: string; userId: string | null; reason: string }[] = []
