@@ -491,7 +491,7 @@ function ClaudeCodeHelp() {
           <>
             <p className="font-medium text-gray-800">Why this is different from Slack or Outlook</p>
             <p>
-              Claude Code runs on <strong>your computer</strong>, not in the cloud. There's no API HeyWren can call
+              Claude Code runs on <strong>your computer</strong>, not in the cloud. There&apos;s no API HeyWren can call
               to fetch your sessions. Instead, a tiny script runs on your Mac after each session ends and sends
               a summary to HeyWren.
             </p>
@@ -525,7 +525,7 @@ function ClaudeCodeHelp() {
             <p className="font-medium text-gray-800 pt-1">What HeyWren does NOT see</p>
             <ul className="list-disc list-inside space-y-1">
               <li>Your prompts or questions</li>
-              <li>Claude's responses</li>
+              <li>Claude&apos;s responses</li>
               <li>The contents of any file Claude read or wrote</li>
               <li>Terminal output, tool arguments, or diffs</li>
             </ul>
@@ -541,15 +541,15 @@ function ClaudeCodeHelp() {
           <div className="space-y-2.5">
             <div>
               <p className="font-medium text-gray-800">Can I install on multiple Macs?</p>
-              <p>Yes. Run the same setup command on each machine — they'll all sync to the same account.</p>
+              <p>Yes. Run the same setup command on each machine — they&apos;ll all sync to the same account.</p>
             </div>
             <div>
               <p className="font-medium text-gray-800">What happens if my Mac is offline when a session ends?</p>
-              <p>That session isn't synced in real time, but the JSONL file is still on your disk. Use <strong>Backfill historical sessions</strong> above to catch up — it's safe to run anytime.</p>
+              <p>That session isn&apos;t synced in real time, but the JSONL file is still on your disk. Use <strong>Backfill historical sessions</strong> above to catch up — it&apos;s safe to run anytime.</p>
             </div>
             <div>
               <p className="font-medium text-gray-800">How long does the token last?</p>
-              <p>365 days. It's stored on HeyWren as a one-way hash — the raw token only ever exists in the hook script on your machine.</p>
+              <p>365 days. It&apos;s stored on HeyWren as a one-way hash — the raw token only ever exists in the hook script on your machine.</p>
             </div>
             <div>
               <p className="font-medium text-gray-800">What if I regenerate the token?</p>
@@ -581,15 +581,15 @@ function ClaudeCodeHelp() {
             </div>
             <div>
               <p className="font-medium text-gray-800">Log shows <code className="text-[11px]">no session jsonl found</code></p>
-              <p>The hook couldn't locate a session file. Make sure you ended a Claude Code session since re-installing — the hook only fires on Stop events.</p>
+              <p>The hook couldn&apos;t locate a session file. Make sure you ended a Claude Code session since re-installing — the hook only fires on Stop events.</p>
             </div>
             <div>
               <p className="font-medium text-gray-800">Only seeing new sessions, not history</p>
               <p>Use <strong>Backfill historical sessions</strong> above.</p>
             </div>
             <div>
-              <p className="font-medium text-gray-800">Hook doesn't seem to fire at all</p>
-              <p>Verify it's registered: <code className="text-[11px]">cat ~/.claude/settings.json</code> — you should see a <code className="text-[11px]">"Stop"</code> hook pointing at <code className="text-[11px]">heywren-sync.sh</code>.</p>
+              <p className="font-medium text-gray-800">Hook doesn&apos;t seem to fire at all</p>
+              <p>Verify it&apos;s registered: <code className="text-[11px]">cat ~/.claude/settings.json</code> — you should see a <code className="text-[11px]">&quot;Stop&quot;</code> hook pointing at <code className="text-[11px]">heywren-sync.sh</code>.</p>
             </div>
           </div>
         )}
