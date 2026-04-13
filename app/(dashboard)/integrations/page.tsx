@@ -241,21 +241,43 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
   const [setupCommand, setSetupCommand] = useState('')
   const [copied, setCopied] = useState(false)
   const [status, setStatus] = useState<{ sessions_synced: number; connected: boolean; tokens?: Array<{ id: string; created_at: string; last_used_at: string | null; expires_at: string }> } | null>(null)
-  const [loadingStatus, setLoadingStatus] = useState(connected)
+  const [loadingStatus, setLoadingStatus] = useState(true)
   const [showSetup, setShowSetup] = useState(false)
 
-  // Fetch status when connected
+  // Source of truth for "is Claude Code connected?" is the extension_tokens
+  // table, not the integrations table — the latter can drift out of sync.
+  // The GET endpoint returns { connected: activeTokens.length > 0 }, which is
+  // authoritative. Treat the server's answer as the truth and override the
+  // parent's `connected` prop when they disagree.
+  const serverConnected = status?.connected === true
+  const effectiveConnected = connected || serverConnected
+
+  // Always fetch status on mount so a fresh page load can't incorrectly
+  // revert the UI to "Connect" when an active token exists.
   useEffect(() => {
-    if (!connected) return
+    let cancelled = false
     setLoadingStatus(true)
     fetch('/api/integrations/claude-code')
       .then(res => res.json())
       .then(data => {
+        if (cancelled) return
         setStatus(data)
+        // If server says we're connected but parent's `integrations` state
+        // is missing the row, push a synthetic row so the rest of the page
+        // (card background colour, badge, etc.) renders correctly.
+        if (data.connected && !connected) {
+          onConnected({
+            id: 'claude_code_recovered',
+            provider: 'claude_code',
+            config: { setup_at: new Date().toISOString() },
+          })
+        }
       })
       .catch(() => {})
-      .finally(() => setLoadingStatus(false))
-  }, [connected])
+      .finally(() => { if (!cancelled) setLoadingStatus(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleGenerate = async () => {
     setStep('generating')
@@ -304,8 +326,20 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
     setTimeout(() => setCopied(false), 3000)
   }
 
+  // ── While we verify connection with the server, show a spinner.
+  // Never render the Connect button before we know the true connection
+  // state — a stray click there would revoke a working token. ──
+  if (loadingStatus && !effectiveConnected && step === 'idle') {
+    return (
+      <div className="flex items-center justify-center py-2">
+        <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+        <span className="ml-2 text-sm text-gray-500">Checking connection...</span>
+      </div>
+    )
+  }
+
   // ── Not connected: show Connect button + Help ──
-  if (!connected && step === 'idle') {
+  if (!effectiveConnected && step === 'idle') {
     return (
       <div className="space-y-2">
         <button
@@ -379,10 +413,10 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       ) : null}
 
       {/* Backfill historical sessions — only shown when connected */}
-      {connected && <BackfillPanel />}
+      {effectiveConnected && <BackfillPanel />}
 
       {/* Help / docs */}
-      {connected && <ClaudeCodeHelp />}
+      {effectiveConnected && <ClaudeCodeHelp />}
 
       {/* Setup instructions (shown after connect or if no sessions yet) */}
       {showSetup && step === 'ready' && setupCommand ? (
@@ -418,7 +452,7 @@ function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
       ) : null}
 
       {/* Troubleshooting & regenerate — only when connected but no data */}
-      {connected && status && status.sessions_synced === 0 && step !== 'ready' && (
+      {effectiveConnected && status && status.sessions_synced === 0 && step !== 'ready' && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
           <p className="text-xs font-medium text-amber-900">No sessions synced yet</p>
           <p className="text-xs text-amber-800 leading-relaxed">
