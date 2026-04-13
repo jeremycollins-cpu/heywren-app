@@ -374,6 +374,42 @@ export async function GET(request: NextRequest) {
       if (p.slack_user_id) profileBySlackId.set(p.slack_user_id, p)
     }
 
+    // For users whose profile row is missing or has no email/name, fall back
+    // to auth.users (which always has at least an email). This is what the
+    // send_test_email admin action does — profiles can lag auth on signup.
+    const needsAuthLookup = Array.from(affectedUuids).filter((uid) => {
+      const p = profileById.get(uid)
+      return !p || (!p.email && !p.display_name && !p.full_name)
+    })
+
+    if (needsAuthLookup.length > 0) {
+      const authLookups = await Promise.all(
+        needsAuthLookup.map(async (uid) => {
+          try {
+            const { data } = await admin.auth.admin.getUserById(uid)
+            return { uid, user: data?.user || null }
+          } catch {
+            return { uid, user: null }
+          }
+        })
+      )
+      for (const { uid, user } of authLookups) {
+        if (!user) continue
+        const existing = profileById.get(uid) || { id: uid }
+        profileById.set(uid, {
+          ...existing,
+          email: existing.email || user.email || null,
+          display_name:
+            existing.display_name ||
+            user.user_metadata?.display_name ||
+            user.user_metadata?.name ||
+            null,
+          full_name:
+            existing.full_name || user.user_metadata?.full_name || null,
+        })
+      }
+    }
+
     // ─── Build per-user action queue ──────────────────────────────────────────
     const queueByUser = new Map<string, UserActionCard>()
 
