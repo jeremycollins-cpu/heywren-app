@@ -14,6 +14,8 @@ export interface GithubEventRow {
   additions?: number | null
   deletions?: number | null
   changed_files?: number | null
+  user_id?: string | null
+  github_username?: string | null
 }
 
 export interface StalePr {
@@ -357,6 +359,95 @@ export function computePrMetrics(
     codeVolume,
     refactorRatio,
   }
+}
+
+// ── Contributor breakdown (team view) ────────────────────────────
+
+export interface ContributorRow {
+  user_id: string | null
+  github_username: string | null
+  full_name?: string | null          // filled in by the API layer from `profiles`
+  avatar_url?: string | null
+  commits: number
+  prs_opened: number
+  prs_merged: number
+  reviews_given: number
+  stale_prs: number                  // PRs authored by this user that are 2+ days open
+  lines_added: number                // from merged PRs only
+  lines_removed: number              // from merged PRs only
+}
+
+/**
+ * Per-contributor breakdown for team-scope views. Intentionally framed as
+ * "load distribution" not a leaderboard — the UI layer should present it as
+ * capacity sensing, not a performance ranking.
+ */
+export function computeContributorBreakdown(events: GithubEventRow[]): ContributorRow[] {
+  // Group events by user_id (fallback to github_username when user_id is null,
+  // which can happen for very old rows before the column was populated).
+  const byKey = new Map<string, ContributorRow>()
+
+  // First pass: figure out which PRs are stale (opened, no merge/close, 2+ days).
+  const openedByPrKey = new Map<string, GithubEventRow>()
+  const mergedByPrKey = new Set<string>()
+  const closedByPrKey = new Set<string>()
+  for (const e of events) {
+    const num = e.metadata?.pr_number
+    if (!num) continue
+    const key = `${e.repo_name}#${num}`
+    if (e.event_type === 'pr_opened') openedByPrKey.set(key, e)
+    else if (e.event_type === 'pr_merged') mergedByPrKey.add(key)
+    else if (e.event_type === 'pr_closed') closedByPrKey.add(key)
+  }
+  const now = Date.now()
+  const stalePrAuthors = new Map<string, number>() // contributor key → stale PR count
+  for (const [key, openEvent] of openedByPrKey.entries()) {
+    if (mergedByPrKey.has(key) || closedByPrKey.has(key)) continue
+    const ageDays = (now - new Date(openEvent.event_at).getTime()) / (1000 * 60 * 60 * 24)
+    if (ageDays < STALE_THRESHOLD_DAYS) continue
+    const contribKey = openEvent.user_id || openEvent.github_username || 'unknown'
+    stalePrAuthors.set(contribKey, (stalePrAuthors.get(contribKey) || 0) + 1)
+  }
+
+  // Second pass: tally the rest.
+  for (const e of events) {
+    const key = e.user_id || e.github_username || 'unknown'
+    let row = byKey.get(key)
+    if (!row) {
+      row = {
+        user_id: e.user_id ?? null,
+        github_username: e.github_username ?? null,
+        commits: 0,
+        prs_opened: 0,
+        prs_merged: 0,
+        reviews_given: 0,
+        stale_prs: 0,
+        lines_added: 0,
+        lines_removed: 0,
+      }
+      byKey.set(key, row)
+    }
+    if (e.event_type === 'commit') row.commits++
+    else if (e.event_type === 'pr_opened') row.prs_opened++
+    else if (e.event_type === 'pr_merged') {
+      row.prs_merged++
+      if (typeof e.additions === 'number') row.lines_added += e.additions
+      if (typeof e.deletions === 'number') row.lines_removed += e.deletions
+    } else if (e.event_type === 'pr_reviewed') row.reviews_given++
+  }
+
+  // Attach stale PR counts.
+  for (const [contribKey, count] of stalePrAuthors.entries()) {
+    const row = byKey.get(contribKey)
+    if (row) row.stale_prs = count
+  }
+
+  // Sort by total activity descending — useful default, not a ranking.
+  return Array.from(byKey.values()).sort((a, b) => {
+    const aTotal = a.commits + a.prs_merged + a.reviews_given
+    const bTotal = b.commits + b.prs_merged + b.reviews_given
+    return bTotal - aTotal
+  })
 }
 
 export const _internal = { formatHours, median, mean, STALE_THRESHOLD_DAYS }
