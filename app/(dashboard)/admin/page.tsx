@@ -8,7 +8,8 @@ import {
   CheckCircle2, XCircle, Mail, MessageSquare, Calendar, ArrowLeft,
   RotateCcw, Zap, UserX, RefreshCw, Clock, Key, Link2, Trash2,
   Globe, Database, Activity, Eye, Send, Plus, X, Copy,
-  TrendingUp, Sparkles, CreditCard,
+  TrendingUp, Sparkles, CreditCard, Wrench, Inbox, UserCheck,
+  ChevronDown, Wand2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -125,6 +126,9 @@ function AdminContent() {
   const [testEmailTemplate, setTestEmailTemplate] = useState('recap')
   const [healthData, setHealthData] = useState<any>(null)
   const [healthLoading, setHealthLoading] = useState(false)
+  const [healFixLoading, setHealFixLoading] = useState<string | null>(null)
+  const [bulkHealLoading, setBulkHealLoading] = useState<string | null>(null)
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set())
   const [celebrationRate, setCelebrationRate] = useState<number>(30)
   const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
   const [emailDiag, setEmailDiag] = useState<any>(null)
@@ -175,6 +179,75 @@ function AdminContent() {
       }
     } catch { toast.error('Failed to load system health') }
     setHealthLoading(false)
+  }
+
+  // Run a per-user fix from the Action Queue. Reloads health data after so
+  // the resolved issue drops off the dashboard.
+  const runHealthFix = async (
+    fixKey: string,
+    action: string,
+    params: Record<string, any>,
+    successMessage?: string
+  ) => {
+    setHealFixLoading(fixKey)
+    try {
+      const res = await fetch('/api/admin/user-actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...params }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(successMessage || data.message || 'Fixed')
+        if (data.link) {
+          try {
+            await navigator.clipboard.writeText(data.link)
+            toast.success('Magic link copied to clipboard', { duration: 4000 })
+          } catch { /* clipboard not available */ }
+        }
+        await loadHealth()
+      } else {
+        toast.error(data.message || data.error || 'Action failed')
+      }
+    } catch (err) {
+      toast.error(`Action failed: ${(err as Error).message}`)
+    }
+    setHealFixLoading(null)
+  }
+
+  // Run a bulk heal action (refresh all tokens, clear all stuck messages).
+  const runBulkHeal = async (action: string, confirmLabel: string) => {
+    if (!confirm(`Run bulk action: ${confirmLabel}?`)) return
+    setBulkHealLoading(action)
+    try {
+      const res = await fetch('/api/admin/system-health/heal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(data.message || 'Bulk heal complete', { duration: 5000 })
+        if (data.failed?.length) {
+          console.warn('Bulk heal failures:', data.failed)
+        }
+        await loadHealth()
+      } else {
+        toast.error(data.error || 'Bulk heal failed')
+      }
+    } catch (err) {
+      toast.error(`Bulk heal failed: ${(err as Error).message}`)
+    }
+    setBulkHealLoading(null)
+  }
+
+  const toggleUserExpanded = (userId: string) => {
+    setExpandedUsers(prev => {
+      const next = new Set(prev)
+      if (next.has(userId)) next.delete(userId)
+      else next.add(userId)
+      return next
+    })
   }
 
   const loadCelebrationRate = async () => {
@@ -495,15 +568,80 @@ function AdminContent() {
     )
   }
 
-  // System Health monitoring view
+  // System Health monitoring view — proactive user support
   if (view === 'health') {
+    const queue: any[] = healthData?.actionQueue || []
+    const summary = healthData?.actionSummary || {
+      usersNeedingAttention: 0,
+      autoFixableIssues: 0,
+      userActionRequired: 0,
+    }
+    const byProvider: Record<string, any> = healthData?.integrationHealth?.byProvider || {}
+    const orphaned: any[] = healthData?.dataIntegrity?.orphanedProfiles || []
+    const stuckOutlookCount = healthData?.dataIntegrity?.stuckOutlookEmails || 0
+    const stuckSlackCount = healthData?.dataIntegrity?.stuckSlackMessages || 0
+
+    const severityStyle = (sev: string) => {
+      switch (sev) {
+        case 'critical': return { dot: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', pill: 'bg-red-100 text-red-700' }
+        case 'high': return { dot: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200', pill: 'bg-orange-100 text-orange-700' }
+        case 'medium': return { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', pill: 'bg-amber-100 text-amber-700' }
+        default: return { dot: 'bg-gray-400', text: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200', pill: 'bg-gray-100 text-gray-600' }
+      }
+    }
+
+    const issueIcon = (type: string) => {
+      switch (type) {
+        case 'expired_token': return <Key className="w-4 h-4 text-orange-500" />
+        case 'expiring_soon': return <Clock className="w-4 h-4 text-amber-500" />
+        case 'missing_refresh_token': return <XCircle className="w-4 h-4 text-red-500" />
+        case 'stuck_outlook': return <Mail className="w-4 h-4 text-amber-500" />
+        case 'stuck_slack': return <MessageSquare className="w-4 h-4 text-amber-500" />
+        case 'error_spike': return <AlertTriangle className="w-4 h-4 text-red-500" />
+        default: return <AlertTriangle className="w-4 h-4 text-gray-500" />
+      }
+    }
+
+    // Execute a single per-user fix from the action queue.
+    const fixIssue = async (user: any, issue: any) => {
+      const fixKey = `${user.userId}:${issue.type}:${issue.provider || ''}`
+      if (issue.fixAction === 'refresh_token') {
+        await runHealthFix(fixKey, 'refresh_token', {
+          userId: user.userId,
+          provider: issue.provider,
+        })
+      } else if (issue.fixAction === 'clear_stuck') {
+        await runHealthFix(fixKey, 'clear_stuck', { userId: user.userId })
+      } else if (issue.fixAction === 'generate_magic_link') {
+        await runHealthFix(fixKey, 'generate_magic_link', { userId: user.userId })
+      } else if (issue.fixAction === 'send_password_reset') {
+        await runHealthFix(fixKey, 'send_password_reset', { userId: user.userId })
+      } else if (issue.fixAction === 'fix_onboarding') {
+        await runHealthFix(fixKey, 'fix_onboarding', { userId: user.userId })
+      }
+    }
+
+    const fixLabelFor = (issue: any) => {
+      switch (issue.fixAction) {
+        case 'refresh_token': return 'Auto-refresh token'
+        case 'clear_stuck': return 'Clear stuck'
+        case 'generate_magic_link': return 'Send reconnect link'
+        case 'send_password_reset': return 'Send password reset'
+        case 'fix_onboarding': return 'Fix onboarding'
+        default: return 'Fix'
+      }
+    }
+
+    const displayLabel = (user: any) =>
+      user.displayName || user.email || `User ${String(user.userId).slice(0, 8)}…`
+
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
           <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <PageHeader title="System Health" description="Real-time monitoring and error tracking" />
+          <PageHeader title="System Health" description="Proactive user support — fix issues before users notice" />
           <button onClick={loadHealth} className="ml-auto flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
             <RefreshCw className={`w-4 h-4 ${healthLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -514,23 +652,29 @@ function AdminContent() {
           <div className="text-center py-12 text-gray-400">Loading health data...</div>
         ) : healthData ? (
           <>
-            {/* Health Score */}
+            {/* Headline stats — lead with the human count, not the error count */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className={`p-4 rounded-lg border ${healthData.healthScore >= 80 ? 'bg-green-50 border-green-200' : healthData.healthScore >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="text-3xl font-bold">{healthData.healthScore}</div>
                 <div className="text-sm text-gray-600">Health Score</div>
               </div>
-              <div className="p-4 rounded-lg border bg-white">
-                <div className="text-3xl font-bold">{healthData.errorCounts?.total || 0}</div>
-                <div className="text-sm text-gray-600">Errors (24h)</div>
+              <div className={`p-4 rounded-lg border col-span-1 md:col-span-2 ${summary.usersNeedingAttention === 0 ? 'bg-green-50 border-green-200' : summary.usersNeedingAttention > 5 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                <div className="flex items-baseline gap-2">
+                  <div className="text-3xl font-bold">{summary.usersNeedingAttention}</div>
+                  <div className="text-sm text-gray-600">users need attention</div>
+                </div>
+                <div className="flex items-center gap-3 mt-2 text-xs">
+                  <span className="flex items-center gap-1 text-green-700">
+                    <Wand2 className="w-3 h-3" /> {summary.autoFixableIssues} auto-fixable
+                  </span>
+                  <span className="flex items-center gap-1 text-red-700">
+                    <UserX className="w-3 h-3" /> {summary.userActionRequired} need user action
+                  </span>
+                </div>
               </div>
               <div className="p-4 rounded-lg border bg-white">
                 <div className="text-3xl font-bold text-red-600">{healthData.errorCounts?.critical || 0}</div>
-                <div className="text-sm text-gray-600">Critical</div>
-              </div>
-              <div className="p-4 rounded-lg border bg-white">
-                <div className="text-3xl font-bold">{healthData.integrationHealth?.expired || 0}</div>
-                <div className="text-sm text-gray-600">Expired Tokens</div>
+                <div className="text-sm text-gray-600">Critical errors (24h)</div>
               </div>
               <div className="p-4 rounded-lg border bg-white">
                 <div className="text-3xl font-bold">{healthData.activeUsers7d || 0}</div>
@@ -538,62 +682,250 @@ function AdminContent() {
               </div>
             </div>
 
-            {/* Integration Health */}
-            <div className="border border-gray-200 rounded-lg p-4 bg-white">
-              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Link2 className="w-4 h-4" /> Integration Health
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {Object.entries(healthData.integrationHealth?.byProvider || {}).map(([provider, stats]: [string, any]) => (
-                  <div key={provider} className="p-3 rounded-lg bg-gray-50 border">
-                    <div className="font-medium text-sm capitalize">{provider}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-green-600 text-sm">{stats.healthy} healthy</span>
-                      {stats.expired > 0 && <span className="text-red-600 text-sm">{stats.expired} expired</span>}
+            {/* Bulk heal bar — do the most common fixes in one click */}
+            {(summary.autoFixableIssues > 0 || stuckOutlookCount > 0 || stuckSlackCount > 0) && (
+              <div className="border border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <Wrench className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">Bulk heal</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">Fix common issues across all affected users at once.</p>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {healthData.integrationHealth?.expired > 0 && (
+                        <button
+                          onClick={() => runBulkHeal('refresh_all_tokens', `Refresh all ${healthData.integrationHealth.expired} expired tokens`)}
+                          disabled={!!bulkHealLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
+                        >
+                          {bulkHealLoading === 'refresh_all_tokens' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Key className="w-3 h-3" />}
+                          Auto-refresh all tokens
+                        </button>
+                      )}
+                      {stuckOutlookCount > 0 && (
+                        <button
+                          onClick={() => runBulkHeal('clear_all_stuck_outlook', `Mark ${stuckOutlookCount} stuck Outlook emails as processed`)}
+                          disabled={!!bulkHealLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
+                        >
+                          {bulkHealLoading === 'clear_all_stuck_outlook' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                          Clear {stuckOutlookCount} stuck Outlook
+                        </button>
+                      )}
+                      {stuckSlackCount > 0 && (
+                        <button
+                          onClick={() => runBulkHeal('clear_all_stuck_slack', `Mark ${stuckSlackCount} stuck Slack messages as processed`)}
+                          disabled={!!bulkHealLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
+                        >
+                          {bulkHealLoading === 'clear_all_stuck_slack' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
+                          Clear {stuckSlackCount} stuck Slack
+                        </button>
+                      )}
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-              {healthData.integrationHealth?.missingRefreshToken > 0 && (
-                <div className="mt-3 text-sm text-amber-600">
-                  <AlertTriangle className="w-3 h-3 inline mr-1" />
-                  {healthData.integrationHealth.missingRefreshToken} integration(s) missing refresh token — cannot self-heal
+            )}
+
+            {/* PRIORITY ACTION QUEUE — the centerpiece */}
+            <div className="border border-gray-200 rounded-lg bg-white">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Inbox className="w-4 h-4" />
+                  Action queue
+                  {queue.length > 0 && (
+                    <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+                      {queue.length} {queue.length === 1 ? 'user' : 'users'}
+                    </span>
+                  )}
+                </h3>
+                <span className="text-xs text-gray-400">Sorted by severity</span>
+              </div>
+
+              {queue.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-green-400" />
+                  <p className="font-medium text-gray-600">Everything looks healthy</p>
+                  <p className="text-xs mt-1">No users need proactive support right now.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {queue.map((user: any) => {
+                    const s = severityStyle(user.topSeverity)
+                    const isExpanded = expandedUsers.has(user.userId) || queue.length <= 5
+                    const visibleIssues = isExpanded ? user.issues : user.issues.slice(0, 1)
+                    const autoFixable = user.issues.filter((i: any) => i.canAutoFix).length
+                    return (
+                      <div key={user.userId} className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${s.dot}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-gray-900 truncate">
+                                {displayLabel(user)}
+                              </span>
+                              {user.email && user.displayName && (
+                                <span className="text-xs text-gray-500 truncate">{user.email}</span>
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wide ${s.pill}`}>
+                                {user.topSeverity}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                {user.issues.length} issue{user.issues.length === 1 ? '' : 's'}
+                                {autoFixable > 0 && ` · ${autoFixable} auto-fixable`}
+                              </span>
+                            </div>
+
+                            <div className="mt-2 space-y-1.5">
+                              {visibleIssues.map((issue: any, idx: number) => {
+                                const fixKey = `${user.userId}:${issue.type}:${issue.provider || ''}`
+                                const loading = healFixLoading === fixKey
+                                return (
+                                  <div key={idx} className="flex items-start gap-2 py-1.5 px-2 bg-gray-50 rounded-md">
+                                    <div className="mt-0.5">{issueIcon(issue.type)}</div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm text-gray-800">{issue.label}</div>
+                                      {issue.detail && (
+                                        <div className="text-[11px] text-gray-500 mt-0.5">{issue.detail}</div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      {issue.canAutoFix && issue.fixAction ? (
+                                        <button
+                                          onClick={() => fixIssue(user, issue)}
+                                          disabled={loading || !!healFixLoading}
+                                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white border border-gray-200 rounded hover:bg-indigo-50 hover:border-indigo-300 disabled:opacity-50"
+                                        >
+                                          {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3 text-indigo-600" />}
+                                          {fixLabelFor(issue)}
+                                        </button>
+                                      ) : issue.fixAction ? (
+                                        <button
+                                          onClick={() => fixIssue(user, issue)}
+                                          disabled={loading || !!healFixLoading}
+                                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white border border-amber-200 text-amber-800 rounded hover:bg-amber-50 disabled:opacity-50"
+                                        >
+                                          {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                                          {fixLabelFor(issue)}
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              {!isExpanded && user.issues.length > 1 && (
+                                <button
+                                  onClick={() => toggleUserExpanded(user.userId)}
+                                  className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2"
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                  Show {user.issues.length - 1} more issue{user.issues.length - 1 === 1 ? '' : 's'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex-shrink-0">
+                            <button
+                              onClick={() => loadUser(user.userId)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50"
+                            >
+                              <Eye className="w-3 h-3" />
+                              View user
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
 
-            {/* Data Integrity */}
-            <div className="border border-gray-200 rounded-lg p-4 bg-white">
-              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Database className="w-4 h-4" /> Data Integrity
-              </h3>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 rounded-lg bg-gray-50">
-                  <div className={`text-xl font-bold ${healthData.dataIntegrity?.stuckSlackMessages > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                    {healthData.dataIntegrity?.stuckSlackMessages || 0}
-                  </div>
-                  <div className="text-xs text-gray-500">Stuck Slack msgs</div>
+            {/* Orphaned profiles — actionable list */}
+            {orphaned.length > 0 && (
+              <div className="border border-gray-200 rounded-lg bg-white">
+                <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <UserX className="w-4 h-4" />
+                    Orphaned profiles
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                      {orphaned.length}
+                    </span>
+                  </h3>
+                  <span className="text-xs text-gray-400">Users signed up but never joined an org</span>
                 </div>
-                <div className="p-3 rounded-lg bg-gray-50">
-                  <div className={`text-xl font-bold ${healthData.dataIntegrity?.stuckOutlookEmails > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                    {healthData.dataIntegrity?.stuckOutlookEmails || 0}
-                  </div>
-                  <div className="text-xs text-gray-500">Stuck Outlook emails</div>
-                </div>
-                <div className="p-3 rounded-lg bg-gray-50">
-                  <div className={`text-xl font-bold ${(healthData.dataIntegrity?.orphanedProfiles?.length || 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                    {healthData.dataIntegrity?.orphanedProfiles?.length || 0}
-                  </div>
-                  <div className="text-xs text-gray-500">Orphaned profiles</div>
+                <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                  {orphaned.map((p: any) => (
+                    <div key={p.id} className="p-3 flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {p.display_name || p.full_name || p.email || p.id}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {p.email} · signed up {new Date(p.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => runHealthFix(`onboard:${p.id}`, 'fix_onboarding', { userId: p.id })}
+                          disabled={!!healFixLoading}
+                          className="px-2 py-1 text-xs font-medium bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Mark onboarded
+                        </button>
+                        <button
+                          onClick={() => loadUser(p.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-gray-50"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
+
+            {/* Integration Health — per-provider breakdown */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-white">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <Link2 className="w-4 h-4" /> Integration health by provider
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Object.entries(byProvider).map(([provider, stats]: [string, any]) => {
+                  const hasIssues = stats.expired > 0 || stats.expiresSoon > 0
+                  return (
+                    <div key={provider} className={`p-3 rounded-lg border ${hasIssues ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="font-medium text-sm capitalize">{provider}</div>
+                      <div className="text-2xl font-bold mt-1">{stats.total}</div>
+                      <div className="flex flex-col gap-0.5 mt-1 text-xs">
+                        <span className="text-green-700">{stats.healthy} healthy</span>
+                        {stats.expired > 0 && <span className="text-red-700">{stats.expired} expired</span>}
+                        {stats.expiresSoon > 0 && <span className="text-amber-700">{stats.expiresSoon} expiring soon</span>}
+                        {stats.missingRefresh > 0 && <span className="text-red-700">{stats.missingRefresh} no refresh token</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {healthData.integrationHealth?.missingRefreshToken > 0 && (
+                <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {healthData.integrationHealth.missingRefreshToken} integration(s) missing refresh token — cannot self-heal.
+                    Affected users appear in the Action Queue above with a "Send reconnect link" button.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Top Error Sources */}
             {healthData.topErrorSources?.length > 0 && (
               <div className="border border-gray-200 rounded-lg p-4 bg-white">
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Top Error Sources (24h)
+                  <AlertTriangle className="w-4 h-4" /> Top error sources (24h)
                 </h3>
                 <div className="space-y-2">
                   {healthData.topErrorSources.map((src: any) => (
@@ -609,10 +941,10 @@ function AdminContent() {
               </div>
             )}
 
-            {/* Recent Errors Feed */}
+            {/* Recent Errors Feed — now with user identity */}
             <div className="border border-gray-200 rounded-lg p-4 bg-white">
               <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Activity className="w-4 h-4" /> Recent Errors
+                <Activity className="w-4 h-4" /> Recent errors
               </h3>
               {(healthData.recentErrors?.length || 0) === 0 ? (
                 <div className="text-center py-8 text-gray-400">
@@ -623,7 +955,7 @@ function AdminContent() {
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {healthData.recentErrors.map((err: any) => (
                     <div key={err.id} className={`p-3 rounded-lg border text-sm ${err.severity === 'critical' ? 'bg-red-50 border-red-200' : err.severity === 'error' ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${err.severity === 'critical' ? 'bg-red-100 text-red-700' : err.severity === 'error' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
                             {err.severity}
@@ -633,7 +965,28 @@ function AdminContent() {
                         <span className="text-xs text-gray-400">{new Date(err.created_at).toLocaleTimeString()}</span>
                       </div>
                       <p className="text-gray-700">{err.message}</p>
-                      {err.user_id && <p className="text-xs text-gray-400 mt-1">User: {err.user_id.slice(0, 8)}...</p>}
+                      {err.user_id && (
+                        <div className="mt-1.5 flex items-center gap-2 text-xs">
+                          <UserCheck className="w-3 h-3 text-gray-400" />
+                          <span className="text-gray-600">
+                            {err.displayName || err.email ? (
+                              <>
+                                <span className="font-medium text-gray-700">{err.displayName || err.email}</span>
+                                {err.email && err.displayName && <span className="text-gray-400"> · {err.email}</span>}
+                              </>
+                            ) : (
+                              <code className="text-gray-400">{err.user_id}</code>
+                            )}
+                          </span>
+                          <button
+                            onClick={() => loadUser(err.user_id)}
+                            className="ml-auto text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View user
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
