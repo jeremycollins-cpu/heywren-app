@@ -128,6 +128,7 @@ function AdminContent() {
   const [healthLoading, setHealthLoading] = useState(false)
   const [healFixLoading, setHealFixLoading] = useState<string | null>(null)
   const [bulkHealLoading, setBulkHealLoading] = useState<string | null>(null)
+  const [armedBulkAction, setArmedBulkAction] = useState<string | null>(null)
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set())
   const [celebrationRate, setCelebrationRate] = useState<number>(30)
   const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
@@ -216,8 +217,9 @@ function AdminContent() {
   }
 
   // Run a bulk heal action (refresh all tokens, clear all stuck messages).
-  const runBulkHeal = async (action: string, confirmLabel: string) => {
-    if (!confirm(`Run bulk action: ${confirmLabel}?`)) return
+  // The caller arms the button first (inline two-click confirm), so this
+  // assumes confirmation already happened.
+  const runBulkHeal = async (action: string) => {
     setBulkHealLoading(action)
     try {
       const res = await fetch('/api/admin/system-health/heal', {
@@ -248,6 +250,21 @@ function AdminContent() {
       else next.add(userId)
       return next
     })
+  }
+
+  // Inline two-click confirm for bulk-heal actions: first click arms the
+  // button for 4s, second click executes. Much less jarring than a browser
+  // confirm() dialog.
+  const armOrRunBulk = (action: string) => {
+    if (armedBulkAction === action) {
+      setArmedBulkAction(null)
+      runBulkHeal(action)
+      return
+    }
+    setArmedBulkAction(action)
+    window.setTimeout(() => {
+      setArmedBulkAction(current => (current === action ? null : current))
+    }, 4000)
   }
 
   const loadCelebrationRate = async () => {
@@ -691,35 +708,64 @@ function AdminContent() {
                     <h3 className="font-semibold text-gray-900">Bulk heal</h3>
                     <p className="text-xs text-gray-600 mt-0.5">Fix common issues across all affected users at once.</p>
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {healthData.integrationHealth?.expired > 0 && (
-                        <button
-                          onClick={() => runBulkHeal('refresh_all_tokens', `Refresh all ${healthData.integrationHealth.expired} expired tokens`)}
-                          disabled={!!bulkHealLoading}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
-                        >
-                          {bulkHealLoading === 'refresh_all_tokens' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Key className="w-3 h-3" />}
-                          Auto-refresh all tokens
-                        </button>
-                      )}
-                      {stuckOutlookCount > 0 && (
-                        <button
-                          onClick={() => runBulkHeal('clear_all_stuck_outlook', `Mark ${stuckOutlookCount} stuck Outlook emails as processed`)}
-                          disabled={!!bulkHealLoading}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
-                        >
-                          {bulkHealLoading === 'clear_all_stuck_outlook' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                          Clear {stuckOutlookCount} stuck Outlook
-                        </button>
-                      )}
-                      {stuckSlackCount > 0 && (
-                        <button
-                          onClick={() => runBulkHeal('clear_all_stuck_slack', `Mark ${stuckSlackCount} stuck Slack messages as processed`)}
-                          disabled={!!bulkHealLoading}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50"
-                        >
-                          {bulkHealLoading === 'clear_all_stuck_slack' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
-                          Clear {stuckSlackCount} stuck Slack
-                        </button>
+                      {healthData.integrationHealth?.expired > 0 && (() => {
+                        const armed = armedBulkAction === 'refresh_all_tokens'
+                        const loading = bulkHealLoading === 'refresh_all_tokens'
+                        return (
+                          <button
+                            onClick={() => armOrRunBulk('refresh_all_tokens')}
+                            disabled={!!bulkHealLoading}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border disabled:opacity-50 ${armed ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700' : 'bg-white border-indigo-200 hover:bg-indigo-50'}`}
+                          >
+                            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Key className="w-3 h-3" />}
+                            {loading
+                              ? `Refreshing ${healthData.integrationHealth.expired} tokens…`
+                              : armed
+                                ? `Click again to refresh ${healthData.integrationHealth.expired} tokens`
+                                : `Auto-refresh ${healthData.integrationHealth.expired} expired tokens`}
+                          </button>
+                        )
+                      })()}
+                      {stuckOutlookCount > 0 && (() => {
+                        const armed = armedBulkAction === 'clear_all_stuck_outlook'
+                        const loading = bulkHealLoading === 'clear_all_stuck_outlook'
+                        return (
+                          <button
+                            onClick={() => armOrRunBulk('clear_all_stuck_outlook')}
+                            disabled={!!bulkHealLoading}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border disabled:opacity-50 ${armed ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'bg-white border-indigo-200 hover:bg-indigo-50'}`}
+                          >
+                            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                            {loading
+                              ? `Clearing ${stuckOutlookCount} emails…`
+                              : armed
+                                ? `Click again to clear ${stuckOutlookCount} emails`
+                                : `Clear ${stuckOutlookCount} stuck Outlook`}
+                          </button>
+                        )
+                      })()}
+                      {stuckSlackCount > 0 && (() => {
+                        const armed = armedBulkAction === 'clear_all_stuck_slack'
+                        const loading = bulkHealLoading === 'clear_all_stuck_slack'
+                        return (
+                          <button
+                            onClick={() => armOrRunBulk('clear_all_stuck_slack')}
+                            disabled={!!bulkHealLoading}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border disabled:opacity-50 ${armed ? 'bg-amber-600 border-amber-600 text-white hover:bg-amber-700' : 'bg-white border-indigo-200 hover:bg-indigo-50'}`}
+                          >
+                            {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
+                            {loading
+                              ? `Clearing ${stuckSlackCount} messages…`
+                              : armed
+                                ? `Click again to clear ${stuckSlackCount} messages`
+                                : `Clear ${stuckSlackCount} stuck Slack`}
+                          </button>
+                        )
+                      })()}
+                      {armedBulkAction && (
+                        <span className="text-[10px] text-gray-500 self-center">
+                          Confirm within 4s or button resets
+                        </span>
                       )}
                     </div>
                   </div>
