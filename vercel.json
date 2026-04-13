@@ -11,6 +11,15 @@
     },
     "app/api/admin/user-actions/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/integrations/anthropic-admin/sync/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/anthropic-admin-sync",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
