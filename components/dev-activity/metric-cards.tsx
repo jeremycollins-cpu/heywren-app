@@ -3,7 +3,7 @@
 // Shared metric cards for the personal and team dev-activity views.
 // Extracted so the team page doesn't duplicate ~350 lines of UI.
 
-import { Clock, AlarmClock, Copy, ExternalLink, Info, BarChart3, Sparkles } from 'lucide-react'
+import { Clock, AlarmClock, Copy, ExternalLink, Info, BarChart3, Sparkles, Cpu, Bot } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export interface CycleTimeSummary {
@@ -24,6 +24,18 @@ export interface StalePr {
   days_open: number
   suggested_nudge: string
   author_name?: string | null
+  ai_assisted?: boolean
+  ai_tool?: string | null
+}
+
+export interface AiShareSummary {
+  merged_prs: number
+  ai_assisted_prs: number
+  share: number | null
+  by_tool: Record<string, number>
+  avg_lines_ai: number | null
+  avg_lines_human: number | null
+  size_ratio: number | null
 }
 
 export interface WeeklyVolumeBucket {
@@ -166,6 +178,15 @@ export function StalePrList({
                       <span>by {pr.author_name}</span>
                     </>
                   )}
+                  {pr.ai_assisted && (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium"
+                      title={`Co-authored with ${pr.ai_tool ? aiToolLabelLocal(pr.ai_tool) : 'an AI tool'} — worth an extra review pass.`}
+                    >
+                      <Bot size={10} />
+                      AI
+                    </span>
+                  )}
                 </div>
                 <div className="text-sm text-gray-900 dark:text-gray-100 truncate" title={pr.title}>{pr.title}</div>
               </div>
@@ -281,6 +302,128 @@ export function CodeVolumeCard({ volume }: { volume: VolumeSummary }) {
           </span>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── AI Share Card ───────────────────────────────────────────────
+// Visibility into AI-assisted engineering work. Framed as "share", not
+// "reliance" — the goal is to see how AI shapes cycle time, review load,
+// and PR size so teams can lean into it, not to rank individuals.
+
+const TOOL_ORDER = ['claude', 'copilot', 'cursor', 'aider', 'other', 'session_only']
+
+function aiToolLabelLocal(tool: string): string {
+  switch (tool) {
+    case 'claude': return 'Claude Code'
+    case 'copilot': return 'Copilot'
+    case 'cursor': return 'Cursor'
+    case 'aider': return 'Aider'
+    case 'other': return 'Other AI'
+    case 'session_only': return 'Claude Code (session-only)'
+    default: return tool
+  }
+}
+
+function aiToolColor(tool: string): string {
+  switch (tool) {
+    case 'claude': return 'bg-indigo-500'
+    case 'copilot': return 'bg-sky-500'
+    case 'cursor': return 'bg-violet-500'
+    case 'aider': return 'bg-emerald-500'
+    case 'session_only': return 'bg-indigo-300 dark:bg-indigo-700'
+    default: return 'bg-gray-400'
+  }
+}
+
+export function AiShareCard({ share, scope = 'personal' }: { share: AiShareSummary; scope?: 'personal' | 'team' }) {
+  if (share.merged_prs === 0) return null
+
+  const pct = share.share !== null ? Math.round(share.share * 100) : 0
+  const toolEntries = TOOL_ORDER
+    .map(t => ({ tool: t, count: share.by_tool[t] || 0 }))
+    .filter(e => e.count > 0)
+
+  const sizeInsight =
+    share.size_ratio !== null
+      ? share.size_ratio >= 1.15
+        ? `AI-assisted PRs are ${Math.round((share.size_ratio - 1) * 100)}% larger on average — plan extra review time.`
+        : share.size_ratio <= 0.85
+        ? `AI-assisted PRs are ${Math.round((1 - share.size_ratio) * 100)}% smaller on average — tighter, reviewable changes.`
+        : 'AI-assisted PRs are similar in size to non-AI PRs.'
+      : null
+
+  return (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+            <Bot size={16} className="text-indigo-500" />
+            <span className="text-xs font-medium uppercase tracking-wide">AI-Assisted Share</span>
+          </div>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span className="text-3xl font-bold text-gray-900 dark:text-white">{pct}%</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              of merged PRs ({share.ai_assisted_prs} of {share.merged_prs})
+            </span>
+          </div>
+          {sizeInsight && (
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1.5">{sizeInsight}</p>
+          )}
+        </div>
+        <div className="text-[11px] text-gray-500 dark:text-gray-400 max-w-[200px] text-right leading-snug">
+          <Info size={11} className="inline mr-1 -mt-0.5" />
+          From co-author trailers + Claude Code session overlap
+        </div>
+      </div>
+
+      {/* Tool-share stacked bar */}
+      {toolEntries.length > 0 && share.ai_assisted_prs > 0 && (
+        <>
+          <div className="flex h-2 rounded-full overflow-hidden mt-4 mb-2 bg-gray-100 dark:bg-gray-700">
+            {toolEntries.map(e => {
+              const width = (e.count / share.ai_assisted_prs) * 100
+              return (
+                <div
+                  key={e.tool}
+                  className={aiToolColor(e.tool)}
+                  style={{ width: `${width}%` }}
+                  title={`${aiToolLabelLocal(e.tool)}: ${e.count} PR${e.count === 1 ? '' : 's'}`}
+                />
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-600 dark:text-gray-400">
+            {toolEntries.map(e => (
+              <div key={e.tool} className="flex items-center gap-1.5">
+                <div className={`w-2 h-2 rounded-sm ${aiToolColor(e.tool)}`} />
+                <span>{aiToolLabelLocal(e.tool)}</span>
+                <span className="text-gray-400">{e.count}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Size correlation detail */}
+      {share.avg_lines_ai !== null && share.avg_lines_human !== null && (
+        <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <div className="text-gray-500 dark:text-gray-400">Avg lines, AI-assisted</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">{formatCompact(share.avg_lines_ai)}</div>
+          </div>
+          <div>
+            <div className="text-gray-500 dark:text-gray-400">Avg lines, non-AI</div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">{formatCompact(share.avg_lines_human)}</div>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-4 leading-snug">
+        {scope === 'team'
+          ? 'Team aggregate only — individual AI usage is not surfaced on this page. AI is a tool for speed; this view helps you plan review load and celebrate velocity, not rank people.'
+          : 'Your personal view. AI-assisted work is great — this is for self-reflection and capacity sensing.'}
+      </p>
     </div>
   )
 }

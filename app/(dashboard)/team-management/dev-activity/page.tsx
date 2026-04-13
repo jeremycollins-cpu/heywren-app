@@ -11,11 +11,13 @@ import {
   StalePrList,
   CodeVolumeCard,
   RefactorRatioCard,
+  AiShareCard,
   formatCompact,
   type CycleTimeSummary,
   type StalePr,
   type VolumeSummary,
   type RefactorRatioSummary,
+  type AiShareSummary,
 } from '@/components/dev-activity/metric-cards'
 
 interface Summary {
@@ -31,6 +33,7 @@ interface PrMetrics {
   stalePrs: StalePr[]
   codeVolume: VolumeSummary
   refactorRatio: RefactorRatioSummary
+  aiShare: AiShareSummary
 }
 
 interface Contributor {
@@ -322,6 +325,9 @@ export default function TeamDevActivityPage() {
               <CodeVolumeCard volume={data.prMetrics.codeVolume} />
               <RefactorRatioCard refactor={data.prMetrics.refactorRatio} />
             </div>
+
+            {/* AI-assisted share — team aggregate only, no per-person breakdown */}
+            <AiShareCard share={data.prMetrics.aiShare} scope="team" />
 
             {/* Contributors */}
             <ContributorList contributors={data.contributors} />

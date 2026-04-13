@@ -10,10 +10,12 @@ import {
   StalePrList,
   CodeVolumeCard,
   RefactorRatioCard,
+  AiShareCard,
   type CycleTimeSummary,
   type StalePr,
   type VolumeSummary,
   type RefactorRatioSummary,
+  type AiShareSummary,
 } from '@/components/dev-activity/metric-cards'
 
 interface DailyActivity {
@@ -59,6 +61,7 @@ interface PrMetrics {
   stalePrs: StalePr[]
   codeVolume: VolumeSummary
   refactorRatio: RefactorRatioSummary
+  aiShare: AiShareSummary
 }
 
 interface DevActivityData {
@@ -363,6 +366,9 @@ export default function DevActivityPage() {
                 <RefactorRatioCard refactor={data.prMetrics.refactorRatio} />
               </div>
             )}
+
+            {/* AI-assisted share */}
+            {data.prMetrics && <AiShareCard share={data.prMetrics.aiShare} scope="personal" />}
 
             {/* Activity chart */}
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">

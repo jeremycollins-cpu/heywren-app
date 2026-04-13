@@ -79,8 +79,26 @@ export async function GET(request: NextRequest) {
 
     const allEvents = (events || []) as unknown as GithubEventRow[]
 
+    // ── Team-wide AI Claude Code sessions (for session-overlap signal) ──
+    // Fetch sessions for every team member whose GitHub events we loaded.
+    const teamUserIds = Array.from(
+      new Set(allEvents.map(e => e.user_id).filter((x): x is string => !!x))
+    )
+    let aiSessionWindows: Array<{ started_at: string; duration_seconds: number | null }> = []
+    if (teamUserIds.length > 0) {
+      const { data: sessions } = await adminDb
+        .from('ai_sessions')
+        .select('started_at, duration_seconds')
+        .in('user_id', teamUserIds)
+        .gte('started_at', sinceIso)
+      aiSessionWindows = (sessions || []).map(s => ({
+        started_at: s.started_at as string,
+        duration_seconds: (s.duration_seconds as number) ?? null,
+      }))
+    }
+
     // ── Team-wide PR metrics (identical computation to personal endpoint) ──
-    const prMetrics = computePrMetrics(allEvents)
+    const prMetrics = computePrMetrics(allEvents, { aiSessions: aiSessionWindows })
 
     // ── Summary counts ──
     const summary = {

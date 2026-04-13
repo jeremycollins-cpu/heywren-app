@@ -114,9 +114,16 @@ export async function GET(request: NextRequest) {
     // ── Recent events ──
     const recentEvents = allEvents.slice(0, 50)
 
-    // ── PR cycle time + stale PR nudges ──
-    // Derived from the same events — no extra queries.
-    const prMetrics = computePrMetrics(allEvents as unknown as GithubEventRow[])
+    // ── PR cycle time + stale PR nudges + AI share ──
+    // We already fetched aiSessions above for the correlation chart — reuse
+    // them here to power the session-overlap signal in computeAiShare.
+    const aiSessionWindows = (aiData || []).map(s => ({
+      started_at: s.started_at as string,
+      duration_seconds: (s.duration_seconds as number) ?? null,
+    }))
+    const prMetrics = computePrMetrics(allEvents as unknown as GithubEventRow[], {
+      aiSessions: aiSessionWindows,
+    })
 
     return NextResponse.json({
       summary: {

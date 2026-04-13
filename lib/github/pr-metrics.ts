@@ -27,6 +27,8 @@ export interface StalePr {
   opened_at: string
   days_open: number
   suggested_nudge: string    // draft Slack/DM-ready message
+  ai_assisted?: boolean      // pulled from the opened event's metadata
+  ai_tool?: string | null
 }
 
 export interface CycleTimeSummary {
@@ -66,11 +68,22 @@ export interface RefactorRatioSummary {
   }>
 }
 
+export interface AiShareSummary {
+  merged_prs: number              // total merged PRs in window
+  ai_assisted_prs: number         // merged PRs with an AI signature OR session overlap
+  share: number | null            // ai_assisted / merged, 0–1, null when merged=0
+  by_tool: Record<string, number> // { claude: n, copilot: n, cursor: n, aider: n, other: n, session_only: n }
+  avg_lines_ai: number | null     // mean (additions+deletions) for AI-assisted merged PRs
+  avg_lines_human: number | null  // mean (additions+deletions) for non-AI merged PRs
+  size_ratio: number | null       // avg_lines_ai / avg_lines_human (null when either is 0/unknown)
+}
+
 export interface PrMetrics {
   cycleTime: CycleTimeSummary
   stalePrs: StalePr[]
   codeVolume: VolumeSummary
   refactorRatio: RefactorRatioSummary
+  aiShare: AiShareSummary
 }
 
 const STALE_THRESHOLD_DAYS = 2
@@ -283,9 +296,10 @@ function computeRefactorRatio(mergedEvents: GithubEventRow[]): RefactorRatioSumm
  */
 export function computePrMetrics(
   events: GithubEventRow[],
-  opts: { volumeWeeks?: number } = {}
+  opts: { volumeWeeks?: number; aiSessions?: AiSessionWindow[] } = {}
 ): PrMetrics {
   const volumeWeeks = opts.volumeWeeks ?? 8
+  const aiSessions = opts.aiSessions ?? []
   // Index PR-related events by their stable key.
   // A single PR can have up to 3 lifecycle events: opened, merged, closed.
   const opened = new Map<string, GithubEventRow>()
@@ -333,6 +347,8 @@ export function computePrMetrics(
       opened_at: openEvent.event_at,
       days_open: Number(daysOpen.toFixed(1)),
       suggested_nudge: buildNudgeDraft(title, openEvent.url, daysOpen),
+      ai_assisted: Boolean(openEvent.metadata?.ai_assisted),
+      ai_tool: openEvent.metadata?.ai_tool ?? null,
     })
   }
 
@@ -346,6 +362,7 @@ export function computePrMetrics(
   const mergedEvents = Array.from(merged.values())
   const codeVolume = computeCodeVolume(mergedEvents, volumeWeeks)
   const refactorRatio = computeRefactorRatio(mergedEvents)
+  const aiShare = computeAiShare(mergedEvents, aiSessions)
 
   return {
     cycleTime: {
@@ -358,6 +375,7 @@ export function computePrMetrics(
     stalePrs,
     codeVolume,
     refactorRatio,
+    aiShare,
   }
 }
 
@@ -454,6 +472,91 @@ export function computeContributorBreakdown(events: GithubEventRow[]): Contribut
     const bTotal = b.commits + b.prs_merged + b.reviews_given
     return bTotal - aTotal
   })
+}
+
+// ── AI-assisted share ───────────────────────────────────────────
+
+export interface AiSessionWindow {
+  started_at: string
+  duration_seconds: number | null
+}
+
+/**
+ * Returns true if the event fell inside any Claude Code session window.
+ * This is the "session overlap" signal — catches AI-assisted work even
+ * when the commit/PR has no explicit trailer (because HeyWren directly
+ * observed a Claude Code session running at that time).
+ */
+function eventOverlapsAnySession(eventAtIso: string, sessions: AiSessionWindow[]): boolean {
+  if (sessions.length === 0) return false
+  const t = new Date(eventAtIso).getTime()
+  for (const s of sessions) {
+    const start = new Date(s.started_at).getTime()
+    const end = start + (s.duration_seconds ?? 0) * 1000
+    // Small grace window (5 minutes) — a commit just after session-end is
+    // almost certainly finishing an AI-paired task.
+    if (t >= start - 5 * 60_000 && t <= end + 5 * 60_000) return true
+  }
+  return false
+}
+
+/**
+ * Compute the AI-assisted share of merged PRs in the window.
+ * Combines two signals:
+ *   1. Explicit signatures in commit/PR text (tool = claude/copilot/cursor/…)
+ *   2. Temporal overlap with Claude Code sessions (tool = 'session_only'
+ *      when no explicit signature was present)
+ * Also returns an average-size correlation so the headline has context.
+ */
+export function computeAiShare(
+  events: GithubEventRow[],
+  aiSessions: AiSessionWindow[] = []
+): AiShareSummary {
+  const merged = events.filter(e => e.event_type === 'pr_merged')
+
+  let aiAssisted = 0
+  const byTool: Record<string, number> = {
+    claude: 0, copilot: 0, cursor: 0, aider: 0, other: 0, session_only: 0,
+  }
+
+  const linesAi: number[] = []
+  const linesHuman: number[] = []
+
+  for (const ev of merged) {
+    const hasSig = Boolean(ev.metadata?.ai_assisted)
+    const tool = (ev.metadata?.ai_tool as string | null) || null
+    const overlap = eventOverlapsAnySession(ev.event_at, aiSessions)
+    const isAi = hasSig || overlap
+
+    if (isAi) {
+      aiAssisted++
+      if (hasSig && tool && byTool[tool] !== undefined) byTool[tool]++
+      else if (hasSig) byTool.other++
+      else byTool.session_only++
+    }
+
+    if (typeof ev.additions === 'number' && typeof ev.deletions === 'number') {
+      const size = (ev.additions || 0) + (ev.deletions || 0)
+      if (isAi) linesAi.push(size)
+      else linesHuman.push(size)
+    }
+  }
+
+  const avgAi = linesAi.length > 0 ? Math.round(mean(linesAi) as number) : null
+  const avgHuman = linesHuman.length > 0 ? Math.round(mean(linesHuman) as number) : null
+  const sizeRatio = avgAi !== null && avgHuman !== null && avgHuman > 0
+    ? Number((avgAi / avgHuman).toFixed(2))
+    : null
+
+  return {
+    merged_prs: merged.length,
+    ai_assisted_prs: aiAssisted,
+    share: merged.length > 0 ? Number((aiAssisted / merged.length).toFixed(3)) : null,
+    by_tool: byTool,
+    avg_lines_ai: avgAi,
+    avg_lines_human: avgHuman,
+    size_ratio: sizeRatio,
+  }
 }
 
 export const _internal = { formatHours, median, mean, STALE_THRESHOLD_DAYS }
