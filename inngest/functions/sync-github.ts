@@ -13,6 +13,10 @@ const INITIAL_SYNC_DAYS = 90
 // Safety cap on per-PR stat hydration calls per sync run.
 // Protects against runaway rate-limit usage for unusually active users.
 const MAX_PR_HYDRATIONS = 100
+// Budget for backfilling line stats on historical PR events that were
+// synced before stat hydration shipped (or were missed). Each daily sync
+// chips away at the backlog until it's drained.
+const MAX_PR_BACKFILLS = 50
 
 function getAdminClient() {
   return createClient(
@@ -293,6 +297,72 @@ export const syncGithubEvents = inngest.createFunction(
 
         totalEvents = allEvents.length
       }
+
+      // ── 5. Backfill line stats on historical PR events ──
+      // The search API above only returns PRs *updated* in the sync window,
+      // so older merged PRs (esp. those synced before hydration shipped)
+      // can have NULL additions/deletions forever. This step finds some of
+      // them and fills them in — bounded by MAX_PR_BACKFILLS to keep rate
+      // usage predictable. Over repeated daily syncs, history drains.
+      const backfilled = await step.run('backfill-pr-stats', async () => {
+        const { data: unhydrated } = await supabase
+          .from('github_events')
+          .select('repo_name, metadata')
+          .eq('user_id', user_id)
+          .eq('event_type', 'pr_merged')
+          .is('additions', null)
+          .order('event_at', { ascending: false })
+          .limit(MAX_PR_BACKFILLS)
+
+        if (!unhydrated?.length) return { backfilled: 0 }
+
+        // Dedupe by PR key — the same PR may also have an unhydrated
+        // pr_opened row; we'll update both from a single API call.
+        const prKeys = new Set<string>()
+        const targets: Array<{ repo: string; number: number }> = []
+        for (const row of unhydrated) {
+          const num = (row as any).metadata?.pr_number
+          const repo = (row as any).repo_name
+          if (!num || !repo) continue
+          const key = `${repo}#${num}`
+          if (prKeys.has(key)) continue
+          prKeys.add(key)
+          targets.push({ repo, number: num })
+        }
+
+        let filled = 0
+        for (const t of targets) {
+          try {
+            const detail = await githubFetch(
+              `${GITHUB_API}/repos/${t.repo}/pulls/${t.number}`,
+              token
+            )
+            const stats = {
+              additions: Number.isFinite(detail.additions) ? detail.additions : 0,
+              deletions: Number.isFinite(detail.deletions) ? detail.deletions : 0,
+              changed_files: Number.isFinite(detail.changed_files) ? detail.changed_files : 0,
+            }
+            // Update every event row for this PR (opened + merged) in one go.
+            const { error } = await supabase
+              .from('github_events')
+              .update(stats)
+              .eq('user_id', user_id)
+              .eq('repo_name', t.repo)
+              .in('event_type', ['pr_opened', 'pr_merged'])
+              .filter('metadata->>pr_number', 'eq', String(t.number))
+            if (error) {
+              console.warn(`[sync-github] Backfill update failed for ${t.repo}#${t.number}:`, error.message)
+              continue
+            }
+            filled++
+          } catch (err: any) {
+            // Private/archived/deleted PRs — skip and move on.
+            console.warn(`[sync-github] Backfill fetch failed for ${t.repo}#${t.number}:`, err?.message)
+          }
+        }
+
+        return { backfilled: filled, considered: targets.length }
+      })
 
       // Update sync cursor
       await supabase

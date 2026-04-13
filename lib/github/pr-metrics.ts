@@ -371,10 +371,11 @@ export interface ContributorRow {
   commits: number
   prs_opened: number
   prs_merged: number
+  prs_merged_with_stats: number      // how many of the merged PRs had additions/deletions populated
   reviews_given: number
   stale_prs: number                  // PRs authored by this user that are 2+ days open
-  lines_added: number                // from merged PRs only
-  lines_removed: number              // from merged PRs only
+  lines_added: number                // from merged PRs only (where stats available)
+  lines_removed: number              // from merged PRs only (where stats available)
 }
 
 /**
@@ -420,6 +421,7 @@ export function computeContributorBreakdown(events: GithubEventRow[]): Contribut
         commits: 0,
         prs_opened: 0,
         prs_merged: 0,
+        prs_merged_with_stats: 0,
         reviews_given: 0,
         stale_prs: 0,
         lines_added: 0,
@@ -431,8 +433,12 @@ export function computeContributorBreakdown(events: GithubEventRow[]): Contribut
     else if (e.event_type === 'pr_opened') row.prs_opened++
     else if (e.event_type === 'pr_merged') {
       row.prs_merged++
-      if (typeof e.additions === 'number') row.lines_added += e.additions
-      if (typeof e.deletions === 'number') row.lines_removed += e.deletions
+      const hasStats = typeof e.additions === 'number' && typeof e.deletions === 'number'
+      if (hasStats) {
+        row.prs_merged_with_stats++
+        row.lines_added += e.additions || 0
+        row.lines_removed += e.deletions || 0
+      }
     } else if (e.event_type === 'pr_reviewed') row.reviews_given++
   }
 

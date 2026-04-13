@@ -41,6 +41,7 @@ interface Contributor {
   commits: number
   prs_opened: number
   prs_merged: number
+  prs_merged_with_stats: number
   reviews_given: number
   stale_prs: number
   lines_added: number
@@ -88,6 +89,11 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
   // For a simple workload-balance visual, scale bars against the max-PR person.
   const maxMerged = Math.max(...contributors.map(c => c.prs_merged), 1)
 
+  // Total line-stat coverage across the team — used for the transparency note.
+  const totalMerged = contributors.reduce((s, c) => s + c.prs_merged, 0)
+  const totalHydrated = contributors.reduce((s, c) => s + c.prs_merged_with_stats, 0)
+  const coverageIncomplete = totalMerged > 0 && totalHydrated < totalMerged
+
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 flex-wrap">
@@ -119,6 +125,8 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
               const key = c.user_id || c.github_username || `row-${i}`
               const pct = (c.prs_merged / maxMerged) * 100
               const netLines = c.lines_added - c.lines_removed
+              const hasAnyStats = c.prs_merged_with_stats > 0
+              const partialStats = hasAnyStats && c.prs_merged_with_stats < c.prs_merged
               return (
                 <tr key={key} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
                   <td className="px-5 py-3">
@@ -157,8 +165,17 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
                       <span className="text-gray-400">0</span>
                     )}
                   </td>
-                  <td className={`px-5 py-3 text-right tabular-nums ${netLines < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                    {netLines >= 0 ? '+' : ''}{formatCompact(netLines)}
+                  <td className={`px-5 py-3 text-right tabular-nums ${!hasAnyStats ? 'text-gray-400' : netLines < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    {!hasAnyStats ? (
+                      <span title="Line stats not yet available — the sync progressively backfills historical PRs each day.">—</span>
+                    ) : (
+                      <span
+                        title={partialStats ? `Based on ${c.prs_merged_with_stats} of ${c.prs_merged} merged PRs — the rest are still being backfilled.` : undefined}
+                      >
+                        {netLines >= 0 ? '+' : ''}{formatCompact(netLines)}
+                        {partialStats && <span className="text-[10px] text-gray-400 ml-0.5">*</span>}
+                      </span>
+                    )}
                   </td>
                 </tr>
               )
@@ -166,8 +183,15 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
           </tbody>
         </table>
       </div>
-      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400">
-        Merged PRs and commits reflect volume, not value. Review-count imbalances and stale-PR concentration are the most actionable signals here.
+      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between gap-3 flex-wrap">
+        <span>
+          Merged PRs and commits reflect volume, not value. Review-count imbalances and stale-PR concentration are the most actionable signals here.
+        </span>
+        {coverageIncomplete && (
+          <span className="shrink-0" title="Line counts are hydrated from GitHub over several daily syncs for historical PRs.">
+            Net lines: {totalHydrated}/{totalMerged} PRs hydrated
+          </span>
+        )}
       </div>
     </div>
   )
