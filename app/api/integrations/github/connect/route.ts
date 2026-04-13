@@ -88,7 +88,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Resolve team
-    const { teamId } = await ensureTeamForUser(userId)
+    let teamId: string
+    try {
+      const result = await ensureTeamForUser(userId)
+      teamId = result.teamId
+    } catch (teamErr: any) {
+      console.error('Failed to resolve team for GitHub connect:', teamErr)
+      return NextResponse.json({ error: 'Failed to resolve team', detail: teamErr.message }, { status: 500 })
+    }
 
     // Upsert integration
     const supabase = getAdminClient()
@@ -113,7 +120,7 @@ export async function GET(request: NextRequest) {
 
     if (upsertError) {
       console.error('Failed to store GitHub integration:', upsertError)
-      return NextResponse.json({ error: 'Failed to store integration' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to store integration', detail: upsertError.message, code: upsertError.code }, { status: 500 })
     }
 
     // Get organization_id
