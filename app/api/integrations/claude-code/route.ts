@@ -128,6 +128,45 @@ export async function GET() {
 
     const activeTokens = (tokens || []).filter(t => new Date(t.expires_at) > new Date())
 
+    // Self-heal: if the user has an active Claude Code token but the
+    // `integrations` table is missing a row for them, the UI would
+    // otherwise show "Connect" and a stray click would revoke the
+    // working token. Create the row so the UI stays in sync.
+    if (activeTokens.length > 0) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('current_team_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.current_team_id) {
+        const { data: existing } = await supabase
+          .from('integrations')
+          .select('id')
+          .eq('team_id', profile.current_team_id)
+          .eq('user_id', user.id)
+          .eq('provider', 'claude_code')
+          .maybeSingle()
+
+        if (!existing) {
+          const { error: healError } = await supabase.from('integrations').insert({
+            team_id: profile.current_team_id,
+            user_id: user.id,
+            provider: 'claude_code',
+            access_token: 'token-based-auth',
+            config: {
+              setup_at: new Date().toISOString(),
+              token_expires_at: activeTokens[0].expires_at,
+              recovered: true,
+            },
+          })
+          if (healError) {
+            console.error('Claude Code integration self-heal failed:', healError)
+          }
+        }
+      }
+    }
+
     // Get session count for this user
     const { count } = await supabase
       .from('ai_sessions')
