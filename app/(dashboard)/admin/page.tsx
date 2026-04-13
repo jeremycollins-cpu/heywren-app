@@ -915,7 +915,7 @@ function AdminContent() {
                   <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                   <span>
                     {healthData.integrationHealth.missingRefreshToken} integration(s) missing refresh token — cannot self-heal.
-                    Affected users appear in the Action Queue above with a "Send reconnect link" button.
+                    Affected users appear in the Action Queue above with a &ldquo;Send reconnect link&rdquo; button.
                   </span>
                 </div>
               )}
