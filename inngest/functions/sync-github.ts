@@ -4,6 +4,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { detectAiSignature, mergeAiSignatures } from '@/lib/github/ai-signature'
 
 const GITHUB_API = 'https://api.github.com'
 const MAX_PAGES = 10
@@ -13,6 +14,10 @@ const INITIAL_SYNC_DAYS = 90
 // Safety cap on per-PR stat hydration calls per sync run.
 // Protects against runaway rate-limit usage for unusually active users.
 const MAX_PR_HYDRATIONS = 100
+// Budget for backfilling line stats on historical PR events that were
+// synced before stat hydration shipped (or were missed). Each daily sync
+// chips away at the backlog until it's drained.
+const MAX_PR_BACKFILLS = 50
 
 function getAdminClient() {
   return createClient(
@@ -100,14 +105,20 @@ export const syncGithubEvents = inngest.createFunction(
 
             const repo = event.repo?.name || 'unknown'
             for (const commit of (event.payload?.commits || [])) {
+              const fullMessage = commit.message || ''
+              const sig = detectAiSignature(fullMessage)
               events.push({
                 github_id: commit.sha,
                 event_type: 'commit',
                 repo_name: repo,
-                title: (commit.message || '').split('\n')[0].slice(0, 500),
+                title: fullMessage.split('\n')[0].slice(0, 500),
                 url: `https://github.com/${repo}/commit/${commit.sha}`,
                 github_username: username,
                 event_at: event.created_at,
+                metadata: {
+                  ai_assisted: sig.ai_assisted,
+                  ai_tool: sig.tool,
+                },
               })
             }
           }
@@ -129,6 +140,11 @@ export const syncGithubEvents = inngest.createFunction(
 
           for (const pr of data.items) {
             const repo = pr.repository_url?.replace('https://api.github.com/repos/', '') || 'unknown'
+            // Detect AI signature from PR title + body in one pass.
+            const sig = mergeAiSignatures(
+              detectAiSignature(pr.title),
+              detectAiSignature(pr.body)
+            )
 
             // PR opened
             events.push({
@@ -143,6 +159,8 @@ export const syncGithubEvents = inngest.createFunction(
                 pr_number: pr.number,
                 state: pr.state,
                 labels: (pr.labels || []).map((l: any) => l.name),
+                ai_assisted: sig.ai_assisted,
+                ai_tool: sig.tool,
               },
             })
 
@@ -156,7 +174,11 @@ export const syncGithubEvents = inngest.createFunction(
                 url: pr.html_url,
                 github_username: username,
                 event_at: pr.pull_request.merged_at,
-                metadata: { pr_number: pr.number },
+                metadata: {
+                  pr_number: pr.number,
+                  ai_assisted: sig.ai_assisted,
+                  ai_tool: sig.tool,
+                },
               })
             } else if (pr.state === 'closed') {
               events.push({
@@ -293,6 +315,107 @@ export const syncGithubEvents = inngest.createFunction(
 
         totalEvents = allEvents.length
       }
+
+      // ── 5. Backfill line stats on historical PR events ──
+      // The search API above only returns PRs *updated* in the sync window,
+      // so older merged PRs (esp. those synced before hydration shipped)
+      // can have NULL additions/deletions forever. This step finds some of
+      // them and fills them in — bounded by MAX_PR_BACKFILLS to keep rate
+      // usage predictable. Over repeated daily syncs, history drains.
+      const backfilled = await step.run('backfill-pr-stats', async () => {
+        const { data: unhydrated } = await supabase
+          .from('github_events')
+          .select('repo_name, metadata')
+          .eq('user_id', user_id)
+          .eq('event_type', 'pr_merged')
+          .is('additions', null)
+          .order('event_at', { ascending: false })
+          .limit(MAX_PR_BACKFILLS)
+
+        if (!unhydrated?.length) return { backfilled: 0 }
+
+        // Dedupe by PR key — the same PR may also have an unhydrated
+        // pr_opened row; we'll update both from a single API call.
+        const prKeys = new Set<string>()
+        const targets: Array<{ repo: string; number: number }> = []
+        for (const row of unhydrated) {
+          const num = (row as any).metadata?.pr_number
+          const repo = (row as any).repo_name
+          if (!num || !repo) continue
+          const key = `${repo}#${num}`
+          if (prKeys.has(key)) continue
+          prKeys.add(key)
+          targets.push({ repo, number: num })
+        }
+
+        let filled = 0
+        for (const t of targets) {
+          try {
+            const detail = await githubFetch(
+              `${GITHUB_API}/repos/${t.repo}/pulls/${t.number}`,
+              token
+            )
+            const stats = {
+              additions: Number.isFinite(detail.additions) ? detail.additions : 0,
+              deletions: Number.isFinite(detail.deletions) ? detail.deletions : 0,
+              changed_files: Number.isFinite(detail.changed_files) ? detail.changed_files : 0,
+            }
+
+            // Also capture AI signature from the PR title + body so the
+            // backfill drains both gaps (line stats AND AI authorship) in
+            // a single pass. Backfilled events were likely synced before
+            // this feature existed and have neither.
+            const sig = mergeAiSignatures(
+              detectAiSignature(detail.title),
+              detectAiSignature(detail.body)
+            )
+
+            // We can't patch jsonb keys in a single SQL update across rows
+            // without a read-modify-write, so do it in two steps: first the
+            // stats columns, then the metadata for each matching event.
+            const { error } = await supabase
+              .from('github_events')
+              .update(stats)
+              .eq('user_id', user_id)
+              .eq('repo_name', t.repo)
+              .in('event_type', ['pr_opened', 'pr_merged'])
+              .filter('metadata->>pr_number', 'eq', String(t.number))
+
+            if (!error) {
+              // Merge ai_assisted / ai_tool into each matching row's metadata.
+              const { data: matches } = await supabase
+                .from('github_events')
+                .select('id, metadata')
+                .eq('user_id', user_id)
+                .eq('repo_name', t.repo)
+                .in('event_type', ['pr_opened', 'pr_merged'])
+                .filter('metadata->>pr_number', 'eq', String(t.number))
+
+              for (const m of matches || []) {
+                const merged = {
+                  ...((m as any).metadata || {}),
+                  ai_assisted: sig.ai_assisted,
+                  ai_tool: sig.tool,
+                }
+                await supabase
+                  .from('github_events')
+                  .update({ metadata: merged })
+                  .eq('id', (m as any).id)
+              }
+            }
+            if (error) {
+              console.warn(`[sync-github] Backfill update failed for ${t.repo}#${t.number}:`, error.message)
+              continue
+            }
+            filled++
+          } catch (err: any) {
+            // Private/archived/deleted PRs — skip and move on.
+            console.warn(`[sync-github] Backfill fetch failed for ${t.repo}#${t.number}:`, err?.message)
+          }
+        }
+
+        return { backfilled: filled, considered: targets.length }
+      })
 
       // Update sync cursor
       await supabase

@@ -11,11 +11,13 @@ import {
   StalePrList,
   CodeVolumeCard,
   RefactorRatioCard,
+  AiShareCard,
   formatCompact,
   type CycleTimeSummary,
   type StalePr,
   type VolumeSummary,
   type RefactorRatioSummary,
+  type AiShareSummary,
 } from '@/components/dev-activity/metric-cards'
 
 interface Summary {
@@ -31,6 +33,7 @@ interface PrMetrics {
   stalePrs: StalePr[]
   codeVolume: VolumeSummary
   refactorRatio: RefactorRatioSummary
+  aiShare: AiShareSummary
 }
 
 interface Contributor {
@@ -41,10 +44,16 @@ interface Contributor {
   commits: number
   prs_opened: number
   prs_merged: number
+  prs_merged_with_stats: number
   reviews_given: number
   stale_prs: number
   lines_added: number
   lines_removed: number
+}
+
+interface RepoOption {
+  name: string         // owner/repo
+  event_count: number  // total events in window
 }
 
 interface TeamDevActivityData {
@@ -52,6 +61,8 @@ interface TeamDevActivityData {
   summary: Summary
   prMetrics: PrMetrics
   contributors: Contributor[]
+  repos: RepoOption[]
+  filter: { repo: string | null }
 }
 
 // ── Stat card ───────────────────────────────────────────────────
@@ -88,6 +99,11 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
   // For a simple workload-balance visual, scale bars against the max-PR person.
   const maxMerged = Math.max(...contributors.map(c => c.prs_merged), 1)
 
+  // Total line-stat coverage across the team — used for the transparency note.
+  const totalMerged = contributors.reduce((s, c) => s + c.prs_merged, 0)
+  const totalHydrated = contributors.reduce((s, c) => s + c.prs_merged_with_stats, 0)
+  const coverageIncomplete = totalMerged > 0 && totalHydrated < totalMerged
+
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 flex-wrap">
@@ -119,6 +135,8 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
               const key = c.user_id || c.github_username || `row-${i}`
               const pct = (c.prs_merged / maxMerged) * 100
               const netLines = c.lines_added - c.lines_removed
+              const hasAnyStats = c.prs_merged_with_stats > 0
+              const partialStats = hasAnyStats && c.prs_merged_with_stats < c.prs_merged
               return (
                 <tr key={key} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
                   <td className="px-5 py-3">
@@ -157,8 +175,17 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
                       <span className="text-gray-400">0</span>
                     )}
                   </td>
-                  <td className={`px-5 py-3 text-right tabular-nums ${netLines < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                    {netLines >= 0 ? '+' : ''}{formatCompact(netLines)}
+                  <td className={`px-5 py-3 text-right tabular-nums ${!hasAnyStats ? 'text-gray-400' : netLines < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    {!hasAnyStats ? (
+                      <span title="Line stats not yet available — the sync progressively backfills historical PRs each day.">—</span>
+                    ) : (
+                      <span
+                        title={partialStats ? `Based on ${c.prs_merged_with_stats} of ${c.prs_merged} merged PRs — the rest are still being backfilled.` : undefined}
+                      >
+                        {netLines >= 0 ? '+' : ''}{formatCompact(netLines)}
+                        {partialStats && <span className="text-[10px] text-gray-400 ml-0.5">*</span>}
+                      </span>
+                    )}
                   </td>
                 </tr>
               )
@@ -166,8 +193,15 @@ function ContributorList({ contributors }: { contributors: Contributor[] }) {
           </tbody>
         </table>
       </div>
-      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400">
-        Merged PRs and commits reflect volume, not value. Review-count imbalances and stale-PR concentration are the most actionable signals here.
+      <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 text-[11px] text-gray-500 dark:text-gray-400 flex items-center justify-between gap-3 flex-wrap">
+        <span>
+          Merged PRs and commits reflect volume, not value. Review-count imbalances and stale-PR concentration are the most actionable signals here.
+        </span>
+        {coverageIncomplete && (
+          <span className="shrink-0" title="Line counts are hydrated from GitHub over several daily syncs for historical PRs.">
+            Net lines: {totalHydrated}/{totalMerged} PRs hydrated
+          </span>
+        )}
       </div>
     </div>
   )
@@ -200,19 +234,29 @@ export default function TeamDevActivityPage() {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [days, setDays] = useState(30)
+  // Selected repo filter. Empty string = "All repositories".
+  const [repo, setRepo] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/dev-activity/team?days=${days}`)
+        const params = new URLSearchParams({ days: String(days) })
+        if (repo) params.set('repo', repo)
+        const res = await fetch(`/api/dev-activity/team?${params.toString()}`)
         if (res.status === 403) {
           setForbidden(true)
           return
         }
         if (!res.ok) throw new Error('Failed to fetch')
-        const json = await res.json()
+        const json: TeamDevActivityData = await res.json()
         setData(json)
+        // If the selected repo is no longer in the list (e.g. the user
+        // shortened the time window), reset the filter so the dropdown
+        // doesn't show a stale selection.
+        if (repo && !json.repos.some(r => r.name === repo)) {
+          setRepo('')
+        }
       } catch (err) {
         console.error('Failed to load team dev activity:', err)
         toast.error('Failed to load team developer activity')
@@ -221,7 +265,7 @@ export default function TeamDevActivityPage() {
       }
     }
     fetchData()
-  }, [days])
+  }, [days, repo])
 
   if (loading) return <LoadingSkeleton variant="dashboard" />
 
@@ -260,10 +304,31 @@ export default function TeamDevActivityPage() {
               Team Dev Activity {data?.team?.name ? <span className="text-gray-400 font-normal">· {data.team.name}</span> : null}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Aggregated engineering output across your team. Load distribution, not performance ranking.
+              {repo
+                ? <>Filtered to <span className="font-mono text-gray-700 dark:text-gray-300">{repo}</span>. Load distribution, not performance ranking.</>
+                : <>Aggregated engineering output across your team. Load distribution, not performance ranking.</>
+              }
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {data && data.repos.length > 0 && (
+              <select
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white max-w-[220px]"
+                title={repo || 'All repositories'}
+              >
+                <option value="">All repositories ({data.repos.length})</option>
+                {data.repos.map(r => {
+                  const short = r.name.split('/').pop() || r.name
+                  return (
+                    <option key={r.name} value={r.name} title={r.name}>
+                      {short} ({r.event_count})
+                    </option>
+                  )
+                })}
+              </select>
+            )}
             <select
               value={days}
               onChange={(e) => setDays(parseInt(e.target.value))}
@@ -298,6 +363,9 @@ export default function TeamDevActivityPage() {
               <CodeVolumeCard volume={data.prMetrics.codeVolume} />
               <RefactorRatioCard refactor={data.prMetrics.refactorRatio} />
             </div>
+
+            {/* AI-assisted share — team aggregate only, no per-person breakdown */}
+            <AiShareCard share={data.prMetrics.aiShare} scope="team" />
 
             {/* Contributors */}
             <ContributorList contributors={data.contributors} />

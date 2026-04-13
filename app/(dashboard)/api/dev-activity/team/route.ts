@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const days = Math.max(1, Math.min(parseInt(searchParams.get('days') || '30', 10) || 30, 180))
+    const repoFilter = (searchParams.get('repo') || '').trim()
 
     const since = new Date()
     since.setDate(since.getDate() - days)
@@ -77,10 +78,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const allEvents = (events || []) as unknown as GithubEventRow[]
+    const allEventsUnfiltered = (events || []) as unknown as GithubEventRow[]
+
+    // Build the repo list from the unfiltered set so the dropdown shows every
+    // active repo even when a filter is already applied. Sort by event count
+    // descending — busiest apps at the top.
+    const repoCounts = new Map<string, number>()
+    for (const e of allEventsUnfiltered) {
+      repoCounts.set(e.repo_name, (repoCounts.get(e.repo_name) || 0) + 1)
+    }
+    const repos = Array.from(repoCounts.entries())
+      .map(([name, count]) => ({ name, event_count: count }))
+      .sort((a, b) => b.event_count - a.event_count)
+
+    // Apply the repo filter (if any) for downstream metric computation.
+    const allEvents = repoFilter
+      ? allEventsUnfiltered.filter(e => e.repo_name === repoFilter)
+      : allEventsUnfiltered
+
+    // ── Team-wide AI Claude Code sessions (for session-overlap signal) ──
+    // Fetch sessions for every team member whose GitHub events we loaded.
+    const teamUserIds = Array.from(
+      new Set(allEvents.map(e => e.user_id).filter((x): x is string => !!x))
+    )
+    let aiSessionWindows: Array<{ started_at: string; duration_seconds: number | null }> = []
+    if (teamUserIds.length > 0) {
+      const { data: sessions } = await adminDb
+        .from('ai_sessions')
+        .select('started_at, duration_seconds')
+        .in('user_id', teamUserIds)
+        .gte('started_at', sinceIso)
+      aiSessionWindows = (sessions || []).map(s => ({
+        started_at: s.started_at as string,
+        duration_seconds: (s.duration_seconds as number) ?? null,
+      }))
+    }
 
     // ── Team-wide PR metrics (identical computation to personal endpoint) ──
-    const prMetrics = computePrMetrics(allEvents)
+    const prMetrics = computePrMetrics(allEvents, { aiSessions: aiSessionWindows })
 
     // ── Summary counts ──
     const summary = {
@@ -124,6 +159,8 @@ export async function GET(request: NextRequest) {
       summary,
       prMetrics,
       contributors: contributorsWithNames,
+      repos,
+      filter: { repo: repoFilter || null },
     })
   } catch (err: any) {
     console.error('[dev-activity/team] GET error:', err)
