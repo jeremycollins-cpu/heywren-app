@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor, Hash, BellOff, Loader2, Cpu, Terminal, Check } from 'lucide-react'
+import { Zap, CheckCircle2, Shield, ChevronDown, ChevronUp, Copy, ExternalLink, Mic, Video, Chrome, Monitor, Hash, BellOff, Loader2, Cpu, Terminal, Check, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
@@ -225,11 +225,32 @@ function ITApprovalGuide({ showSlack, showOutlook }: { showSlack: boolean; showO
   )
 }
 
-function ClaudeCodeSetup({ onConnected }: { onConnected: (integration: Integration) => void }) {
+function ClaudeCodeSetup({ connected, onConnected, onDisconnect }: {
+  connected: boolean
+  onConnected: (integration: Integration) => void
+  onDisconnect: () => void
+}) {
   const [step, setStep] = useState<'idle' | 'generating' | 'ready'>('idle')
   const [setupCommand, setSetupCommand] = useState('')
   const [copied, setCopied] = useState(false)
-  const [sessionsSynced, setSessionsSynced] = useState(0)
+  const [status, setStatus] = useState<{ sessions_synced: number; connected: boolean; tokens?: Array<{ id: string; created_at: string; last_used_at: string | null; expires_at: string }> } | null>(null)
+  const [loadingStatus, setLoadingStatus] = useState(connected)
+  const [showSetup, setShowSetup] = useState(false)
+
+  // Fetch status when connected
+  useEffect(() => {
+    if (!connected) return
+    setLoadingStatus(true)
+    fetch('/api/integrations/claude-code')
+      .then(res => res.json())
+      .then(data => {
+        setStatus(data)
+        // If connected but no sessions synced, prompt setup
+        if (data.sessions_synced === 0) setShowSetup(true)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingStatus(false))
+  }, [connected])
 
   const handleGenerate = async () => {
     setStep('generating')
@@ -242,11 +263,27 @@ function ClaudeCodeSetup({ onConnected }: { onConnected: (integration: Integrati
       const data = await res.json()
       setSetupCommand(data.setup_command)
       setStep('ready')
-      // Add to integrations list so the card shows as connected
+      setShowSetup(true)
       onConnected({ id: 'claude_code_temp', provider: 'claude_code', config: { setup_at: new Date().toISOString() } })
       toast.success('Claude Code integration ready!')
     } catch (err: any) {
       toast.error(err.message || 'Failed to set up Claude Code')
+      setStep('idle')
+    }
+  }
+
+  const handleRegenerate = async () => {
+    setStep('generating')
+    try {
+      const res = await fetch('/api/integrations/claude-code', { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to regenerate token')
+      const data = await res.json()
+      setSetupCommand(data.setup_command)
+      setStep('ready')
+      setShowSetup(true)
+      toast.success('New token generated — run the setup command again')
+    } catch {
+      toast.error('Failed to regenerate token')
       setStep('idle')
     }
   }
@@ -258,7 +295,8 @@ function ClaudeCodeSetup({ onConnected }: { onConnected: (integration: Integrati
     setTimeout(() => setCopied(false), 3000)
   }
 
-  if (step === 'idle') {
+  // ── Not connected: show Connect button ──
+  if (!connected && step === 'idle') {
     return (
       <button
         onClick={handleGenerate}
@@ -282,36 +320,106 @@ function ClaudeCodeSetup({ onConnected }: { onConnected: (integration: Integrati
     )
   }
 
-  // step === 'ready'
+  // ── Connected state ──
   return (
     <div className="space-y-3">
-      <div className="bg-gray-900 rounded-lg p-3 relative group">
-        <div className="flex items-start gap-2">
-          <Terminal className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-          <code className="text-xs text-green-400 break-all leading-relaxed flex-1 select-all">{setupCommand}</code>
+      {/* Status summary */}
+      {loadingStatus ? (
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Checking sync status...
         </div>
+      ) : status ? (
+        <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Sync Status</span>
+            {status.sessions_synced > 0 ? (
+              <span className="inline-flex items-center gap-1 text-xs text-green-600 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Active
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">
+                <Clock className="w-3.5 h-3.5" />
+                Awaiting first sync
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>Sessions synced</span>
+            <span className="font-medium text-gray-700">{status.sessions_synced}</span>
+          </div>
+          {status.tokens?.[0]?.last_used_at && (
+            <div className="flex items-center justify-between text-xs text-gray-500">
+              <span>Last sync</span>
+              <span className="font-medium text-gray-700">
+                {new Date(status.tokens[0].last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </span>
+            </div>
+          )}
+          <a
+            href="/ai-usage"
+            className="block w-full text-center px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition font-medium text-xs mt-1"
+          >
+            View AI Usage Dashboard
+          </a>
+        </div>
+      ) : null}
+
+      {/* Setup instructions (shown after connect or if no sessions yet) */}
+      {showSetup && step === 'ready' && setupCommand ? (
+        <div className="space-y-3">
+          <div className="bg-gray-900 rounded-lg p-3 relative group">
+            <div className="flex items-start gap-2">
+              <Terminal className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+              <code className="text-xs text-green-400 break-all leading-relaxed flex-1 select-all">{setupCommand}</code>
+            </div>
+            <button
+              onClick={copyCommand}
+              className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md transition opacity-0 group-hover:opacity-100"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-gray-300" />}
+            </button>
+          </div>
+          <div className="space-y-2 text-xs text-gray-500">
+            <p className="font-medium text-gray-700">Paste this command in your terminal to complete setup.</p>
+            <div className="flex items-start gap-2">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">1</span>
+              <span>Installs a hook in <code className="text-gray-600">~/.claude/settings.json</code></span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">2</span>
+              <span>After each Claude Code session, usage data syncs automatically</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">3</span>
+              <span>View your AI usage at <a href="/ai-usage" className="text-indigo-600 underline font-medium">/ai-usage</a></span>
+            </div>
+          </div>
+        </div>
+      ) : showSetup && step !== 'ready' ? (
         <button
-          onClick={copyCommand}
-          className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded-md transition opacity-0 group-hover:opacity-100"
+          onClick={handleRegenerate}
+          className="w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-gray-300" />}
+          Show Setup Command
         </button>
-      </div>
-      <div className="space-y-2 text-xs text-gray-500">
-        <p className="font-medium text-gray-700">Paste this command in your terminal to complete setup.</p>
-        <div className="flex items-start gap-2">
-          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">1</span>
-          <span>Installs a hook in <code className="text-gray-600">~/.claude/settings.json</code></span>
-        </div>
-        <div className="flex items-start gap-2">
-          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">2</span>
-          <span>After each Claude Code session, usage data syncs automatically</span>
-        </div>
-        <div className="flex items-start gap-2">
-          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">3</span>
-          <span>View your AI usage at <a href="/ai-usage" className="text-indigo-600 underline font-medium">/ai-usage</a></span>
-        </div>
-      </div>
+      ) : !showSetup ? (
+        <button
+          onClick={() => setShowSetup(true)}
+          className="w-full px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition"
+        >
+          Setup Instructions
+        </button>
+      ) : null}
+
+      {/* Disconnect */}
+      <button
+        onClick={onDisconnect}
+        className="w-full px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition font-medium text-sm"
+      >
+        Disconnect
+      </button>
     </div>
   )
 }
@@ -710,7 +818,13 @@ function IntegrationsContent() {
                 <h3 className="font-semibold text-gray-900 text-sm">{integration.name}</h3>
                 <p className="text-xs text-gray-500 mt-1 mb-4">{integration.description}</p>
 
-                {connected ? (
+                {(integration as any).isTokenBased ? (
+                  <ClaudeCodeSetup
+                    connected={connected}
+                    onConnected={(integ) => setIntegrations(prev => [...prev, integ])}
+                    onDisconnect={() => handleDisconnect('', 'claude_code')}
+                  />
+                ) : connected ? (
                   <div>
                     <button
                       onClick={() => {
@@ -723,8 +837,6 @@ function IntegrationsContent() {
                     </button>
                     {integration.id === 'slack' && <SlackDigestPicker />}
                   </div>
-                ) : (integration as any).isTokenBased ? (
-                  <ClaudeCodeSetup onConnected={(integ) => setIntegrations(prev => [...prev, integ])} />
                 ) : (
                   <button
                     onClick={() => handleConnect(integration.id, (integration as any).pageUrl)}
