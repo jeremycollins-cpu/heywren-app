@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Also upsert an integration record so the integrations page shows it as connected
-    await supabase.from('integrations').upsert({
+    const { error: upsertError } = await supabase.from('integrations').upsert({
       team_id: profile.current_team_id,
       user_id: user.id,
       provider: 'claude_code',
@@ -82,6 +82,10 @@ export async function POST(req: NextRequest) {
         token_expires_at: expiresAt.toISOString(),
       },
     }, { onConflict: 'team_id,user_id,provider' })
+
+    if (upsertError) {
+      console.error('Failed to upsert Claude Code integration record:', upsertError)
+    }
 
     // Build the app URL for the hook script
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
