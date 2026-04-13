@@ -100,24 +100,22 @@ export async function GET(request: NextRequest) {
     const allUserIds = Array.from(rosterByUser.keys())
 
     // ── Hydrate names + department ids from profiles ──
-    // Uses the same select + fallback chain as /api/team-members/route.ts.
+    // `display_name` is the actively-populated name column (migration 055).
+    // The original `full_name` column from migration 001 has been dropped in
+    // this deployment, so asking for it causes the whole query to error. We
+    // stick to `display_name` and fall back to the local part of the email.
     const nameMap = new Map<string, { full_name: string | null; email: string | null; avatar_url: string | null; job_title: string | null; department_id: string | null }>()
-    let profsError: string | null = null
-    let profsCount = 0
     if (allUserIds.length > 0) {
       const { data: profs, error: profsErr } = await adminDb
         .from('profiles')
-        .select('id, email, display_name, full_name, avatar_url, job_title, department_id')
+        .select('id, email, display_name, avatar_url, job_title, department_id')
         .in('id', allUserIds)
       if (profsErr) {
-        profsError = profsErr.message
-        console.error('[ai-usage/team] profiles lookup failed:', profsErr, 'userIds=', allUserIds.length)
+        console.error('[ai-usage/team] profiles lookup failed:', profsErr)
       }
-      profsCount = profs?.length ?? 0
       for (const p of profs || []) {
         const emailPrefix = p.email ? (p.email as string).split('@')[0] : null
-        const resolvedName =
-          (p as any).display_name || p.full_name || emailPrefix || null
+        const resolvedName = (p as any).display_name || emailPrefix || null
         nameMap.set(p.id, {
           full_name: resolvedName,
           email: p.email,
@@ -343,16 +341,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       team: { id: teamId, name: team?.name ?? 'Team' },
-      // Diagnostic block — helps trace the roster->profiles join when
-      // names render as "Unknown". Safe to expose: counts only, plus
-      // the first three user IDs (already visible to this admin
-      // anyway).
-      _diagnostics: {
-        rosterUserCount: allUserIds.length,
-        profilesReturned: profsCount,
-        profilesError: profsError,
-        sampleUserIds: allUserIds.slice(0, 3),
-      },
       filter: {
         days,
         departments: filterDepartments,
