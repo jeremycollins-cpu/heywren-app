@@ -15,6 +15,32 @@ export interface AiSignatureResult {
   tool: AiTool | null
 }
 
+/**
+ * Branch-naming patterns used by AI coding tools when they open PRs.
+ * These are highly reliable — the tool chose the prefix, no human typed it.
+ * Matched against the PR's head.ref (the source branch name).
+ */
+const BRANCH_PATTERNS: Array<{ tool: AiTool; re: RegExp }> = [
+  { tool: 'claude', re: /^claude\//i },
+  { tool: 'copilot', re: /^copilot\// },
+  { tool: 'copilot', re: /^(?:github-)?copilot-/ },
+  { tool: 'cursor', re: /^cursor\// },
+  { tool: 'aider', re: /^aider\// },
+]
+
+/**
+ * Detect AI authorship from the PR's source branch name. A `claude/…` branch
+ * is definitively Claude Code — Claude Code always creates branches with
+ * this prefix. Same logic for other tools.
+ */
+export function detectAiSignatureFromBranch(ref: string | null | undefined): AiSignatureResult {
+  if (!ref) return { ai_assisted: false, tool: null }
+  for (const { tool, re } of BRANCH_PATTERNS) {
+    if (re.test(ref)) return { ai_assisted: true, tool }
+  }
+  return { ai_assisted: false, tool: null }
+}
+
 // Patterns are case-insensitive, matched against the raw message/body text.
 // Order matters for `tool` identification: specific tools before the generic
 // `'other'` catch-all.
