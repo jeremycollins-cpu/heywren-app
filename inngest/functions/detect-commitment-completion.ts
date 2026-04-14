@@ -6,6 +6,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCompletions, CompletionMatch } from '@/lib/ai/detect-completion'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -252,6 +253,7 @@ export const detectCommitmentCompletion = inngest.createFunction(
     console.log(
       `Commitment completion detection: ${autoCompleted} auto-completed, ${markedLikely} marked likely_complete`
     )
+    await logAiUsage(getAdminClient(), { module: 'detect-completion', trigger: 'detect-commitment-completion', teamId, itemsProcessed: 1 })
 
     return {
       success: true,

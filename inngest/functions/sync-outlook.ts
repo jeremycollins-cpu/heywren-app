@@ -1,6 +1,6 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatchViaBatchApi, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
 import { logAiUsage } from '@/lib/ai/persist-usage'
 
@@ -287,7 +287,7 @@ export async function syncTeamOutlook(
       const chunk = batch.slice(i, i + 15)
       try {
         const batchInput = chunk.map((b) => ({ id: b.id, text: b.text }))
-        const batchResults = await detectCommitmentsBatch(batchInput)
+        const batchResults = await detectCommitmentsBatchViaBatchApi(batchInput)
 
         for (const item of chunk) {
           const commitments = batchResults.get(item.id) || []
@@ -479,7 +479,7 @@ export async function syncTeamOutlook(
       if (batch.length > 0) {
         try {
           const batchInput = batch.map((b) => ({ id: b.id, text: b.text }))
-          const batchResults = await detectCommitmentsBatch(batchInput)
+          const batchResults = await detectCommitmentsBatchViaBatchApi(batchInput)
 
           for (const item of batch) {
             const commitments = batchResults.get(item.id) || []
@@ -645,7 +645,7 @@ export async function syncTeamOutlook(
       if (calBatch.length > 0) {
         try {
           const batchInput = calBatch.map((b) => ({ id: b.id, text: b.text }))
-          const batchResults = await detectCommitmentsBatch(batchInput)
+          const batchResults = await detectCommitmentsBatchViaBatchApi(batchInput)
 
           for (const item of calBatch) {
             const commitments = batchResults.get(item.id) || []

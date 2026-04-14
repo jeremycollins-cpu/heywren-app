@@ -5,6 +5,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitments, calculatePriorityScore } from '@/lib/ai/detect-commitments'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -100,6 +101,7 @@ export const processBccEmail = inngest.createFunction(
     })
 
     console.log(`BCC email processed: "${subject}" from ${senderEmail} — ${stored.length} commitments`)
+    await logAiUsage(getAdminClient(), { module: 'detect-commitments', trigger: 'process-bcc-email', teamId, userId, itemsProcessed: 1 })
 
     return {
       success: true,

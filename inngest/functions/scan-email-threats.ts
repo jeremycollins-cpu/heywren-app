@@ -12,6 +12,7 @@ import {
   type EmailForThreatAnalysis,
   type ThreatAssessment,
 } from '@/lib/ai/detect-email-threats'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 import { graphFetch as graphFetchWithRefresh, getOutlookIntegration } from '@/lib/outlook/graph-client'
 import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
 
@@ -216,6 +217,8 @@ export const scanEmailThreats = inngest.createFunction(
         }
       })
     }
+
+    await logAiUsage(getAdminClient(), { module: 'detect-email-threats', trigger: 'scan-email-threats', itemsProcessed: totalScanned })
 
     return { success: true, scanned: totalScanned, threats: totalThreats, users: integrations.length }
   }

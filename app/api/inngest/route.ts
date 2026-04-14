@@ -46,6 +46,7 @@ import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
 import { scheduleRecallBots, dispatchManualRecallBot } from '@/inngest/functions/schedule-recall-bots'
 import { healthMonitor } from '@/inngest/functions/health-monitor'
 import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-github'
+import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -95,5 +96,7 @@ export const { GET, POST, PUT } = serve({
     // GitHub
     syncGithubEvents,            // On-demand + initial connect — sync commits, PRs, reviews from GitHub
     syncGithubDaily,             // 6 AM UTC daily — refresh GitHub activity for all connected users
+    // Cost monitoring
+    aiCostAlert,                 // 8 AM PT daily — alert if AI spend exceeds threshold or cache rate drops
   ],
 })

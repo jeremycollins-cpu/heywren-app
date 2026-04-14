@@ -11,7 +11,8 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
-import { detectCommitmentsBatch, type UserContext } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatchViaBatchApi, type UserContext } from '@/lib/ai/detect-commitments'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 const MAX_SENT_PER_RUN = 500
 const TIME_BUDGET_MS = 240000 // 4 minutes
@@ -709,7 +710,7 @@ export async function scanTeamAwaitingReplies(
               text: m.message_text,
             }))
 
-            const batchResults = await detectCommitmentsBatch(batch, userContext)
+            const batchResults = await detectCommitmentsBatchViaBatchApi(batch, userContext)
 
             for (const msg of newCandidates.slice(0, 15)) {
               const commitments = batchResults.get(msg.message_ts) || []
@@ -914,6 +915,8 @@ export const scanAwaitingReplies = inngest.createFunction(
         }
       }
     })
+
+    await logAiUsage(getAdminClient(), { module: 'detect-commitments', trigger: 'scan-awaiting-replies', itemsProcessed: teamResults.length })
 
     const results = { teamsProcessed: teamResults.length, results: teamResults }
 
