@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
-import { recordTokenUsage } from './token-usage'
+import { recordTokenUsage, truncateForAI } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -465,15 +465,18 @@ export async function detectCommitments(
   messageText: string,
   userContext?: UserContext
 ): Promise<DetectedCommitment[]> {
+  // Truncate long messages before any processing to cap token spend
+  const text = truncateForAI(messageText, 6000)
+
   // TIER 1: Free keyword pre-filter
-  if (!likelyContainsCommitment(messageText)) {
+  if (!likelyContainsCommitment(text)) {
     _stats.tier1_filtered++
     return []
   }
 
   try {
     // TIER 2: Haiku triage ($0.0003)
-    const hasCommitment = await haiku_triage(messageText, userContext)
+    const hasCommitment = await haiku_triage(text, userContext)
     if (!hasCommitment) {
       _stats.tier2_filtered++
       return []
@@ -487,16 +490,16 @@ export async function detectCommitments(
     } catch {
       // Non-fatal
     }
-    const raw = await haiku_analyze(messageText, communityPatterns, userContext)
+    const raw = await haiku_analyze(text, communityPatterns, userContext)
     const commitments = raw.filter(c => !isLowQualityCommitment(c))
 
     if (raw.length > commitments.length) {
-      console.log(`Filtered ${raw.length - commitments.length} low-quality commitments from: "${messageText.substring(0, 60)}..."`)
+      console.log(`Filtered ${raw.length - commitments.length} low-quality commitments from: "${text.substring(0, 60)}..."`)
     }
     if (commitments.length > 0) {
       console.log(
         'Found ' + commitments.length + ' commitments in: "' +
-        messageText.substring(0, 60) + '..."'
+        text.substring(0, 60) + '..."'
       )
     }
 

@@ -4,7 +4,7 @@
 //   Tier 2 (AI): Content analysis — only for emails that pass tier 1 screening or have suspicious content
 
 import Anthropic from '@anthropic-ai/sdk'
-import { recordTokenUsage } from './token-usage'
+import { recordTokenUsage, truncateForAI } from './token-usage'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -295,7 +295,7 @@ export async function tier2Analysis(
     `Subject: ${email.subject}`,
     `Date: ${email.receivedAt}`,
     email.hasAttachments ? 'Has Attachments: Yes' : '',
-    `\nBody Preview:\n${email.bodyPreview}`,
+    `\nBody Preview:\n${truncateForAI(email.bodyPreview)}`,
     tier1Context,
   ].filter(Boolean).join('\n')
 

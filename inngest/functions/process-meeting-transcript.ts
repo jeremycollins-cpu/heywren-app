@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { findHeyWrenTriggers, extractHeyWrenCommitments } from '@/lib/ai/detect-hey-wren'
 import { insertCommitmentIfNotDuplicate } from '@/lib/ai/dedup-commitments'
-import { generateMeetingSummary } from '@/lib/ai/generate-meeting-summary'
+import { generateMeetingSummaryViaBatch } from '@/lib/ai/generate-meeting-summary'
 
 function getAdminClient() {
   return createClient(
@@ -208,7 +208,7 @@ export const processMeetingTranscript = inngest.createFunction(
     const summaryResult = await step.run('generate-summary', async () => {
       try {
         const attendeeNames = transcript.attendees?.map((a: any) => a.name || a.email).filter(Boolean) || []
-        const summary = await generateMeetingSummary(
+        const summary = await generateMeetingSummaryViaBatch(
           transcript.title || 'Meeting',
           transcript.transcript_text,
           attendeeNames

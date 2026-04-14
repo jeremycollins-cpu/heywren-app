@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { recordTokenUsage } from './token-usage'
+import { runBatch, extractToolResult, type BatchRequest } from './batch-api'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -158,6 +159,65 @@ ${truncated}`
     }
   } catch (error) {
     console.error('[generate-meeting-summary] AI call failed:', (error as Error).message)
+  }
+
+  return null
+}
+
+/**
+ * Generate a meeting summary via the Anthropic Batch API (50% cheaper).
+ * Falls back to the synchronous path on failure.
+ */
+export async function generateMeetingSummaryViaBatch(
+  meetingTitle: string,
+  transcriptText: string,
+  attendees?: string[]
+): Promise<MeetingSummary | null> {
+  if (!transcriptText || transcriptText.trim().length < 100) return null
+
+  const words = transcriptText.split(/\s+/)
+  const truncated = words.length > 12000 ? words.slice(0, 12000).join(' ') + '\n\n[Transcript truncated]' : transcriptText
+
+  const attendeeInfo = attendees?.length ? `\nAttendees: ${attendees.join(', ')}` : ''
+  const userMessage = `Meeting: "${meetingTitle}"${attendeeInfo}\n\nTranscript:\n${truncated}`
+
+  try {
+    const request: BatchRequest = {
+      custom_id: 'meeting-summary',
+      params: {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }] as any,
+        tools: [MEETING_SUMMARY_TOOL as any],
+        tool_choice: { type: 'tool', name: 'generate_meeting_summary' },
+        messages: [{ role: 'user', content: userMessage }],
+      },
+    }
+
+    const results = await runBatch([request])
+    const item = results.get('meeting-summary')
+    const result = extractToolResult<{
+      summary: string
+      key_topics: Array<{ topic: string; detail: string }>
+      decisions_made: Array<{ decision: string; context?: string; owner?: string }>
+      open_questions: Array<{ question: string; context?: string }>
+      participant_highlights: Array<{ name: string; contribution: string }>
+      meeting_sentiment: string
+    }>(item)
+
+    if (result) {
+      return {
+        summary: result.summary || '',
+        keyTopics: result.key_topics || [],
+        decisionsMade: result.decisions_made || [],
+        openQuestions: result.open_questions || [],
+        participantHighlights: result.participant_highlights || [],
+        meetingSentiment: (result.meeting_sentiment as MeetingSummary['meetingSentiment']) || 'neutral',
+      }
+    }
+  } catch (error) {
+    console.error('[generate-meeting-summary] Batch API failed, falling back to sync:', (error as Error).message)
+    return generateMeetingSummary(meetingTitle, transcriptText, attendees)
   }
 
   return null

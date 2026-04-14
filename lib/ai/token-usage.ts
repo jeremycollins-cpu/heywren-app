@@ -49,3 +49,19 @@ export function getTokenUsage(): TokenUsageSnapshot {
   _usage.api_calls = 0
   return snapshot
 }
+
+// ── Input truncation ───────────────────────────────────────────────────
+
+const DEFAULT_MAX_CHARS = 4000 // ~1000 tokens
+
+/**
+ * Truncate long input text to stay within token budgets.
+ * Uses a 70/30 head/tail split so the AI sees the beginning (context,
+ * greeting, subject) and the end (closing, signature, call to action).
+ */
+export function truncateForAI(text: string, maxChars: number = DEFAULT_MAX_CHARS): string {
+  if (text.length <= maxChars) return text
+  const headSize = Math.floor(maxChars * 0.7)
+  const tailSize = maxChars - headSize - 20
+  return text.slice(0, headSize) + '\n[...truncated...]\n' + text.slice(-tailSize)
+}

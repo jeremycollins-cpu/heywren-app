@@ -1,6 +1,6 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { generateFollowUpDraftsBatch } from '@/lib/ai/generate-drafts'
+import { generateFollowUpDraftsViaBatch } from '@/lib/ai/generate-drafts'
 
 function getAdminClient() {
   return createClient(
@@ -101,32 +101,28 @@ export const generateDrafts = inngest.createFunction(
 
         let totalGenerated = 0
 
-        // Process in batches of 10
-        for (let i = 0; i < commitmentsForAI.length; i += 10) {
-          const batch = commitmentsForAI.slice(i, i + 10)
+        // Use Batch API (50% cheaper) — sends all commitments at once
+        try {
+          const drafts = await generateFollowUpDraftsViaBatch(commitmentsForAI)
 
-          try {
-            const drafts = await generateFollowUpDraftsBatch(batch)
+          for (const [commitmentId, draft] of drafts) {
+            const { error: insertErr } = await supabase.from('draft_queue').insert({
+              team_id: teamId,
+              commitment_id: commitmentId,
+              subject: draft.subject,
+              body: draft.body,
+              status: 'pending',
+              generated_by: generatedBy,
+            })
 
-            for (const [commitmentId, draft] of drafts) {
-              const { error: insertErr } = await supabase.from('draft_queue').insert({
-                team_id: teamId,
-                commitment_id: commitmentId,
-                subject: draft.subject,
-                body: draft.body,
-                status: 'pending',
-                generated_by: generatedBy,
-              })
-
-              if (insertErr) {
-                console.error('Failed to insert draft for commitment ' + commitmentId + ':', insertErr.message)
-              } else {
-                totalGenerated++
-              }
+            if (insertErr) {
+              console.error('Failed to insert draft for commitment ' + commitmentId + ':', insertErr.message)
+            } else {
+              totalGenerated++
             }
-          } catch (err) {
-            console.error('Draft generation batch error for team ' + teamId + ':', (err as Error).message)
           }
+        } catch (err) {
+          console.error('Draft generation error for team ' + teamId + ':', (err as Error).message)
         }
 
         console.log(`Team ${teamId}: Generated ${totalGenerated} drafts from ${commitments.length} commitments`)
