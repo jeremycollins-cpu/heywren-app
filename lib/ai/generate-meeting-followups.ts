@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -116,6 +117,8 @@ Generate a follow-up email draft for each action item. Each email should be self
       tool_choice: { type: 'tool', name: 'generate_meeting_followups' },
       messages: [{ role: 'user', content: userMessage }],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {

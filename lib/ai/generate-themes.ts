@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -213,11 +214,13 @@ Generate the executive theme summary.`
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 8000,
-    system: systemPrompt,
+    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } } as any],
     tools: [themesTool],
     tool_choice: { type: 'tool', name: 'generate_themes' },
     messages: [{ role: 'user', content: userMessage }],
   })
+
+  recordTokenUsage(response.usage)
 
   // Extract tool use result
   const toolBlock = response.content.find(b => b.type === 'tool_use')

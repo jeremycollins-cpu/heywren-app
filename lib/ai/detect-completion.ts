@@ -4,6 +4,7 @@
 //   Tier 1 (free regex) -> Tier 2 (Haiku via tool_use for structured output)
 
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -123,6 +124,8 @@ async function haiku_match(
         content: `Message from ${message.author} (${message.source}):\n"${message.text}"${contextBlock}\n\nOpen commitments:\n${commitmentsListText}`,
       }],
     })
+
+    recordTokenUsage(response.usage)
 
     const toolBlock = response.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {

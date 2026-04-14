@@ -4,6 +4,7 @@
 //   Tier 2 (AI): Content analysis — only for emails that pass tier 1 screening or have suspicious content
 
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -307,6 +308,8 @@ export async function tier2Analysis(
       tool_choice: { type: 'tool', name: 'analyze_threat' },
       messages: [{ role: 'user', content: emailText }],
     })
+
+    recordTokenUsage(response.usage)
 
     const toolBlock = response.content.find(b => b.type === 'tool_use')
     if (!toolBlock || toolBlock.type !== 'tool_use') return null

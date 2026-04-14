@@ -4,6 +4,7 @@
 // Cost: ~$0.012 per 30-min meeting transcript.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -132,6 +133,8 @@ ${truncated}`
       tool_choice: { type: 'tool', name: 'generate_meeting_summary' },
       messages: [{ role: 'user', content: userMessage }],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {
