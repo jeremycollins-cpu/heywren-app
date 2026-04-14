@@ -9,6 +9,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -115,6 +116,8 @@ Existing patterns:
 ${existingPatternsText}`,
     }],
   })
+
+  recordTokenUsage(message.usage)
 
   const toolBlock = message.content.find((b) => b.type === 'tool_use')
   if (toolBlock && toolBlock.type === 'tool_use') {

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -93,6 +94,8 @@ export async function generateFollowUpDraft(commitment: {
     ],
   })
 
+  recordTokenUsage(message.usage)
+
   const toolBlock = message.content.find((b) => b.type === 'tool_use')
   if (toolBlock && toolBlock.type === 'tool_use') {
     const result = toolBlock.input as { subject: string; body: string }
@@ -160,6 +163,8 @@ export async function generateFollowUpDraftsBatch(
         },
       ],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {

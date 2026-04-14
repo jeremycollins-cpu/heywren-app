@@ -5,6 +5,7 @@
 // we extract the surrounding context and treat it as a high-confidence commitment.
 
 import Anthropic from '@anthropic-ai/sdk'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -158,6 +159,8 @@ export async function extractHeyWrenCommitments(
         },
       ],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {

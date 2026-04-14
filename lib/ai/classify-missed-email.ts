@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -349,11 +350,13 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Ignore sales, automated, newsletters, mass emails.',
+      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Ignore sales, automated, newsletters, mass emails.', cache_control: { type: 'ephemeral' } } as any],
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {
@@ -381,20 +384,28 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
   const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
   const emailText = `From: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
 
-  const communityBlock = communityPatterns && communityPatterns.length > 0
-    ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
-    : ''
-
-  const systemText = SONNET_SYSTEM_PROMPT + communityBlock
+  const systemBlocks: any[] = [{
+    type: 'text',
+    text: SONNET_SYSTEM_PROMPT,
+    cache_control: { type: 'ephemeral' },
+  }]
+  if (communityPatterns && communityPatterns.length > 0) {
+    systemBlocks.push({
+      type: 'text',
+      text: `COMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`,
+    })
+  }
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
+    system: systemBlocks,
     tools: [EMAIL_ANALYSIS_TOOL],
     tool_choice: { type: 'tool', name: 'analyze_email' },
     messages: [{ role: 'user', content: emailText }],
   })
+
+  recordTokenUsage(message.usage)
 
   const toolBlock = message.content.find((b) => b.type === 'tool_use')
   if (toolBlock && toolBlock.type === 'tool_use') {
@@ -646,12 +657,19 @@ export async function classifyMissedEmailBatch(
     .join('\n\n---\n\n')
 
   try {
-    const systemText = SONNET_SYSTEM_PROMPT + communityBlock
+    const batchSystemBlocks: any[] = [{
+      type: 'text',
+      text: `Analyze batched emails numbered [1], [2], etc.\n\n${SONNET_SYSTEM_PROMPT}`,
+      cache_control: { type: 'ephemeral' },
+    }]
+    if (communityBlock) {
+      batchSystemBlocks.push({ type: 'text', text: communityBlock })
+    }
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
-      system: [{ type: 'text', text: `Analyze batched emails numbered [1], [2], etc.\n\n${systemText}`, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
+      system: batchSystemBlocks,
       tools: [BATCH_EMAIL_TOOL],
       tool_choice: { type: 'tool', name: 'analyze_emails_batch' },
       messages: [
@@ -661,6 +679,8 @@ export async function classifyMissedEmailBatch(
         },
       ],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {

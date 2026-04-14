@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
+import { recordTokenUsage } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -216,35 +217,107 @@ DO NOT extract any of these — they are NOT real commitments:
 
 A REAL commitment must have ALL THREE: (1) a specific person taking responsibility, (2) a specific deliverable or action (not just "discuss"), and (3) enough context to track whether it was completed. "I will discuss" is NOT trackable. "Review Q3 budget" is a TOPIC, not a commitment. "I will send you the report by Friday" IS trackable.`
 
-function buildSystemPrompt(userContext?: UserContext): string {
-  if (!userContext) return BASE_SYSTEM_PROMPT
-  return `You are extracting commitments for ${userContext.userName}. Be VERY selective — quality over quantity.
+// Static user-context prompt (cached across all users — no per-user interpolation)
+const USER_CONTEXT_SYSTEM_PROMPT = `You are extracting commitments for a specific target user (identified below). Be VERY selective — quality over quantity.
 
 Extract TWO types of commitments — both require the "direction" field:
 
-OUTBOUND (direction: "outbound") — commitments ${userContext.userName} personally made:
+OUTBOUND (direction: "outbound") — commitments the target user personally made:
 - "I will send the report by Friday", "I'll handle the deployment"
-- Tasks explicitly assigned to ${userContext.userName} with a specific deliverable
-- Action items where ${userContext.userName} is the owner AND there is a clear, trackable action
+- Tasks explicitly assigned to the target user with a specific deliverable
+- Action items where the target user is the owner AND there is a clear, trackable action
 
-INBOUND (direction: "inbound") — specific promises someone ELSE made TO ${userContext.userName}:
+INBOUND (direction: "inbound") — specific promises someone ELSE made TO the target user:
 - "I will send you the data by EOD", "I'll get the proposal to you this week"
-- Someone commits to delivering a specific thing that ${userContext.userName} is waiting on
+- Someone commits to delivering a specific thing that the target user is waiting on
 - Set "promiserName" to the actual name of the person who made the promise. If you cannot determine their name, OMIT the field entirely — never use placeholders like "Unknown", "<UNKNOWN>", or "Someone"
 
 STRICT EXCLUSIONS — NEVER extract these:
-- Conversations between other people that don't directly involve ${userContext.userName}
-- Someone mentioning ${userContext.userName} in passing without making/receiving a commitment
-- OTHER people's vague statements like "I'll discuss", "I'll look into it", "I have a meeting" — these are not commitments to ${userContext.userName}
+- Conversations between other people that don't directly involve the target user
+- Someone mentioning the target user in passing without making/receiving a commitment
+- OTHER people's vague statements like "I'll discuss", "I'll look into it", "I have a meeting" — these are not commitments to the target user
 - Calendar invites, scheduling confirmations, meeting reminders
 - Status updates, acknowledgments, social messages
-- Messages from channels where ${userContext.userName} is not the speaker or direct addressee
+- Messages from channels where the target user is not the speaker or direct addressee
 
-IMPORTANT NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss in our meeting" or "I'll look into it", that IS a valid outbound commitment — it's their own action item. But if someone ELSE says the same thing in a shared channel, it is NOT a commitment because it doesn't involve ${userContext.userName}.
+IMPORTANT NUANCE: If the target user THEMSELVES say "I will discuss in our meeting" or "I'll look into it", that IS a valid outbound commitment — it's their own action item. But if someone ELSE says the same thing in a shared channel, it is NOT a commitment because it doesn't involve the target user.
 
 When in doubt, return an empty array. Showing irrelevant noise is WORSE than missing a commitment.
 
-${BASE_SYSTEM_PROMPT}`
+` + BASE_SYSTEM_PROMPT
+
+// Triage system prompts (static, cached)
+const TRIAGE_SYSTEM_PROMPT_USER = `You are filtering messages for a specific target user (identified below). Say YES ONLY if this message contains a commitment directly involving the target user — either the target user promising to do something specific, OR someone else promising a specific deliverable TO the target user. If the target user says "I will discuss in our meeting" that counts (it's their action). But if someone ELSE says vague things like "I'll discuss" or "I have a meeting" in a shared channel, say NO — that's not the target user's commitment. Also say NO for: conversations between other people, calendar invites, status updates, acknowledgments. When in doubt, say NO. Use the classify_message tool.`
+
+const TRIAGE_SYSTEM_PROMPT_GENERIC = 'Does this message contain a specific, trackable commitment with a clear deliverable? Say NO for vague statements like "I\'ll discuss" or "looking into it", meeting/calendar mentions, and casual conversation. Use the classify_message tool.'
+
+// Batch system prompts (static, cached)
+const BATCH_SYSTEM_PROMPT_USER = `You are extracting commitments from batched numbered messages [1], [2], etc. for a specific target user (identified below). Be VERY selective — quality over quantity.
+
+Extract TWO types — both require the "direction" field:
+
+OUTBOUND (direction: "outbound") — SPECIFIC commitments the target user personally made with a clear deliverable.
+INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO the target user with a clear deliverable. Set "promiserName" to the actual name — if unknown, omit the field entirely (never use "Unknown" or "<UNKNOWN>").
+
+STRICT EXCLUSIONS — return empty array for these:
+- Conversations between other people not involving the target user
+- OTHER people's vague "will discuss/look into/have a meeting" — not the target user's commitment
+- Calendar/meeting references, scheduling, status updates, acknowledgments
+- Anything with confidence below 0.6
+
+NUANCE: If the target user THEMSELVES say "I will discuss" or "I'll look into it", that IS valid (their own action). But someone else saying it in a channel is NOT.
+
+A real commitment MUST have: a specific person + a specific trackable action.
+
+Rules:
+- Title: WHO + WHAT, standalone.
+- Description: business context.
+- originalQuote: verbatim excerpt.
+- stakeholders: anyone involved.
+- Only confidence >= 0.6.
+- Empty array if none — prefer empty over noise.`
+
+const BATCH_SYSTEM_PROMPT_GENERIC = `Extract commitments from batched numbered messages [1], [2], etc.
+
+Rules:
+- Title: WHO + WHAT, standalone.
+- Description: business context.
+- originalQuote: verbatim excerpt.
+- stakeholders: anyone involved.
+- Only confidence >= 0.6.
+- Empty array if none.`
+
+/**
+ * Build system message blocks with static content cached and dynamic user/community
+ * data appended separately so the cache prefix is shared across all users.
+ */
+function buildSystemBlocks(userContext?: UserContext, communityPatterns?: string[]): any[] {
+  const blocks: any[] = []
+
+  // Block 1: Static rules (always cached — shared across all users)
+  blocks.push({
+    type: 'text',
+    text: userContext ? USER_CONTEXT_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT,
+    cache_control: { type: 'ephemeral' },
+  })
+
+  // Block 2: User identity (small, not cached — varies per user)
+  if (userContext) {
+    blocks.push({
+      type: 'text',
+      text: `Target user: ${userContext.userName}`,
+    })
+  }
+
+  // Block 3: Community patterns (appended without disabling block 1 cache)
+  if (communityPatterns && communityPatterns.length > 0) {
+    blocks.push({
+      type: 'text',
+      text: `COMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`,
+    })
+  }
+
+  return blocks
 }
 
 // ============================================================
@@ -253,18 +326,25 @@ ${BASE_SYSTEM_PROMPT}`
 // ============================================================
 async function haiku_triage(text: string, userContext?: UserContext): Promise<boolean> {
   try {
-    const systemPrompt = userContext
-      ? `You are filtering Slack messages for ${userContext.userName}. Say YES ONLY if this message contains a commitment directly involving ${userContext.userName} — either ${userContext.userName} promising to do something specific, OR someone else promising a specific deliverable TO ${userContext.userName}. If ${userContext.userName} says "I will discuss in our meeting" that counts (it's their action). But if someone ELSE says vague things like "I'll discuss" or "I have a meeting" in a shared channel, say NO — that's not ${userContext.userName}'s commitment. Also say NO for: conversations between other people, calendar invites, status updates, acknowledgments. When in doubt, say NO. Use the classify_message tool.`
-      : 'Does this message contain a specific, trackable commitment with a clear deliverable? Say NO for vague statements like "I\'ll discuss" or "looking into it", meeting/calendar mentions, and casual conversation. Use the classify_message tool.'
+    const systemBlocks: any[] = [{
+      type: 'text',
+      text: userContext ? TRIAGE_SYSTEM_PROMPT_USER : TRIAGE_SYSTEM_PROMPT_GENERIC,
+      cache_control: { type: 'ephemeral' },
+    }]
+    if (userContext) {
+      systemBlocks.push({ type: 'text', text: `Target user: ${userContext.userName}` })
+    }
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: systemPrompt,
+      system: systemBlocks,
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_message' },
       messages: [{ role: 'user', content: text }],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {
@@ -282,20 +362,16 @@ async function haiku_triage(text: string, userContext?: UserContext): Promise<bo
 // ~$0.0005 per call, guaranteed structured JSON
 // ============================================================
 async function haiku_analyze(text: string, communityPatterns?: string[], userContext?: UserContext): Promise<DetectedCommitment[]> {
-  const communityBlock = communityPatterns && communityPatterns.length > 0
-    ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
-    : ''
-
-  const systemText = buildSystemPrompt(userContext) + communityBlock
-
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
-    system: [{ type: 'text', text: systemText, cache_control: communityBlock ? undefined : { type: 'ephemeral' } } as any],
+    system: buildSystemBlocks(userContext, communityPatterns),
     tools: [COMMITMENT_EXTRACTION_TOOL],
     tool_choice: { type: 'tool', name: 'extract_commitments' },
     messages: [{ role: 'user', content: `Analyze for commitments:\n\n"${text}"` }],
   })
+
+  recordTokenUsage(message.usage)
 
   const toolBlock = message.content.find((b) => b.type === 'tool_use')
   if (toolBlock && toolBlock.type === 'tool_use') {
@@ -476,43 +552,19 @@ export async function detectCommitmentsBatch(
     .join('\n\n')
 
   try {
+    const batchSystemBlocks: any[] = [{
+      type: 'text',
+      text: userContext ? BATCH_SYSTEM_PROMPT_USER : BATCH_SYSTEM_PROMPT_GENERIC,
+      cache_control: { type: 'ephemeral' },
+    }]
+    if (userContext) {
+      batchSystemBlocks.push({ type: 'text', text: `Target user: ${userContext.userName}` })
+    }
+
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 8192,
-      system: [{ type: 'text', text: userContext
-        ? `You are extracting commitments from batched numbered messages [1], [2], etc. for ${userContext.userName}. Be VERY selective — quality over quantity.
-
-Extract TWO types — both require the "direction" field:
-
-OUTBOUND (direction: "outbound") — SPECIFIC commitments ${userContext.userName} personally made with a clear deliverable.
-INBOUND (direction: "inbound") — SPECIFIC promises someone ELSE made TO ${userContext.userName} with a clear deliverable. Set "promiserName" to the actual name — if unknown, omit the field entirely (never use "Unknown" or "<UNKNOWN>").
-
-STRICT EXCLUSIONS — return empty array for these:
-- Conversations between other people not involving ${userContext.userName}
-- OTHER people's vague "will discuss/look into/have a meeting" — not ${userContext.userName}'s commitment
-- Calendar/meeting references, scheduling, status updates, acknowledgments
-- Anything with confidence below 0.6
-
-NUANCE: If ${userContext.userName} THEMSELVES say "I will discuss" or "I'll look into it", that IS valid (their own action). But someone else saying it in a channel is NOT.
-
-A real commitment MUST have: a specific person + a specific trackable action. "Someone else: I'll discuss with Luke" = NOT a commitment. "${userContext.userName}: I'll send the report by Friday" = IS a commitment.
-
-Rules:
-- Title: WHO + WHAT, standalone.
-- Description: business context.
-- originalQuote: verbatim excerpt.
-- stakeholders: anyone involved.
-- Only confidence >= 0.6.
-- Empty array if none — prefer empty over noise.`
-        : `Extract commitments from batched numbered messages [1], [2], etc.
-
-Rules:
-- Title: WHO + WHAT, standalone.
-- Description: business context.
-- originalQuote: verbatim excerpt.
-- stakeholders: anyone involved.
-- Only confidence >= 0.6.
-- Empty array if none.`, cache_control: { type: 'ephemeral' } } as any],
+      system: batchSystemBlocks,
       tools: [BATCH_EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'extract_batch_commitments' },
       messages: [
@@ -522,6 +574,8 @@ Rules:
         },
       ],
     })
+
+    recordTokenUsage(message.usage)
 
     const toolBlock = message.content.find((b) => b.type === 'tool_use')
     if (toolBlock && toolBlock.type === 'tool_use') {
