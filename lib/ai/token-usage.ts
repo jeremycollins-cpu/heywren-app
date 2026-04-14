@@ -28,7 +28,8 @@ export function recordTokenUsage(usage: {
   output_tokens?: number
   cache_creation_input_tokens?: number
   cache_read_input_tokens?: number
-}): void {
+} | undefined | null): void {
+  if (!usage) return
   _usage.input_tokens += usage.input_tokens || 0
   _usage.output_tokens += usage.output_tokens || 0
   _usage.cache_creation_input_tokens += usage.cache_creation_input_tokens || 0
