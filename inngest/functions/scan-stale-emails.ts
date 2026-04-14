@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { classifyMissedEmailBatch, getClassificationStats, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { classifyMissedEmailBatchViaBatchApi, getClassificationStats, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 // Detect emails the user READ but never acted on — the "Rhonda problem":
 // You open an email, intend to respond, get distracted, and it falls through the cracks.
@@ -292,7 +293,7 @@ async function scanUserStaleEmails(
     if (batchInput.length === 0) continue
 
     try {
-      const classifications = await classifyMissedEmailBatch(batchInput, userPrefs)
+      const classifications = await classifyMissedEmailBatchViaBatchApi(batchInput, userPrefs)
 
       const toUpsert = []
       for (const email of chunk) {
@@ -336,6 +337,8 @@ async function scanUserStaleEmails(
 
   const duration = Math.round((Date.now() - startTime) / 1000)
   const stats = getClassificationStats()
+
+  await logAiUsage(supabase, { module: 'classify-missed-email', trigger: 'scan-stale-emails', teamId, userId, itemsProcessed: candidates.length, metadata: stats })
 
   return {
     success: true,

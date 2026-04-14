@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
 import { recordTokenUsage, truncateForAI } from './token-usage'
+import { runBatch, extractToolResult, type BatchRequest } from './batch-api'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -723,6 +724,140 @@ export async function classifyMissedEmailBatch(
   } catch (error) {
     _stats.errors++
     console.error('Batch email classification failed:', (error as Error).message)
+  }
+
+  return results
+}
+
+// ============================================================
+// BATCH API VARIANT — 50% cheaper, for cron/background scans
+// Phase 1: Triage synchronously (cheap, ~$0.0003/call)
+// Phase 2: Send all extraction work via Batch API (50% off)
+// ============================================================
+export async function classifyMissedEmailBatchViaBatchApi(
+  emails: Array<{ id: string } & EmailInput>,
+  prefs?: UserEmailPreferences
+): Promise<Map<string, MissedEmailClassification>> {
+  const results = new Map<string, MissedEmailClassification>()
+
+  // Tier 0 + 1: Pre-filter (same as sync version)
+  const candidates: Array<{ id: string; vip: boolean } & EmailInput> = []
+  for (const email of emails) {
+    _stats.total_scanned++
+    if (isBlockedSender(email, prefs)) { _stats.tier1_automated++; continue }
+    const vip = isVipSender(email, prefs)
+    if (!vip) {
+      if (isLikelyAutomated(email)) {
+        const text = email.subject + ' ' + email.bodyPreview
+        if (!INTRODUCTION_PATTERNS.some(p => p.test(text))) { _stats.tier1_automated++; continue }
+      }
+      if (!likelyNeedsResponse(email)) { _stats.tier1_no_question++; continue }
+    }
+    candidates.push({ ...email, vip })
+  }
+
+  if (candidates.length === 0) return results
+
+  // Tier 2: Haiku triage (synchronous — cheap, needed to filter before extraction)
+  const triaged: typeof candidates = []
+  for (const email of candidates) {
+    if (email.vip) { triaged.push(email); continue }
+    const needs = await haikuTriage(email)
+    if (needs) { triaged.push(email) } else { _stats.tier2_filtered++ }
+  }
+
+  if (triaged.length === 0) return results
+  _stats.tier3_analyzed += triaged.length
+
+  let communityPatterns: string[] = []
+  try { communityPatterns = await getActiveCommunityPatterns('email') } catch { /* Non-fatal */ }
+  const communityBlock = communityPatterns.length > 0
+    ? `\n\nCOMMUNITY PATTERNS:\n${communityPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
+    : ''
+
+  // Tier 3: Send extraction via Batch API (50% cheaper)
+  // Split triaged emails into chunks of 15 for manageable prompt sizes
+  const CHUNK_SIZE = 15
+  const batchRequests: BatchRequest[] = []
+  const chunkMap: Array<typeof triaged> = []
+
+  for (let i = 0; i < triaged.length; i += CHUNK_SIZE) {
+    const chunk = triaged.slice(i, i + CHUNK_SIZE)
+    chunkMap.push(chunk)
+
+    const numberedEmails = chunk
+      .map((email, j) => {
+        const daysSince = Math.floor((Date.now() - new Date(email.receivedAt).getTime()) / (1000 * 60 * 60 * 24))
+        const recipientCtx = email.recipientName || email.recipientEmail
+          ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
+          : ''
+        const toCtx = email.toRecipients ? `\nTo: ${email.toRecipients}` : ''
+        const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
+        return `[${j + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${truncateForAI(email.bodyPreview)}`
+      })
+      .join('\n\n---\n\n')
+
+    const systemBlocks: any[] = [{
+      type: 'text',
+      text: `Analyze batched emails numbered [1], [2], etc.\n\n${SONNET_SYSTEM_PROMPT}`,
+      cache_control: { type: 'ephemeral' },
+    }]
+    if (communityBlock) systemBlocks.push({ type: 'text', text: communityBlock })
+
+    batchRequests.push({
+      custom_id: `email-chunk-${i}`,
+      params: {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        system: systemBlocks,
+        tools: [BATCH_EMAIL_TOOL as any],
+        tool_choice: { type: 'tool', name: 'analyze_emails_batch' },
+        messages: [{ role: 'user', content: `Analyze these ${chunk.length} emails:\n\n${numberedEmails}` }],
+      },
+    })
+  }
+
+  try {
+    const batchResults = await runBatch(batchRequests)
+
+    batchRequests.forEach((req, idx) => {
+      const item = batchResults.get(req.custom_id)
+      const chunk = chunkMap[idx]
+      const parsed = extractToolResult<{ results: Record<string, MissedEmailClassification> }>(item)
+      if (!parsed?.results) return
+
+      chunk.forEach((email, j) => {
+        const classification = parsed.results[String(j + 1)]
+        if (!classification) return
+
+        escalateForAge(classification, email.receivedAt)
+
+        const confidenceThreshold = email.vip ? 0.3 : 0.6
+        if (classification.needsResponse && (classification.confidence || 0) >= confidenceThreshold) {
+          if (email.vip && classification.urgency !== 'critical') {
+            const boost: Record<string, string> = { high: 'critical', medium: 'high', low: 'medium' }
+            classification.urgency = (boost[classification.urgency] || classification.urgency) as any
+          }
+          if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
+          if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+          classification.isVip = email.vip
+          _stats.needs_response++
+          results.set(email.id, classification)
+        } else if (email.vip && likelyNeedsResponse(email)) {
+          _stats.needs_response++
+          results.set(email.id, {
+            needsResponse: true, urgency: 'medium',
+            reason: 'VIP contact -- surfaced by default',
+            questionSummary: null, category: 'question', confidence: 0.5, isVip: true,
+          })
+        }
+      })
+    })
+
+    console.log(`[batch-api] Classified ${results.size}/${emails.length} emails via Batch API`)
+  } catch (error) {
+    console.error('[batch-api] Email classification batch failed, falling back to sync:', (error as Error).message)
+    return classifyMissedEmailBatch(emails, prefs)
   }
 
   return results

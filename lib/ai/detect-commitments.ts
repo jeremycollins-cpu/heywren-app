@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
 import { recordTokenUsage, truncateForAI } from './token-usage'
+import { runBatch, extractToolResult, type BatchRequest } from './batch-api'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -603,6 +604,100 @@ export async function detectCommitmentsBatch(
   } catch (error) {
     _stats.errors++
     console.error('Batch commitment detection failed:', (error as Error).message)
+  }
+
+  return results
+}
+
+// ============================================================
+// BATCH API VARIANT — 50% cheaper, for cron/background scans
+// Phase 1: Pre-filter + triage synchronously (cheap)
+// Phase 2: Send all extraction work via Batch API (50% off)
+// ============================================================
+export async function detectCommitmentsBatchViaBatchApi(
+  messages: Array<{ id: string; text: string }>,
+  userContext?: UserContext
+): Promise<Map<string, DetectedCommitment[]>> {
+  const results = new Map<string, DetectedCommitment[]>()
+  messages.forEach((m) => results.set(m.id, []))
+
+  // Tier 1: pre-filter
+  const candidates = messages.filter((m) => likelyContainsCommitment(m.text))
+  _stats.tier1_filtered += messages.length - candidates.length
+
+  if (candidates.length === 0) return results
+
+  // Tier 2: Haiku triage (synchronous — cheap)
+  const triageResults = await Promise.all(
+    candidates.map(async (msg) => {
+      const hasCommitment = await haiku_triage(truncateForAI(msg.text, 6000), userContext)
+      return { msg, hasCommitment }
+    })
+  )
+
+  const triaged = triageResults.filter((r) => r.hasCommitment).map((r) => r.msg)
+  _stats.tier2_filtered += candidates.length - triaged.length
+
+  if (triaged.length === 0) return results
+  _stats.tier3_analyzed += triaged.length
+
+  // Tier 3: Send extraction via Batch API (50% cheaper)
+  const CHUNK_SIZE = 15
+  const batchRequests: BatchRequest[] = []
+  const chunkMap: Array<typeof triaged> = []
+
+  for (let i = 0; i < triaged.length; i += CHUNK_SIZE) {
+    const chunk = triaged.slice(i, i + CHUNK_SIZE)
+    chunkMap.push(chunk)
+
+    const numberedMessages = chunk
+      .map((m, j) => `[${j + 1}] "${truncateForAI(m.text, 6000)}"`)
+      .join('\n\n')
+
+    const systemBlocks: any[] = [{
+      type: 'text',
+      text: userContext ? BATCH_SYSTEM_PROMPT_USER : BATCH_SYSTEM_PROMPT_GENERIC,
+      cache_control: { type: 'ephemeral' },
+    }]
+    if (userContext) {
+      systemBlocks.push({ type: 'text', text: `Target user: ${userContext.userName}` })
+    }
+
+    batchRequests.push({
+      custom_id: `commit-chunk-${i}`,
+      params: {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 8192,
+        system: systemBlocks,
+        tools: [BATCH_EXTRACTION_TOOL as any],
+        tool_choice: { type: 'tool', name: 'extract_batch_commitments' },
+        messages: [{ role: 'user', content: `Analyze these ${chunk.length} messages for commitments:\n\n${numberedMessages}` }],
+      },
+    })
+  }
+
+  try {
+    const batchResults = await runBatch(batchRequests)
+
+    batchRequests.forEach((req, idx) => {
+      const item = batchResults.get(req.custom_id)
+      const chunk = chunkMap[idx]
+      const parsed = extractToolResult<{ results: Record<string, DetectedCommitment[]> }>(item)
+      if (!parsed?.results) return
+
+      chunk.forEach((msg, j) => {
+        const raw = parsed.results[String(j + 1)] || []
+        const commitments = raw.filter(c => !isLowQualityCommitment(c))
+        if (commitments.length > 0) {
+          results.set(msg.id, commitments)
+        }
+      })
+    })
+
+    console.log(`[batch-api] Detected commitments in ${triaged.length} messages via Batch API`)
+  } catch (error) {
+    console.error('[batch-api] Commitment batch failed, falling back to sync:', (error as Error).message)
+    return detectCommitmentsBatch(messages, userContext)
   }
 
   return results

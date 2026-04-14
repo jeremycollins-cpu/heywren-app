@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { detectCompletions } from '@/lib/ai/detect-completion'
 import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 // ─── Admin Supabase client (bypasses RLS) ───────────────────────────────────
 
@@ -550,6 +551,8 @@ export const processSlackMention = inngest.createFunction(
         return { matches: 0 }
       }
     })
+
+    await logAiUsage(getAdminClient(), { module: 'detect-commitments', trigger: 'process-slack-mention', teamId, itemsProcessed: 1 })
 
     return {
       success: true,

@@ -4,8 +4,9 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { detectCommitmentsBatch, calculatePriorityScore, DetectedCommitment } from '@/lib/ai/detect-commitments'
+import { detectCommitmentsBatchViaBatchApi, calculatePriorityScore, DetectedCommitment } from '@/lib/ai/detect-commitments'
 import { insertCommitmentIfNotDuplicate } from './sync-outlook'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 const BATCH_SIZE = 50
 
@@ -159,7 +160,7 @@ export const drainOutlookBacklog = inngest.createFunction(
               const chunk = aiBatch.slice(i, i + 15)
               try {
                 const batchInput = chunk.map(b => ({ id: b.id, text: b.text }))
-                const batchResults = await detectCommitmentsBatch(batchInput)
+                const batchResults = await detectCommitmentsBatchViaBatchApi(batchInput)
 
                 const processedIds: Array<{ dbId: string; count: number }> = []
                 for (const item of chunk) {
@@ -222,6 +223,7 @@ export const drainOutlookBacklog = inngest.createFunction(
       }
 
       allResults.push({ userId: user.userId, processed: totalProcessed, commitments: totalCommitments })
+      await logAiUsage(supabase, { module: 'detect-commitments', trigger: 'drain-outlook-backlog', teamId: user.teamId, userId: user.userId, itemsProcessed: totalProcessed })
       console.log(`[Drain Backlog] User ${user.userId}: processed ${totalProcessed} messages, ${totalCommitments} commitments`)
     }
 
