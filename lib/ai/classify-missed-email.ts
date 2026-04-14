@@ -69,6 +69,7 @@ const AUTOMATED_SUBJECT_PATTERNS = [
 
 const QUESTION_PATTERNS = [
   /\?\s*$/m,
+  /[a-z]\?\s/i, // question mark mid-text (after a letter, before whitespace) — catches inline questions in body_preview
   /\bcan you\b/i, /\bcould you\b/i, /\bwould you\b/i,
   /\bwhat (do you|are your|is your)\b/i, /\bwhat('s| is) (the|your)\b/i,
   /\bhow (do you|should we|would you|can we)\b/i,
@@ -91,6 +92,11 @@ const QUESTION_PATTERNS = [
   /\bare (they|the .+) (meeting|aligned|up to)\b/i,
   /\bmeeting your expectations\b/i, /\byour feedback\b/i,
   /\bschedule a (quick |brief )?(call|meeting|chat|sync)\b/i,
+  // Meeting availability proposals — someone proposing times or asking to meet
+  /\bwould (any|either|one|the following|these|those)\b.*\bwork\b/i,
+  /\b(happy|glad|available|free|love) to (chat|talk|meet|call|connect|discuss|sync|catch up)\b/i,
+  /\bdo (any|either|these|those|the following) (of )?(the )?(times?|slots?|options?) work\b/i,
+  /\bwould (\w+ )?(work|suit) (for you|for everyone)\b/i,
   // Indirect delegation / directive patterns (e.g. "it was suggested that you send...")
   /\b(it was |we |I )?(suggested|recommended|asked|requested) that you\b/i,
   /\byou('ll| will) need to\b/i, /\byou should\b/i, /\byou need to\b/i,
