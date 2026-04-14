@@ -295,7 +295,7 @@ describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
       fromEmail: 'Cage.Cowan@rubicon.com',
       fromName: 'Cage Cowan',
       subject: 'Re: Rodina | Routeware | Rubicon',
-      bodyPreview: 'Cage is sharing 12-month customer service data and asking if adjustments are needed.',
+      bodyPreview: 'Here is the 12-month customer service data. Do any of these numbers need adjustments?',
     })
 
     const result = await classifyMissedEmail(email)
