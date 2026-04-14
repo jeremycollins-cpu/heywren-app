@@ -358,4 +358,55 @@ describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
     expect(mockCreate).not.toHaveBeenCalled()
     expect(result).toBeNull()
   })
+
+  // Signal scoring: a single soft signal (e.g., calendly link) should NOT
+  // filter the email — real contacts share calendar links too. Only filter
+  // when multiple signals accumulate.
+
+  it('should NOT filter legitimate email with a calendly link (single soft signal)', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'dan.franck@samsara.com',
+      fromName: 'Dan Franck',
+      subject: 'Re: Meeting',
+      bodyPreview: "Here's my calendly link — pick any time that works to review the contract.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+
+  it('should NOT filter legitimate email asking for 15 minutes', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'Cage.Cowan@rubicon.com',
+      fromName: 'Cage Cowan',
+      subject: 'Re: Quarterly review',
+      bodyPreview: 'Do you have 15 minutes to walk through the Q3 fleet numbers before the board meeting?',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+
+  it('should filter cold outreach that combines multiple soft signals', async () => {
+    const email = makeEmail({
+      fromEmail: 'stranger@unknownco.com',
+      fromName: 'Alex Johnson',
+      subject: 'Re: Fleet optimization',
+      bodyPreview: "I'd love to show you a demo. Here's my calendly link to grab a quick 15-min call.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
 })
