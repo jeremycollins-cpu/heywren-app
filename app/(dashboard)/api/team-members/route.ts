@@ -157,10 +157,37 @@ async function getOrgHierarchyMembers(
   const userIds = orgMembers.map((m: any) => m.user_id)
   const { data: profiles } = await admin
     .from('profiles')
-    .select('id, email, display_name, avatar_url, job_title')
+    .select('id, email, display_name, avatar_url, job_title, onboarding_completed')
     .in('id', userIds)
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+
+  // Get integrations for all visible members
+  const { data: integrations } = await admin
+    .from('integrations')
+    .select('user_id, provider, updated_at')
+    .in('user_id', userIds)
+
+  const integrationMap = new Map<string, { providers: string[]; lastSync: string | null }>()
+  for (const integ of integrations || []) {
+    if (!integrationMap.has(integ.user_id)) {
+      integrationMap.set(integ.user_id, { providers: [], lastSync: null })
+    }
+    const entry = integrationMap.get(integ.user_id)!
+    entry.providers.push(integ.provider)
+    if (integ.updated_at && (!entry.lastSync || integ.updated_at > entry.lastSync)) {
+      entry.lastSync = integ.updated_at
+    }
+  }
+
+  // Get last sign-in from auth.users
+  const { data: authData } = await admin.auth.admin.listUsers()
+  const authMap = new Map<string, string | null>()
+  for (const u of authData?.users || []) {
+    if (userIds.includes(u.id)) {
+      authMap.set(u.id, u.last_sign_in_at || null)
+    }
+  }
 
   // Get department and team names for context
   const deptIds = [...new Set(orgMembers.map((m: any) => m.department_id))]
@@ -180,6 +207,7 @@ async function getOrgHierarchyMembers(
     const p: any = profileMap.get(m.user_id)
     const dept: any = deptMap.get(m.department_id)
     const team: any = teamMap.get(m.team_id)
+    const integ = integrationMap.get(m.user_id)
     return {
       id: m.id,
       user_id: m.user_id,
@@ -192,6 +220,10 @@ async function getOrgHierarchyMembers(
       department_name: dept?.name || null,
       team_id: m.team_id,
       team_name: team?.name || null,
+      onboarded: p?.onboarding_completed ?? false,
+      integrations: integ?.providers || [],
+      last_sign_in: authMap.get(m.user_id) || null,
+      last_sync: integ?.lastSync || null,
     }
   })
 
