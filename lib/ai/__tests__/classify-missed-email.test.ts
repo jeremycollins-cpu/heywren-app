@@ -219,3 +219,88 @@ describe('Tier 1 pre-filter: automated email detection', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
+  it('should filter out emails with tracking tags in sender address', async () => {
+    const email = makeEmail({
+      fromEmail: 'isabella+c@lydoniaplan.com',
+      fromName: 'Isabella Calcagno',
+      subject: 'Pair of Air Jordans?',
+      bodyPreview: "Isabella is proposing a discussion about Lydonia's custom AI agents that can self-fund deployments.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out B2B sales pitches', async () => {
+    const email = makeEmail({
+      fromEmail: 'reid@meridiensports.com',
+      fromName: 'Reid Mobley',
+      subject: 'Re: Routeware - Motorsports B2B Opportunity 2026',
+      bodyPreview: 'Reid is requesting to schedule a call to discuss the Routeware B2B motorsports opportunity.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out PR/media pitches', async () => {
+    const email = makeEmail({
+      fromEmail: 'amanda@ciobusinessviews.com',
+      fromName: 'Amanda Williams',
+      subject: 'Jeremy Collins share your thoughts to feature you in CEO special edition',
+      bodyPreview: 'Amanda is following up on a previous proposal to feature Jeremy in a CEO special edition.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out recruiting/staffing cold outreach', async () => {
+    const email = makeEmail({
+      fromEmail: 'lincoln@sendbetteremployees.com',
+      fromName: 'Lincoln',
+      subject: "Re: We can steal your competitor's best salesperson",
+      bodyPreview: "Lincoln is checking if Jeremy has any open roles that Wealthy Recruiting can help fill, as they're wrapping up their search.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out staffing company body patterns', async () => {
+    const email = makeEmail({
+      fromEmail: 'justin@hawksemp.com',
+      fromName: 'Justin DeSalvo',
+      subject: 'question for Jeremy',
+      bodyPreview: 'Justin is reaching out as a specialized personnel staffing company to discuss possible workforce needs.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should NOT filter legitimate vendor emails', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'Cage.Cowan@rubicon.com',
+      fromName: 'Cage Cowan',
+      subject: 'Re: Rodina | Routeware | Rubicon',
+      bodyPreview: 'Cage is sharing 12-month customer service data and asking if adjustments are needed.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    // Should reach AI, not be filtered at Tier 1
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+})

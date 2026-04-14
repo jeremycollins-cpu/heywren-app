@@ -44,6 +44,8 @@ const AUTOMATED_SENDER_PATTERNS = [
   /receipts?@/i, /order@/i, /shipping@/i, /feedback@/i,
   /survey@/i, /digest@/i, /automated@/i, /system@/i,
   /admin@/i, /webmaster@/i,
+  // Sales automation tracking tags (e.g., isabella+c@, john+outreach@)
+  /\+[a-z0-9]+@/i,
 ]
 
 const AUTOMATED_SUBJECT_PATTERNS = [
@@ -65,6 +67,13 @@ const AUTOMATED_SUBJECT_PATTERNS = [
   /\bfree (trial|demo|consultation)\b/i, /\bdon't miss\b/i,
   /\blast chance\b/i, /\bact now\b/i, /\bebook\b/i,
   /\bwebinar\b/i, /\bwhitepaper\b/i,
+  // Cold outreach / sales pitch subjects
+  /\bB2B\b/i,
+  /\b(business|partnership|growth|revenue|sales) opportunit/i,
+  /\b(open|current|new) (roles?|positions?|openings?|opportunit)/i,
+  /\b(steal|poach) your (competitor|company)/i,
+  /\bfeature (you|your)\b/i,
+  /\b(CEO|CTO|CFO|CMO|VP) (special )?edition\b/i,
 ]
 
 const QUESTION_PATTERNS = [
@@ -173,6 +182,26 @@ function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
   return (order[urgency] ?? 3) <= (order[minUrgency] ?? 3)
 }
 
+// Cold outreach / unsolicited sales body patterns — personalized sales emails
+// deliberately mimic real questions but these phrases are sales-specific
+const COLD_OUTREACH_BODY_PATTERNS = [
+  /\bwe (help|specialize in helping|work with|partner with) (companies|teams|businesses|organizations) (like|such as)\b/i,
+  /\b(I|we) (noticed|saw|came across|found) (your|you on|your company on) (LinkedIn|Twitter|website|profile)\b/i,
+  /\b(15|20|30) minutes? of your time\b/i,
+  /\b(book|schedule|grab) (a )?(quick )?(15|20|30)[- ]?min(ute)?\b/i,
+  /\b(love|like) to (show you|give you a demo|walk you through|put some time)\b/i,
+  /\b(top|great|perfect|strong|ideal) (candidate|talent|fit) for\b/i,
+  /\bwrapping up (their|our|the) search\b/i,
+  /\bopen roles?\b.*\bhelp fill\b/i,
+  /\bself[- ]fund(ed)? deployments?\b/i,
+  /\bcustom AI agents?\b/i,
+  /\bcan help you (grow|scale|increase|boost|improve|accelerate|transform|optimize)\b/i,
+  /\b(increase|boost|grow|double|triple) your (revenue|pipeline|sales|leads|conversions|ROI)\b/i,
+  // Recruiting / staffing cold outreach
+  /\b(staffing|recruiting|recruitment|talent) (company|firm|agency|partner)\b/i,
+  /\b(workforce|talent|hiring|staffing) needs\b/i,
+]
+
 // Distribution list / company-wide recipient patterns — broadcast emails
 // aren't personally directed and shouldn't trigger missed email alerts
 const DISTRIBUTION_LIST_PATTERNS = [
@@ -192,6 +221,7 @@ function isLikelyAutomated(email: EmailInput): boolean {
   if (AUTOMATED_SUBJECT_PATTERNS.some(p => p.test(email.subject))) return true
   if (email.bodyPreview.length < 30 && !email.bodyPreview.includes('?')) return true
   if (isSentToDistributionList(email)) return true
+  if (COLD_OUTREACH_BODY_PATTERNS.some(p => p.test(email.bodyPreview))) return true
   return false
 }
 
@@ -338,6 +368,19 @@ expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" 
 
 needsResponse=false for: sales/marketing, automated notifications, newsletters, transactional, mass-sent, calendar invites (no question), FYI-only
 
+COLD OUTREACH / UNSOLICITED SALES (needsResponse=false, even if they contain questions):
+Cold outreach emails are designed to look personal but the recipient has NO prior relationship with the sender. Key signals:
+- Sender is from an unknown company pitching their product/service
+- Recruiting/staffing firms asking about "open roles" or offering "top talent/candidates"
+- PR/media pitches asking to "feature you" in an article, podcast, or publication
+- Subject line uses "B2B", "opportunity", "partnership", or bait subjects unrelated to the body
+- Body contains sales language: "we help companies like yours", "15 minutes of your time", "love to show you a demo", "increase your revenue/pipeline"
+- Email claims a prior conversation that doesn't exist (fake "Re:" with no real thread)
+- Sender email has tracking tags (e.g., name+tag@domain.com)
+- Flattery-based openers: "I noticed your company", "I came across your profile", "impressed by your work"
+- Generic value propositions not tied to a specific prior conversation
+Even when these emails contain direct questions ("Would you be open to a quick call?"), they are unsolicited and should NOT be flagged as needing a response. The recipient did not initiate this relationship.
+
 SENTIMENT ANALYSIS (always provide, even for needsResponse=false):
 - sentimentScore: -1 (angry/hostile) to 1 (enthusiastic/grateful). 0 = neutral/factual.
 - sentimentLabel: positive (score > 0.2), negative (score < -0.2), neutral (between).
@@ -357,7 +400,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Ignore sales, automated, newsletters, mass emails.', cache_control: { type: 'ephemeral' } } as any],
+      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Answer false for: sales pitches, cold outreach from unknown companies, recruiting/staffing firms, PR/media pitches, automated notifications, newsletters, mass emails. Cold outreach often contains questions ("Would you be open to a call?") but these are unsolicited — answer false.', cache_control: { type: 'ephemeral' } } as any],
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],
