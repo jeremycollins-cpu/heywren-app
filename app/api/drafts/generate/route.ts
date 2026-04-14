@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { generateFollowUpDraftsBatch } from '@/lib/ai/generate-drafts'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createAdminClient(
@@ -131,6 +132,8 @@ export async function POST(request: NextRequest) {
       console.error('Draft generation batch error:', (err as Error).message)
     }
   }
+
+  await logAiUsage(admin, { module: 'generate-drafts', trigger: 'api/drafts/generate', teamId, userId: user.id, itemsProcessed: commitmentsForAI.length })
 
   return NextResponse.json({ drafts_generated: totalGenerated })
 }
