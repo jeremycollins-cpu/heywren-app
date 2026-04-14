@@ -372,7 +372,7 @@ describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
       fromEmail: 'dan.franck@samsara.com',
       fromName: 'Dan Franck',
       subject: 'Re: Meeting',
-      bodyPreview: "Here's my calendly link — pick any time that works to review the contract.",
+      bodyPreview: "Here's my calendly link — would any time this week work to review the contract?",
     })
 
     const result = await classifyMissedEmail(email)
