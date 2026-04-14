@@ -9,6 +9,7 @@ import {
   generateMeetingFollowUpDraftsViaBatch,
   type MeetingCommitment,
 } from '@/lib/ai/generate-meeting-followups'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -148,6 +149,8 @@ export const generateMeetingFollowups = inngest.createFunction(
     console.log(
       `[meeting-followups] Transcript ${transcriptId}: generated ${insertCount} follow-up drafts from ${newCommitments.length} commitments`
     )
+
+    await logAiUsage(supabase, { module: 'generate-meeting-followups', trigger: 'generate-meeting-followups', teamId, userId, itemsProcessed: newCommitments.length })
 
     return {
       success: true,

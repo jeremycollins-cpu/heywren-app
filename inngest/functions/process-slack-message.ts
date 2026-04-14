@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { detectCommitments, calculatePriorityScore, type UserContext } from '@/lib/ai/detect-commitments'
 import { detectCompletions } from '@/lib/ai/detect-completion'
 import { scoreRelevance, RELEVANCE_THRESHOLD } from '@/lib/slack/relevance'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -454,6 +455,8 @@ export const processSlackMessage = inngest.createFunction(
         return { matches: 0 }
       }
     })
+
+    await logAiUsage(getAdminClient(), { module: 'detect-commitments', trigger: 'process-slack-message', teamId: event.data.team_id, itemsProcessed: 1 })
 
     return {
       success: true,

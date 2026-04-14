@@ -11,6 +11,7 @@ import { detectCommitments } from '@/lib/ai/detect-commitments'
 import { findHeyWrenTriggers, extractHeyWrenCommitments } from '@/lib/ai/detect-hey-wren'
 import { insertCommitmentIfNotDuplicate } from '@/lib/ai/dedup-commitments'
 import { generateMeetingSummaryViaBatch } from '@/lib/ai/generate-meeting-summary'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -260,6 +261,8 @@ export const processMeetingTranscript = inngest.createFunction(
     console.log(
       `Transcript ${transcriptId}: ${heyWrenCount} Hey Wren commitments + ${passiveCount} passive = ${totalCommitments} total`
     )
+
+    await logAiUsage(getAdminClient(), { module: 'meeting-transcript', trigger: 'process-meeting-transcript', teamId, userId, itemsProcessed: 1, metadata: { heyWrenTriggers: heyWrenResults.triggers, passiveCommitments: passiveCount, summaryGenerated: summaryResult.generated } })
 
     return {
       success: true,

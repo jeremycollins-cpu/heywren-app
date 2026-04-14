@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { classifyMissedEmailBatch, getClassificationStats, type UserEmailPreferences } from '@/lib/ai/classify-missed-email'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 import { sendProactiveAlert as sendAlert } from '@/lib/notifications/send-proactive-alert'
 import { sendEmail } from '@/lib/email/send'
 import { buildRecipientGapAlertEmail } from '@/lib/email/templates/recipient-gap-alert'
@@ -496,6 +497,8 @@ async function scanTeamMissedEmails(
 
   const duration = Math.round((Date.now() - startTime) / 1000)
   const stats = getClassificationStats()
+
+  await logAiUsage(supabase, { module: 'classify-missed-email', trigger: 'scan-missed-emails', teamId, userId, itemsProcessed: newEmails.length, metadata: stats })
 
   return {
     success: true,
