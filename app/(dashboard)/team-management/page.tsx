@@ -31,6 +31,10 @@ interface OrgMember {
   commitments_open: number
   commitments_completed: number
   missed_emails: number
+  onboarded: boolean
+  integrations: string[] // e.g. ['outlook', 'slack']
+  last_sign_in: string | null
+  last_sync: string | null
 }
 
 interface Department {
@@ -223,6 +227,10 @@ export default function TeamManagementPage() {
           commitments_open: cStats.open,
           commitments_completed: cStats.completed,
           missed_emails: memberMissed.get(m.user_id) || 0,
+          onboarded: m.onboarded ?? false,
+          integrations: m.integrations || [],
+          last_sign_in: m.last_sign_in || null,
+          last_sync: m.last_sync || null,
         }
       }).sort((a: OrgMember, b: OrgMember) => {
         const roleOrder: Record<string, number> = { org_admin: 0, dept_manager: 1, team_lead: 2, member: 3, owner: 0, admin: 1 }
@@ -927,6 +935,23 @@ function AnomalyRow({ anomaly, onDismiss }: { anomaly: Anomaly; onDismiss: (a: A
   )
 }
 
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return 'Never'
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffMs = now - then
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays}d ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
   member: OrgMember
   anomalyCount: number
@@ -938,7 +963,6 @@ function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
   const RoleIcon = roleConfig.icon
   const bgColor = AVATAR_COLORS[member.full_name.charCodeAt(0) % AVATAR_COLORS.length]
   const totalCommitments = member.commitments_open + member.commitments_completed
-  const followThrough = totalCommitments > 0 ? Math.round(member.commitments_completed / totalCommitments * 100) : 0
 
   return (
     <button
@@ -962,7 +986,7 @@ function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
           )}
         </div>
 
-        {/* Name + Role */}
+        {/* Name + email + role */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <h3 className="font-semibold text-sm text-gray-900 dark:text-white truncate">{member.full_name}</h3>
@@ -972,31 +996,64 @@ function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
             </span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-            {member.job_title || member.email}
+            {member.email}{member.job_title ? ` · ${member.job_title}` : ''}
           </p>
         </div>
 
+        {/* Status badges — desktop */}
+        <div className="hidden sm:flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+          {/* Onboarded */}
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+            member.onboarded
+              ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+          }`}>
+            {member.onboarded ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+            {member.onboarded ? 'Onboarded' : 'Pending'}
+          </span>
+
+          {/* Integrations */}
+          {member.integrations.length > 0 ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+              <CheckCircle2 className="w-2.5 h-2.5" />
+              {member.integrations.join(', ')}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+              <AlertTriangle className="w-2.5 h-2.5" />
+              No integrations
+            </span>
+          )}
+        </div>
+
         {/* Stats — desktop */}
-        <div className="hidden sm:grid grid-cols-3 gap-4 flex-shrink-0 text-center">
+        <div className="hidden sm:grid grid-cols-4 gap-3 flex-shrink-0 text-center" style={{ minWidth: '220px' }}>
           <div>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">{member.commitments_open}</p>
-            <p className="text-[9px] text-gray-400 font-medium">Open</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-white">{totalCommitments}</p>
+            <p className="text-[9px] text-gray-400 font-medium">Commits</p>
           </div>
           <div>
-            <p className="text-sm font-bold text-green-600">{member.commitments_completed}</p>
-            <p className="text-[9px] text-gray-400 font-medium">Done</p>
-          </div>
-          <div>
-            <p className={`text-sm font-bold ${followThrough >= 50 ? 'text-green-600' : followThrough > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-              {followThrough}%
+            <p className={`text-sm font-bold ${member.missed_emails > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+              {member.missed_emails}
             </p>
-            <p className="text-[9px] text-gray-400 font-medium">Follow-thru</p>
+            <p className="text-[9px] text-gray-400 font-medium">Missed</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{formatRelativeTime(member.last_sign_in)}</p>
+            <p className="text-[9px] text-gray-400 font-medium">Last Login</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{formatRelativeTime(member.last_sync)}</p>
+            <p className="text-[9px] text-gray-400 font-medium">Last Sync</p>
           </div>
         </div>
 
         {/* Mobile: compact stats */}
         <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
-          <span className="text-xs font-bold text-gray-900 dark:text-white">{followThrough}%</span>
+          {member.onboarded && (
+            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+          )}
+          <span className="text-xs font-bold text-gray-900 dark:text-white">{totalCommitments}</span>
           {member.missed_emails > 0 && (
             <span className="text-xs font-medium text-amber-600">{member.missed_emails} missed</span>
           )}
