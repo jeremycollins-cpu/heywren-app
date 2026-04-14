@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getActiveCommunityPatterns } from './validate-community-signal'
-import { recordTokenUsage } from './token-usage'
+import { recordTokenUsage, truncateForAI } from './token-usage'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -345,7 +345,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     const recipientCtx = email.recipientName || email.recipientEmail
       ? `\nRecipient (you are classifying for): ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
       : ''
-    const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}${recipientCtx}\n\n${email.bodyPreview}`
+    const emailText = `From: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}${recipientCtx}\n\n${truncateForAI(email.bodyPreview)}`
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -382,7 +382,7 @@ async function sonnetAnalyze(email: EmailInput, communityPatterns?: string[]): P
     : ''
   const toCtx = email.toRecipients ? `\nTo: ${email.toRecipients}` : ''
   const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
-  const emailText = `From: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
+  const emailText = `From: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${truncateForAI(email.bodyPreview)}`
 
   const systemBlocks: any[] = [{
     type: 'text',
@@ -652,7 +652,7 @@ export async function classifyMissedEmailBatch(
         : ''
       const toCtx = email.toRecipients ? `\nTo: ${email.toRecipients}` : ''
       const ccCtx = email.ccRecipients ? `\nCc: ${email.ccRecipients}` : ''
-      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${email.bodyPreview}`
+      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>${toCtx}${ccCtx}\nSubject: ${email.subject}\nDate: ${email.receivedAt} (${daysSince}d ago)${recipientCtx}\n\n${truncateForAI(email.bodyPreview)}`
     })
     .join('\n\n---\n\n')
 

@@ -6,7 +6,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import {
-  generateMeetingFollowUpDrafts,
+  generateMeetingFollowUpDraftsViaBatch,
   type MeetingCommitment,
 } from '@/lib/ai/generate-meeting-followups'
 
@@ -100,7 +100,7 @@ export const generateMeetingFollowups = inngest.createFunction(
 
     // ── Generate follow-up drafts via AI ──
     const drafts = await step.run('generate-drafts', async () => {
-      return await generateMeetingFollowUpDrafts(meetingTitle, meetingCommitments)
+      return await generateMeetingFollowUpDraftsViaBatch(meetingTitle, meetingCommitments)
     })
 
     if (drafts.length === 0) {
