@@ -44,6 +44,8 @@ const AUTOMATED_SENDER_PATTERNS = [
   /receipts?@/i, /order@/i, /shipping@/i, /feedback@/i,
   /survey@/i, /digest@/i, /automated@/i, /system@/i,
   /admin@/i, /webmaster@/i,
+  // Sales automation tracking tags (e.g., isabella+c@, john+outreach@)
+  /\+[a-z0-9]+@/i,
 ]
 
 const AUTOMATED_SUBJECT_PATTERNS = [
@@ -65,6 +67,18 @@ const AUTOMATED_SUBJECT_PATTERNS = [
   /\bfree (trial|demo|consultation)\b/i, /\bdon't miss\b/i,
   /\blast chance\b/i, /\bact now\b/i, /\bebook\b/i,
   /\bwebinar\b/i, /\bwhitepaper\b/i,
+  // Cold outreach / sales pitch subjects
+  /\bB2B\b/i,
+  /\b(business|partnership|growth|revenue|sales|strategic) opportunit/i,
+  /\b(open|current|new) (roles?|positions?|openings?|opportunit)/i,
+  /\b(steal|poach) your (competitor|company)/i,
+  /\bfeature (you|your)\b/i,
+  /\b(CEO|CTO|CFO|CMO|VP|executive|founder) (special )?edition\b/i,
+  /\bexclusive (invite|invitation|access|opportunity)\b/i,
+  /\b(quick|brief) (question|intro|ask)\b/i,
+  /\bintro [-—] /i,
+  /\b(thought leadership|guest (post|article))\b/i,
+  /\b(candidate|talent) (for|at|pipeline)\b/i,
 ]
 
 const QUESTION_PATTERNS = [
@@ -173,6 +187,72 @@ function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
   return (order[urgency] ?? 3) <= (order[minUrgency] ?? 3)
 }
 
+// Cold outreach signal scoring — no single pattern is proof of cold outreach.
+// A legitimate contact might share a Calendly link or ask for 15 minutes.
+// We split signals into:
+//   HARD: virtually never used by known contacts (auto-filter alone)
+//   SOFT: could be legitimate in isolation (only filter when 2+ match)
+//
+// An email is classified as cold outreach when:
+//   - 1+ hard signal matches, OR
+//   - 2+ soft signals match (accumulation of weak evidence)
+
+const COLD_OUTREACH_HARD_SIGNALS = [
+  // --- Sales pitch openers & social proof (strangers pitching) ---
+  /\bwe (help|specialize in helping|work with|partner with) (companies|teams|businesses|organizations) (like|such as)\b/i,
+  /\b(I|we) (noticed|saw|came across|found) (your|you on|your company on)\b/i,
+  /\bcompanies (in|across) (your|the) (space|industry|sector|vertical)\b/i,
+  /\bwe'?ve helped\b.*\b(achieve|save|increase|reduce|grow)\b/i,
+  /\b(proven|guaranteed) (results|ROI|returns)\b/i,
+
+  // --- Generic value propositions (no real contact talks like this) ---
+  /\bcan help you (grow|scale|increase|boost|improve|accelerate|transform|optimize)\b/i,
+  /\b(increase|boost|grow|double|triple) your (revenue|pipeline|sales|leads|conversions|ROI)\b/i,
+  /\b(save|cut|reduce) (you )?(time|money|costs?|hours)\b.*\b(per|each|every) (week|month|year|quarter)\b/i,
+
+  // --- Recruiting / staffing cold outreach (self-identifying as agency) ---
+  /\b(staffing|recruiting|recruitment|talent|placement|headhunting) (company|firm|agency|partner|solution)\b/i,
+  /\b(workforce|talent|hiring|staffing|recruiting|personnel) needs\b/i,
+  /\b(passive|active) candidates?\b/i,
+  /\b(confidential|executive) search\b/i,
+
+  // --- PR / media cold outreach (unsolicited pitches) ---
+  /\b(editorial|media|press|content) (team|calendar|opportunity|deadline)\b/i,
+  /\b(thought leadership|guest (post|article|column|blog))\b/i,
+  /\bour (readers|audience|subscribers|publication)\b/i,
+]
+
+const COLD_OUTREACH_SOFT_SIGNALS = [
+  // --- Meeting / time asks (legitimate alone, suspicious in combination) ---
+  /\b(15|20|30) minutes? of your time\b/i,
+  /\b(book|schedule|grab) (a )?(quick )?(15|20|30)[- ]?min(ute)?\b/i,
+  /\bgrab time on my calendar\b/i,
+  /\b(here'?s|here is) my (calendly|calendar link)\b/i,
+
+  // --- Soft pitch language (could be a real intro, suspicious with other signals) ---
+  /\b(love|like) to (show you|give you a demo|walk you through|put some time)\b/i,
+  /\b(thought you|you might be) (interested|a good fit)\b/i,
+  /\bnot sure if you'?re the right person\b/i,
+  /\bwho (should I|would I|do I) (talk|speak|reach out) to\b/i,
+
+  // --- Recruiting language (legit if from known recruiter, suspect from stranger) ---
+  /\b(top|great|perfect|strong|ideal|exceptional|qualified) (candidate|talent|fit) for\b/i,
+  /\b(filling|fill) (the |this |these |a )?(role|position|opening|seat)\b/i,
+  /\byour (background|experience|profile) (is |would be |looks like )?(a |an )?(great|perfect|strong|ideal|excellent) (fit|match)\b/i,
+
+  // --- PR / media language (legit if established relationship) ---
+  /\b(feature|profile|spotlight|interview|quote) (you|your (company|team|CEO|CTO|founder))\b/i,
+]
+
+function coldOutreachScore(bodyPreview: string): number {
+  let score = 0
+  if (COLD_OUTREACH_HARD_SIGNALS.some(p => p.test(bodyPreview))) score += 2
+  for (const p of COLD_OUTREACH_SOFT_SIGNALS) {
+    if (p.test(bodyPreview)) score++
+  }
+  return score
+}
+
 // Distribution list / company-wide recipient patterns — broadcast emails
 // aren't personally directed and shouldn't trigger missed email alerts
 const DISTRIBUTION_LIST_PATTERNS = [
@@ -192,6 +272,8 @@ function isLikelyAutomated(email: EmailInput): boolean {
   if (AUTOMATED_SUBJECT_PATTERNS.some(p => p.test(email.subject))) return true
   if (email.bodyPreview.length < 30 && !email.bodyPreview.includes('?')) return true
   if (isSentToDistributionList(email)) return true
+  // Cold outreach: 1 hard signal or 2+ soft signals = filtered
+  if (coldOutreachScore(email.bodyPreview) >= 2) return true
   return false
 }
 
@@ -338,6 +420,19 @@ expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" 
 
 needsResponse=false for: sales/marketing, automated notifications, newsletters, transactional, mass-sent, calendar invites (no question), FYI-only
 
+COLD OUTREACH / UNSOLICITED SALES (needsResponse=false, even if they contain questions):
+Cold outreach emails are designed to look personal but the recipient has NO prior relationship with the sender. Key signals:
+- Sender is from an unknown company pitching their product/service
+- Recruiting/staffing firms asking about "open roles" or offering "top talent/candidates"
+- PR/media pitches asking to "feature you" in an article, podcast, or publication
+- Subject line uses "B2B", "opportunity", "partnership", or bait subjects unrelated to the body
+- Body contains sales language: "we help companies like yours", "15 minutes of your time", "love to show you a demo", "increase your revenue/pipeline"
+- Email claims a prior conversation that doesn't exist (fake "Re:" with no real thread)
+- Sender email has tracking tags (e.g., name+tag@domain.com)
+- Flattery-based openers: "I noticed your company", "I came across your profile", "impressed by your work"
+- Generic value propositions not tied to a specific prior conversation
+Even when these emails contain direct questions ("Would you be open to a quick call?"), they are unsolicited and should NOT be flagged as needing a response. The recipient did not initiate this relationship.
+
 SENTIMENT ANALYSIS (always provide, even for needsResponse=false):
 - sentimentScore: -1 (angry/hostile) to 1 (enthusiastic/grateful). 0 = neutral/factual.
 - sentimentLabel: positive (score > 0.2), negative (score < -0.2), neutral (between).
@@ -357,7 +452,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Ignore sales, automated, newsletters, mass emails.', cache_control: { type: 'ephemeral' } } as any],
+      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Answer false for: sales pitches, cold outreach from unknown companies, recruiting/staffing firms, PR/media pitches, automated notifications, newsletters, mass emails. Cold outreach often contains questions ("Would you be open to a call?") but these are unsolicited — answer false.', cache_control: { type: 'ephemeral' } } as any],
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],

@@ -219,3 +219,194 @@ describe('Tier 1 pre-filter: automated email detection', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
+  it('should filter out emails with tracking tags in sender address', async () => {
+    const email = makeEmail({
+      fromEmail: 'isabella+c@lydoniaplan.com',
+      fromName: 'Isabella Calcagno',
+      subject: 'Pair of Air Jordans?',
+      bodyPreview: "Isabella is proposing a discussion about Lydonia's custom AI agents that can self-fund deployments.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out B2B sales pitches', async () => {
+    const email = makeEmail({
+      fromEmail: 'reid@meridiensports.com',
+      fromName: 'Reid Mobley',
+      subject: 'Re: Routeware - Motorsports B2B Opportunity 2026',
+      bodyPreview: 'Reid is requesting to schedule a call to discuss the Routeware B2B motorsports opportunity.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out PR/media pitches', async () => {
+    const email = makeEmail({
+      fromEmail: 'amanda@ciobusinessviews.com',
+      fromName: 'Amanda Williams',
+      subject: 'Jeremy Collins share your thoughts to feature you in CEO special edition',
+      bodyPreview: 'Amanda is following up on a previous proposal to feature Jeremy in a CEO special edition.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out recruiting/staffing cold outreach', async () => {
+    const email = makeEmail({
+      fromEmail: 'lincoln@sendbetteremployees.com',
+      fromName: 'Lincoln',
+      subject: "Re: We can steal your competitor's best salesperson",
+      bodyPreview: "Lincoln is checking if Jeremy has any open roles that Wealthy Recruiting can help fill, as they're wrapping up their search.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter out staffing company body patterns', async () => {
+    const email = makeEmail({
+      fromEmail: 'justin@hawksemp.com',
+      fromName: 'Justin DeSalvo',
+      subject: 'question for Jeremy',
+      bodyPreview: 'Justin is reaching out as a specialized personnel staffing company to discuss possible workforce needs.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should NOT filter legitimate vendor emails', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'Cage.Cowan@rubicon.com',
+      fromName: 'Cage Cowan',
+      subject: 'Re: Rodina | Routeware | Rubicon',
+      bodyPreview: 'Here is the 12-month customer service data. Do any of these numbers need adjustments?',
+    })
+
+    const result = await classifyMissedEmail(email)
+    // Should reach AI, not be filtered at Tier 1
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+
+  // Generalized pattern tests — these are NOT from the original examples.
+  // They verify the patterns are predictive, not just matching known spam.
+
+  it('should filter unseen SaaS pitch with flattery opener', async () => {
+    const email = makeEmail({
+      fromEmail: 'mike@salessoftware.io',
+      fromName: 'Mike Chen',
+      subject: 'Re: Streamlining your fleet ops',
+      bodyPreview: 'I noticed your company on LinkedIn and thought you might be interested in our platform.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen demo request with time ask', async () => {
+    const email = makeEmail({
+      fromEmail: 'sarah@techvendor.com',
+      fromName: 'Sarah Park',
+      subject: 'Worth 15 min?',
+      bodyPreview: 'Would love to show you how we help companies like yours reduce costs. Can I grab 20 minutes of your time?',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen executive recruiter outreach', async () => {
+    const email = makeEmail({
+      fromEmail: 'james@elitesearch.com',
+      fromName: 'James Rivera',
+      subject: 'Confidential search - VP Operations',
+      bodyPreview: 'Your background is a great fit for an exciting role. We have passive candidates but need a leader.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen social-proof sales pitch', async () => {
+    const email = makeEmail({
+      fromEmail: 'dave@platformx.com',
+      fromName: 'Dave Walsh',
+      subject: 'Re: Quick intro',
+      bodyPreview: "We've helped Waste Management achieve 30% cost savings. Can we book a quick 15-min call?",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  // Signal scoring: a single soft signal (e.g., calendly link) should NOT
+  // filter the email — real contacts share calendar links too. Only filter
+  // when multiple signals accumulate.
+
+  it('should NOT filter legitimate email with a calendly link (single soft signal)', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'dan.franck@samsara.com',
+      fromName: 'Dan Franck',
+      subject: 'Re: Meeting',
+      bodyPreview: "Here's my calendly link — would any time this week work to review the contract?",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+
+  it('should NOT filter legitimate email asking for 15 minutes', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse())
+
+    const email = makeEmail({
+      fromEmail: 'Cage.Cowan@rubicon.com',
+      fromName: 'Cage Cowan',
+      subject: 'Re: Quarterly review',
+      bodyPreview: 'Do you have 15 minutes to walk through the Q3 fleet numbers before the board meeting?',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(result).not.toBeNull()
+  })
+
+  it('should filter cold outreach that combines multiple soft signals', async () => {
+    const email = makeEmail({
+      fromEmail: 'stranger@unknownco.com',
+      fromName: 'Alex Johnson',
+      subject: 'Re: Fleet optimization',
+      bodyPreview: "I'd love to show you a demo. Here's my calendly link to grab a quick 15-min call.",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+})
