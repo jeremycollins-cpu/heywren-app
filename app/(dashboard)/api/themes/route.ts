@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateThemes } from '@/lib/ai/generate-themes'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -169,6 +170,8 @@ export async function GET(request: NextRequest) {
         created_at: m.created_at,
       })),
     })
+
+    await logAiUsage(admin, { module: 'generate-themes', trigger: 'api/themes', teamId: teamId!, userId, itemsProcessed: 1 })
 
     return NextResponse.json(themes, {
       headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
