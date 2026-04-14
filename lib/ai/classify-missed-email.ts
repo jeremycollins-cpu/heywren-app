@@ -69,11 +69,16 @@ const AUTOMATED_SUBJECT_PATTERNS = [
   /\bwebinar\b/i, /\bwhitepaper\b/i,
   // Cold outreach / sales pitch subjects
   /\bB2B\b/i,
-  /\b(business|partnership|growth|revenue|sales) opportunit/i,
+  /\b(business|partnership|growth|revenue|sales|strategic) opportunit/i,
   /\b(open|current|new) (roles?|positions?|openings?|opportunit)/i,
   /\b(steal|poach) your (competitor|company)/i,
   /\bfeature (you|your)\b/i,
-  /\b(CEO|CTO|CFO|CMO|VP) (special )?edition\b/i,
+  /\b(CEO|CTO|CFO|CMO|VP|executive|founder) (special )?edition\b/i,
+  /\bexclusive (invite|invitation|access|opportunity)\b/i,
+  /\b(quick|brief) (question|intro|ask)\b/i,
+  /\bintro [-—] /i,
+  /\b(thought leadership|guest (post|article))\b/i,
+  /\b(candidate|talent) (for|at|pipeline)\b/i,
 ]
 
 const QUESTION_PATTERNS = [
@@ -183,23 +188,45 @@ function meetsUrgencyThreshold(urgency: string, minUrgency: string): boolean {
 }
 
 // Cold outreach / unsolicited sales body patterns — personalized sales emails
-// deliberately mimic real questions but these phrases are sales-specific
+// deliberately mimic real questions but these phrase categories are sales-specific.
+// Patterns target broad categories (not specific emails) so they're predictive.
 const COLD_OUTREACH_BODY_PATTERNS = [
+  // --- Sales pitch openers & social proof ---
   /\bwe (help|specialize in helping|work with|partner with) (companies|teams|businesses|organizations) (like|such as)\b/i,
-  /\b(I|we) (noticed|saw|came across|found) (your|you on|your company on) (LinkedIn|Twitter|website|profile)\b/i,
+  /\b(I|we) (noticed|saw|came across|found) (your|you on|your company on)\b/i,
+  /\b(thought you|you might be) (interested|a good fit)\b/i,
+  /\bnot sure if you'?re the right person\b/i,
+  /\bwho (should I|would I|do I) (talk|speak|reach out) to\b/i,
+  /\bcompanies (in|across) (your|the) (space|industry|sector|vertical)\b/i,
+  /\bwe'?ve helped\b.*\b(achieve|save|increase|reduce|grow)\b/i,
+
+  // --- Demo / meeting asks from unknown senders ---
   /\b(15|20|30) minutes? of your time\b/i,
   /\b(book|schedule|grab) (a )?(quick )?(15|20|30)[- ]?min(ute)?\b/i,
   /\b(love|like) to (show you|give you a demo|walk you through|put some time)\b/i,
-  /\b(top|great|perfect|strong|ideal) (candidate|talent|fit) for\b/i,
-  /\bwrapping up (their|our|the) search\b/i,
-  /\bopen roles?\b.*\bhelp fill\b/i,
-  /\bself[- ]fund(ed)? deployments?\b/i,
-  /\bcustom AI agents?\b/i,
+  /\bgrab time on my calendar\b/i,
+  /\b(here'?s|here is) my (calendly|calendar link)\b/i,
+
+  // --- Generic value propositions ---
   /\bcan help you (grow|scale|increase|boost|improve|accelerate|transform|optimize)\b/i,
   /\b(increase|boost|grow|double|triple) your (revenue|pipeline|sales|leads|conversions|ROI)\b/i,
-  // Recruiting / staffing cold outreach
-  /\b(staffing|recruiting|recruitment|talent) (company|firm|agency|partner)\b/i,
-  /\b(workforce|talent|hiring|staffing) needs\b/i,
+  /\b(save|cut|reduce) (you )?(time|money|costs?|hours)\b.*\b(per|each|every) (week|month|year|quarter)\b/i,
+  /\b(proven|guaranteed) (results|ROI|returns)\b/i,
+
+  // --- Recruiting / staffing / talent cold outreach ---
+  /\b(staffing|recruiting|recruitment|talent|placement|headhunting) (company|firm|agency|partner|solution)\b/i,
+  /\b(workforce|talent|hiring|staffing|recruiting|personnel) needs\b/i,
+  /\b(top|great|perfect|strong|ideal|exceptional|qualified) (candidate|talent|fit) for\b/i,
+  /\b(filling|fill) (the |this |these |a )?(role|position|opening|seat)\b/i,
+  /\b(passive|active) candidates?\b/i,
+  /\b(confidential|executive) search\b/i,
+  /\byour (background|experience|profile) (is |would be |looks like )?(a |an )?(great|perfect|strong|ideal|excellent) (fit|match)\b/i,
+
+  // --- PR / media pitch patterns ---
+  /\b(feature|profile|spotlight|interview|quote) (you|your (company|team|CEO|CTO|founder))\b/i,
+  /\b(editorial|media|press|content) (team|calendar|opportunity|deadline)\b/i,
+  /\b(thought leadership|guest (post|article|column|blog))\b/i,
+  /\bour (readers|audience|subscribers|publication)\b/i,
 ]
 
 // Distribution list / company-wide recipient patterns — broadcast emails

@@ -303,4 +303,59 @@ describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
     expect(mockCreate).toHaveBeenCalled()
     expect(result).not.toBeNull()
   })
+
+  // Generalized pattern tests — these are NOT from the original examples.
+  // They verify the patterns are predictive, not just matching known spam.
+
+  it('should filter unseen SaaS pitch with flattery opener', async () => {
+    const email = makeEmail({
+      fromEmail: 'mike@salessoftware.io',
+      fromName: 'Mike Chen',
+      subject: 'Re: Streamlining your fleet ops',
+      bodyPreview: 'I noticed your company on LinkedIn and thought you might be interested in our platform.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen demo request with time ask', async () => {
+    const email = makeEmail({
+      fromEmail: 'sarah@techvendor.com',
+      fromName: 'Sarah Park',
+      subject: 'Worth 15 min?',
+      bodyPreview: 'Would love to show you how we help companies like yours reduce costs. Can I grab 20 minutes of your time?',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen executive recruiter outreach', async () => {
+    const email = makeEmail({
+      fromEmail: 'james@elitesearch.com',
+      fromName: 'James Rivera',
+      subject: 'Confidential search - VP Operations',
+      bodyPreview: 'Your background is a great fit for an exciting role. We have passive candidates but need a leader.',
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
+
+  it('should filter unseen social-proof sales pitch', async () => {
+    const email = makeEmail({
+      fromEmail: 'dave@platformx.com',
+      fromName: 'Dave Walsh',
+      subject: 'Re: Quick intro',
+      bodyPreview: "We've helped Waste Management achieve 30% cost savings. Can we book a quick 15-min call?",
+    })
+
+    const result = await classifyMissedEmail(email)
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(result).toBeNull()
+  })
 })
