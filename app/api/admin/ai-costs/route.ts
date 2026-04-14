@@ -21,7 +21,7 @@ async function verifySuperAdmin(admin: ReturnType<typeof getAdmin>): Promise<str
 
 /**
  * GET /api/admin/ai-costs?days=30
- * Returns org-wide AI cost metrics from ai_daily_rollups.
+ * Returns HeyWren's own platform AI costs from ai_platform_usage.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -30,45 +30,38 @@ export async function GET(request: NextRequest) {
     if (!callerId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const days = Math.min(Number(request.nextUrl.searchParams.get('days') || 30), 90)
-    const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+    const since = new Date(Date.now() - days * 86400000).toISOString()
 
-    // Fetch all rollups in the window
-    const { data: rollups, error } = await admin
-      .from('ai_daily_rollups')
-      .select('user_id, user_email, organization_id, date, num_sessions, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, estimated_cost_cents, lines_added, lines_removed, commits, prs_opened, tool_acceptance_rate, metadata')
-      .gte('date', since)
-      .order('date', { ascending: true })
+    const { data: rows, error } = await admin
+      .from('ai_platform_usage')
+      .select('*')
+      .gte('created_at', since)
+      .order('created_at', { ascending: true })
 
     if (error) {
       console.error('ai-costs query failed:', error.message)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const rows = rollups || []
+    const data = rows || []
 
     // ── Aggregate totals ──
     let totalCostCents = 0
-    let totalSessions = 0
+    let totalApiCalls = 0
     let totalInputTokens = 0
     let totalOutputTokens = 0
     let totalCacheCreation = 0
     let totalCacheRead = 0
-    let totalLinesAdded = 0
-    let totalLinesRemoved = 0
-    let totalCommits = 0
-    let totalPRs = 0
+    let totalItemsProcessed = 0
 
-    for (const r of rows) {
-      totalCostCents += r.estimated_cost_cents || 0
-      totalSessions += r.num_sessions || 0
-      totalInputTokens += Number(r.input_tokens) || 0
-      totalOutputTokens += Number(r.output_tokens) || 0
-      totalCacheCreation += Number(r.cache_creation_tokens) || 0
-      totalCacheRead += Number(r.cache_read_tokens) || 0
-      totalLinesAdded += r.lines_added || 0
-      totalLinesRemoved += r.lines_removed || 0
-      totalCommits += r.commits || 0
-      totalPRs += r.prs_opened || 0
+    for (const r of data) {
+      totalCostCents += Number(r.estimated_cost_cents) || 0
+      totalApiCalls += r.api_calls || 0
+      totalInputTokens += r.input_tokens || 0
+      totalOutputTokens += r.output_tokens || 0
+      totalCacheCreation += r.cache_creation_tokens || 0
+      totalCacheRead += r.cache_read_tokens || 0
+      totalItemsProcessed += r.items_processed || 0
     }
 
     const totalTokens = totalInputTokens + totalOutputTokens + totalCacheCreation + totalCacheRead
@@ -77,111 +70,100 @@ export async function GET(request: NextRequest) {
       : 0
 
     // ── Daily breakdown ──
-    const dailyMap = new Map<string, { cost_cents: number; sessions: number; tokens: number }>()
-    for (const r of rows) {
-      const existing = dailyMap.get(r.date) || { cost_cents: 0, sessions: 0, tokens: 0 }
-      existing.cost_cents += r.estimated_cost_cents || 0
-      existing.sessions += r.num_sessions || 0
-      existing.tokens += (Number(r.input_tokens) || 0) + (Number(r.output_tokens) || 0)
-      dailyMap.set(r.date, existing)
+    const dailyMap = new Map<string, { cost_cents: number; api_calls: number; items: number }>()
+    for (const r of data) {
+      const date = r.created_at.slice(0, 10)
+      const existing = dailyMap.get(date) || { cost_cents: 0, api_calls: 0, items: 0 }
+      existing.cost_cents += Number(r.estimated_cost_cents) || 0
+      existing.api_calls += r.api_calls || 0
+      existing.items += r.items_processed || 0
+      dailyMap.set(date, existing)
     }
     const daily = Array.from(dailyMap.entries())
-      .map(([date, d]) => ({ date, cost_cents: d.cost_cents, sessions: d.sessions, tokens: d.tokens }))
+      .map(([date, d]) => ({ date, ...d }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
-    // ── Per-user breakdown ──
-    const userMap = new Map<string, {
-      user_id: string | null
-      email: string
+    // ── Per-module breakdown ──
+    const moduleMap = new Map<string, {
       cost_cents: number
-      sessions: number
+      api_calls: number
       input_tokens: number
       output_tokens: number
       cache_read_tokens: number
-      commits: number
-      prs: number
+      items_processed: number
+      runs: number
     }>()
-    for (const r of rows) {
-      const key = r.user_id || r.user_email || 'unknown'
-      const existing = userMap.get(key) || {
-        user_id: r.user_id,
-        email: r.user_email || 'unknown',
-        cost_cents: 0,
-        sessions: 0,
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_read_tokens: 0,
-        commits: 0,
-        prs: 0,
+    for (const r of data) {
+      const existing = moduleMap.get(r.module) || {
+        cost_cents: 0, api_calls: 0, input_tokens: 0, output_tokens: 0,
+        cache_read_tokens: 0, items_processed: 0, runs: 0,
       }
-      existing.cost_cents += r.estimated_cost_cents || 0
-      existing.sessions += r.num_sessions || 0
-      existing.input_tokens += Number(r.input_tokens) || 0
-      existing.output_tokens += Number(r.output_tokens) || 0
-      existing.cache_read_tokens += Number(r.cache_read_tokens) || 0
-      existing.commits += r.commits || 0
-      existing.prs += r.prs_opened || 0
-      userMap.set(key, existing)
+      existing.cost_cents += Number(r.estimated_cost_cents) || 0
+      existing.api_calls += r.api_calls || 0
+      existing.input_tokens += r.input_tokens || 0
+      existing.output_tokens += r.output_tokens || 0
+      existing.cache_read_tokens += r.cache_read_tokens || 0
+      existing.items_processed += r.items_processed || 0
+      existing.runs += 1
+      moduleMap.set(r.module, existing)
     }
-
-    // Look up display names
-    const userIds = [...new Set(rows.map(r => r.user_id).filter(Boolean))]
-    const nameMap = new Map<string, string>()
-    if (userIds.length > 0) {
-      const { data: profiles } = await admin
-        .from('profiles')
-        .select('id, full_name, display_name, email')
-        .in('id', userIds)
-      for (const p of profiles || []) {
-        nameMap.set(p.id, p.display_name || p.full_name || p.email || 'Unknown')
-      }
-    }
-
-    const users = Array.from(userMap.values())
-      .map(u => ({
-        ...u,
-        name: (u.user_id && nameMap.get(u.user_id)) || u.email,
-        cache_hit_rate: (u.input_tokens + u.cache_read_tokens) > 0
-          ? u.cache_read_tokens / (u.input_tokens + u.cache_read_tokens)
+    const modules = Array.from(moduleMap.entries())
+      .map(([module, d]) => ({
+        module,
+        ...d,
+        cache_hit_rate: (d.input_tokens + d.cache_read_tokens) > 0
+          ? d.cache_read_tokens / (d.input_tokens + d.cache_read_tokens)
           : 0,
       }))
       .sort((a, b) => b.cost_cents - a.cost_cents)
 
-    // ── Per-model breakdown (from metadata.models array) ──
-    const modelMap = new Map<string, { tokens: number; cost_estimate: number }>()
-    for (const r of rows) {
-      const models = (r.metadata as any)?.models || []
-      for (const m of models) {
-        const existing = modelMap.get(m.model) || { tokens: 0, cost_estimate: 0 }
-        const mTokens = (m.tokens?.input || 0) + (m.tokens?.output || 0) + (m.tokens?.cache_creation || 0) + (m.tokens?.cache_read || 0)
-        existing.tokens += mTokens
-        modelMap.set(m.model, existing)
+    // ── Per-team breakdown ──
+    const teamMap = new Map<string, { team_id: string; cost_cents: number; api_calls: number; items_processed: number; runs: number }>()
+    for (const r of data) {
+      const tid = r.team_id || 'unknown'
+      const existing = teamMap.get(tid) || { team_id: tid, cost_cents: 0, api_calls: 0, items_processed: 0, runs: 0 }
+      existing.cost_cents += Number(r.estimated_cost_cents) || 0
+      existing.api_calls += r.api_calls || 0
+      existing.items_processed += r.items_processed || 0
+      existing.runs += 1
+      teamMap.set(tid, existing)
+    }
+
+    // Look up team names
+    const teamIds = [...new Set(data.map(r => r.team_id).filter(Boolean))]
+    const teamNameMap = new Map<string, string>()
+    if (teamIds.length > 0) {
+      const { data: teams } = await admin
+        .from('teams')
+        .select('id, name')
+        .in('id', teamIds)
+      for (const t of teams || []) {
+        teamNameMap.set(t.id, t.name)
       }
     }
-    const models = Array.from(modelMap.entries())
-      .map(([model, d]) => ({ model, tokens: d.tokens }))
-      .sort((a, b) => b.tokens - a.tokens)
+
+    const teams = Array.from(teamMap.values())
+      .map(t => ({ ...t, name: teamNameMap.get(t.team_id) || t.team_id }))
+      .sort((a, b) => b.cost_cents - a.cost_cents)
 
     return NextResponse.json({
-      period: { days, since },
+      period: { days, since: since.slice(0, 10) },
       totals: {
         cost_cents: totalCostCents,
         cost_dollars: totalCostCents / 100,
-        sessions: totalSessions,
+        api_calls: totalApiCalls,
         total_tokens: totalTokens,
         input_tokens: totalInputTokens,
         output_tokens: totalOutputTokens,
         cache_creation_tokens: totalCacheCreation,
         cache_read_tokens: totalCacheRead,
         cache_hit_rate: Math.round(cacheHitRate * 1000) / 10,
-        lines_added: totalLinesAdded,
-        lines_removed: totalLinesRemoved,
-        commits: totalCommits,
-        prs: totalPRs,
+        items_processed: totalItemsProcessed,
+        runs: data.length,
       },
       daily,
-      users,
-      models,
+      modules,
+      teams,
     })
   } catch (err) {
     console.error('ai-costs error:', err)

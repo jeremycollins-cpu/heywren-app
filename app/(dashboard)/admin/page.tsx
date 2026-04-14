@@ -407,8 +407,8 @@ function AdminContent() {
   if (view === 'ai-costs') {
     const t = aiCosts?.totals || {}
     const daily = aiCosts?.daily || []
-    const users = aiCosts?.users || []
-    const models = aiCosts?.models || []
+    const modules = aiCosts?.modules || []
+    const aiTeams = aiCosts?.teams || []
     const maxDailyCost = Math.max(...daily.map((d: any) => d.cost_cents), 1)
 
     return (
@@ -417,7 +417,7 @@ function AdminContent() {
           <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <PageHeader title="AI Cost Dashboard" description={`Last ${aiCostsDays} days of Claude Code usage`} />
+          <PageHeader title="AI Cost Dashboard" description={`HeyWren platform AI spend — last ${aiCostsDays} days`} />
           <div className="ml-auto flex items-center gap-2">
             {[7, 14, 30, 60].map(d => (
               <button key={d} onClick={() => { setAiCostsDays(d); loadAiCosts(d) }}
@@ -433,7 +433,7 @@ function AdminContent() {
         {aiCostsLoading && !aiCosts ? (
           <div className="text-center py-12 text-gray-400">Loading AI cost data...</div>
         ) : !aiCosts ? (
-          <div className="text-center py-12 text-gray-400">No data available. Make sure the Anthropic Admin API key is configured and syncing.</div>
+          <div className="text-center py-12 text-gray-400">No data yet. Costs will appear after AI features process their first messages.</div>
         ) : (
           <>
             {/* Top-line metrics */}
@@ -443,8 +443,8 @@ function AdminContent() {
                 <div className="text-sm text-green-600 font-medium">Total Spend</div>
               </div>
               <div className="p-4 rounded-lg border bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
-                <div className="text-2xl font-bold text-indigo-700">{t.sessions?.toLocaleString() || 0}</div>
-                <div className="text-sm text-indigo-600 font-medium">Sessions</div>
+                <div className="text-2xl font-bold text-indigo-700">{(t.api_calls || 0).toLocaleString()}</div>
+                <div className="text-sm text-indigo-600 font-medium">API Calls</div>
               </div>
               <div className="p-4 rounded-lg border bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
                 <div className="text-2xl font-bold text-amber-700">{t.cache_hit_rate || 0}%</div>
@@ -471,12 +471,12 @@ function AdminContent() {
                 <div className="text-xs text-gray-500">Cache Read Tokens</div>
               </div>
               <div className="p-3 rounded-lg border bg-white">
-                <div className="text-lg font-bold">{(t.commits || 0).toLocaleString()}</div>
-                <div className="text-xs text-gray-500">Commits</div>
+                <div className="text-lg font-bold">{(t.items_processed || 0).toLocaleString()}</div>
+                <div className="text-xs text-gray-500">Items Processed</div>
               </div>
               <div className="p-3 rounded-lg border bg-white">
-                <div className="text-lg font-bold">{(t.prs || 0).toLocaleString()}</div>
-                <div className="text-xs text-gray-500">PRs Opened</div>
+                <div className="text-lg font-bold">{(t.runs || 0).toLocaleString()}</div>
+                <div className="text-xs text-gray-500">Pipeline Runs</div>
               </div>
             </div>
 
@@ -493,7 +493,7 @@ function AdminContent() {
                     return (
                       <div key={d.date} className="flex-1 group relative">
                         <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
-                          {d.date}: ${(d.cost_cents / 100).toFixed(2)} · {d.sessions} sessions
+                          {d.date}: ${(d.cost_cents / 100).toFixed(2)} · {d.api_calls} calls · {d.items} items
                         </div>
                         <div
                           className="bg-indigo-500 hover:bg-indigo-600 rounded-t transition-colors w-full"
@@ -510,79 +510,88 @@ function AdminContent() {
               </div>
             )}
 
-            {/* Per-model breakdown */}
-            {models.length > 0 && (
+            {/* Per-module breakdown */}
+            {modules.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-lg p-5">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
                   <Cpu className="w-4 h-4 text-purple-600" />
-                  Model Usage
+                  Cost by Module
                 </h3>
-                <div className="space-y-2">
-                  {models.map((m: any) => {
-                    const pct = t.total_tokens > 0 ? (m.tokens / t.total_tokens) * 100 : 0
-                    return (
-                      <div key={m.model} className="flex items-center gap-3">
-                        <span className="text-xs font-mono text-gray-700 w-48 truncate">{m.model}</span>
-                        <div className="flex-1 bg-gray-100 rounded-full h-2">
-                          <div className="bg-purple-500 rounded-full h-2" style={{ width: `${Math.max(1, pct)}%` }} />
-                        </div>
-                        <span className="text-xs text-gray-500 w-16 text-right">{(m.tokens / 1_000_000).toFixed(1)}M</span>
-                        <span className="text-xs text-gray-400 w-12 text-right">{pct.toFixed(0)}%</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Per-user table */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
-                <Users className="w-4 h-4 text-blue-600" />
-                Usage by User ({users.length})
-              </h3>
-              {users.length === 0 ? (
-                <p className="text-sm text-gray-400">No user-level data available.</p>
-              ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs text-gray-500 border-b">
-                        <th className="pb-2 font-medium">User</th>
+                        <th className="pb-2 font-medium">Module</th>
                         <th className="pb-2 font-medium text-right">Cost</th>
-                        <th className="pb-2 font-medium text-right">Sessions</th>
+                        <th className="pb-2 font-medium text-right">API Calls</th>
+                        <th className="pb-2 font-medium text-right">Items</th>
                         <th className="pb-2 font-medium text-right">Cache Hit</th>
-                        <th className="pb-2 font-medium text-right">Commits</th>
-                        <th className="pb-2 font-medium text-right">PRs</th>
-                        <th className="pb-2 font-medium text-right">$/Session</th>
+                        <th className="pb-2 font-medium text-right">$/Item</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u: any, i: number) => (
-                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                      {modules.map((m: any) => (
+                        <tr key={m.module} className="border-b border-gray-50 hover:bg-gray-50">
                           <td className="py-2">
-                            <div className="font-medium text-gray-900 truncate max-w-[200px]">{u.name}</div>
-                            {u.email !== u.name && <div className="text-[10px] text-gray-400 truncate max-w-[200px]">{u.email}</div>}
+                            <span className="font-medium text-gray-900 font-mono text-xs">{m.module}</span>
+                            <span className="text-[10px] text-gray-400 ml-2">{m.runs} runs</span>
                           </td>
-                          <td className="py-2 text-right font-medium">${(u.cost_cents / 100).toFixed(2)}</td>
-                          <td className="py-2 text-right">{u.sessions}</td>
+                          <td className="py-2 text-right font-medium">${(m.cost_cents / 100).toFixed(2)}</td>
+                          <td className="py-2 text-right">{m.api_calls.toLocaleString()}</td>
+                          <td className="py-2 text-right">{m.items_processed.toLocaleString()}</td>
                           <td className="py-2 text-right">
-                            <span className={`${u.cache_hit_rate > 0.5 ? 'text-green-600' : u.cache_hit_rate > 0.2 ? 'text-amber-600' : 'text-red-600'}`}>
-                              {(u.cache_hit_rate * 100).toFixed(0)}%
+                            <span className={`${m.cache_hit_rate > 0.5 ? 'text-green-600' : m.cache_hit_rate > 0.2 ? 'text-amber-600' : 'text-red-600'}`}>
+                              {(m.cache_hit_rate * 100).toFixed(0)}%
                             </span>
                           </td>
-                          <td className="py-2 text-right">{u.commits}</td>
-                          <td className="py-2 text-right">{u.prs}</td>
                           <td className="py-2 text-right text-gray-500">
-                            ${u.sessions > 0 ? (u.cost_cents / u.sessions / 100).toFixed(2) : '0.00'}
+                            ${m.items_processed > 0 ? (m.cost_cents / m.items_processed / 100).toFixed(4) : '0.00'}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Per-team breakdown */}
+            {aiTeams.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-lg p-5">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  Cost by Team ({aiTeams.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 border-b">
+                        <th className="pb-2 font-medium">Team</th>
+                        <th className="pb-2 font-medium text-right">Cost</th>
+                        <th className="pb-2 font-medium text-right">API Calls</th>
+                        <th className="pb-2 font-medium text-right">Items</th>
+                        <th className="pb-2 font-medium text-right">Runs</th>
+                        <th className="pb-2 font-medium text-right">$/Item</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiTeams.map((t: any) => (
+                        <tr key={t.team_id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="py-2 font-medium text-gray-900 truncate max-w-[200px]">{t.name}</td>
+                          <td className="py-2 text-right font-medium">${(t.cost_cents / 100).toFixed(2)}</td>
+                          <td className="py-2 text-right">{t.api_calls.toLocaleString()}</td>
+                          <td className="py-2 text-right">{t.items_processed.toLocaleString()}</td>
+                          <td className="py-2 text-right">{t.runs}</td>
+                          <td className="py-2 text-right text-gray-500">
+                            ${t.items_processed > 0 ? (t.cost_cents / t.items_processed / 100).toFixed(4) : '0.00'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

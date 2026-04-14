@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { generateFollowUpDraftsViaBatch } from '@/lib/ai/generate-drafts'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
   return createClient(
@@ -126,6 +127,7 @@ export const generateDrafts = inngest.createFunction(
         }
 
         console.log(`Team ${teamId}: Generated ${totalGenerated} drafts from ${commitments.length} commitments`)
+        await logAiUsage(supabase, { module: 'generate-drafts', trigger: 'generate-drafts-daily', teamId, itemsProcessed: commitments.length })
         results.push({ teamId, success: true, drafts_generated: totalGenerated })
       } catch (err) {
         console.error(`Team ${teamId} draft generation failed:`, (err as Error).message)

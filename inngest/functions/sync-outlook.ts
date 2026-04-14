@@ -2,6 +2,7 @@ import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatch, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
+import { logAiUsage } from '@/lib/ai/persist-usage'
 
 // Re-export so drain-outlook-backlog's existing import still works
 export { insertCommitmentIfNotDuplicate, buildCommitmentMetadata }
@@ -731,6 +732,7 @@ export const syncOutlook = inngest.createFunction(
         const result = await syncTeamOutlook(supabase, integration.team_id, syncUserId, integration)
         results.push(result)
         console.log(`User ${syncUserId} (team ${integration.team_id}) sync complete:`, result)
+        await logAiUsage(supabase, { module: 'detect-commitments', trigger: 'sync-outlook', teamId: integration.team_id, userId: syncUserId, itemsProcessed: result?.newEmails || result?.emails || 0 })
 
         // Check if there are still unprocessed messages after this run
         const { count } = await supabase
