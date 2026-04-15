@@ -58,15 +58,22 @@ const BATCH_DRAFT_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
-const SYSTEM_PROMPT = `Write short, professional but casual follow-up messages for overdue commitments. Sound like a real person, not a bot.
+const SYSTEM_PROMPT = `Write a follow-up message for an overdue commitment. The message should sound like it was written by the sender — match their communication style.
 
 Rules:
-- Subject: under 60 chars
+- Subject: under 60 chars, specific to the commitment (not generic "Following up")
 - Body: under 150 words
-- Reference the commitment naturally
-- Acknowledge elapsed time gently if significant
-- No passive-aggression, no excessive exclamation marks
-- Sign off casually (e.g. "Thanks," or "Cheers,"), no sender name`
+- Reference the specific commitment naturally, not vaguely
+- Match the tone of the original conversation (formal→formal, casual→casual)
+- If the original was casual ("hey, can you..."), keep it casual
+- If the original was formal ("Per our discussion..."), stay professional
+- Use the sender's first name in the sign-off if provided
+- Acknowledge elapsed time gently if significant (>3 days)
+- If there's an original quote, reference the specific topic — don't just say "checking in"
+- For inbound commitments (someone promised something to the sender): politely check on progress
+- For outbound commitments (sender promised something): provide an update or ask what's needed to close it
+- No passive-aggression, no excessive exclamation marks, no "just wanted to bump this"
+- If urgency is high/critical, convey appropriate importance without being aggressive`
 
 export async function generateFollowUpDraft(commitment: {
   title: string
@@ -74,12 +81,33 @@ export async function generateFollowUpDraft(commitment: {
   source?: string
   created_at: string
   recipient_name?: string
+  sender_name?: string
+  original_quote?: string
+  tone?: string
+  urgency?: string
+  direction?: string
+  commitment_type?: string
+  stakeholders?: Array<{ name: string; role?: string }>
 }): Promise<{ subject: string; body: string }> {
   const days = daysSince(commitment.created_at)
   const recipientName = commitment.recipient_name || 'there'
-  const sourceContext = commitment.source
-    ? `Source: ${commitment.source}`
-    : ''
+
+  const lines: string[] = [
+    `Commitment: ${commitment.title}`,
+  ]
+  if (commitment.description) lines.push(`Details: ${commitment.description}`)
+  if (commitment.original_quote) lines.push(`Original message: "${commitment.original_quote}"`)
+  lines.push(`Days since commitment: ${days}`)
+  lines.push(`Recipient: ${recipientName}`)
+  if (commitment.sender_name) lines.push(`Sender (you are writing as): ${commitment.sender_name}`)
+  if (commitment.direction) lines.push(`Direction: ${commitment.direction === 'inbound' ? 'They committed to you' : 'You committed to them'}`)
+  if (commitment.tone) lines.push(`Original tone: ${commitment.tone}`)
+  if (commitment.urgency) lines.push(`Urgency: ${commitment.urgency}`)
+  if (commitment.commitment_type) lines.push(`Type: ${commitment.commitment_type}`)
+  if (commitment.source) lines.push(`Source: ${commitment.source}`)
+  if (commitment.stakeholders && commitment.stakeholders.length > 0) {
+    lines.push(`Other stakeholders: ${commitment.stakeholders.map(s => s.name).join(', ')}`)
+  }
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -90,7 +118,7 @@ export async function generateFollowUpDraft(commitment: {
     messages: [
       {
         role: 'user',
-        content: `Title: ${commitment.title}\n${commitment.description ? 'Details: ' + commitment.description + '\n' : ''}Made: ${days} day(s) ago\nRecipient: ${recipientName}\n${sourceContext}`.trim(),
+        content: lines.join('\n'),
       },
     ],
   })

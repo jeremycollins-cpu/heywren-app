@@ -214,7 +214,18 @@ export async function POST(request: NextRequest) {
     recipientEmail = assigneeProfile?.email || undefined
   }
 
-  // Generate the draft text via AI
+  // Look up the sender's name (the user generating the draft)
+  const { data: senderProfile } = await admin
+    .from('profiles')
+    .select('display_name')
+    .eq('id', user.id)
+    .single()
+  const senderName = senderProfile?.display_name || undefined
+
+  // Extract rich context from commitment metadata
+  const meta = commitment.metadata || {}
+
+  // Generate the draft text via AI with full context
   try {
     const draft = await generateFollowUpDraft({
       title: commitment.title,
@@ -222,6 +233,13 @@ export async function POST(request: NextRequest) {
       source: commitment.source || undefined,
       created_at: commitment.created_at,
       recipient_name: recipientName,
+      sender_name: senderName,
+      original_quote: meta.originalQuote || undefined,
+      tone: meta.tone || undefined,
+      urgency: meta.urgency || undefined,
+      direction: meta.direction || undefined,
+      commitment_type: meta.commitmentType || undefined,
+      stakeholders: meta.stakeholders || undefined,
     })
 
     // Save to draft queue
