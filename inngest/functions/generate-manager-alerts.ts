@@ -102,7 +102,7 @@ export const generateManagerAlerts = inngest.createFunction(
             .in('status', ['pending', 'in_progress', 'overdue', 'open']),
           supabase
             .from('outlook_calendar_events')
-            .select('user_id, start_time, end_time, is_all_day')
+            .select('user_id, start_time, end_time, is_all_day, attendees')
             .in('user_id', memberIds)
             .gte('start_time', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
             .lte('start_time', new Date().toISOString())
@@ -114,7 +114,7 @@ export const generateManagerAlerts = inngest.createFunction(
           weeklyScores: (weeklyResult.data || []) as WeeklyScoreRow[],
           sentiments: (sentimentResult.data || []) as SentimentRow[],
           commitments: (commitmentsResult.data || []) as Array<{ assignee_id: string; status: string }>,
-          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string; is_all_day: boolean }>,
+          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string; is_all_day: boolean; attendees: any[] }>,
         }
       })
 
@@ -224,10 +224,12 @@ export const generateManagerAlerts = inngest.createFunction(
           }
 
           // 4. Meeting overload (last 7 days)
-          // Exclude all-day events (holidays, OOO, birthdays) — they're not real meetings.
-          // Guard against invalid dates producing NaN.
+          // Only count real meetings: not all-day events, and at least 2 attendees
+          // (user + someone else). Solo calendar blocks (focus time, travel, etc.)
+          // are not meetings.
           const userMeetings = orgData.calendar.filter(
-            (e: { user_id: string; is_all_day: boolean }) => e.user_id === userId && !e.is_all_day
+            (e: { user_id: string; is_all_day: boolean; attendees: any[] }) =>
+              e.user_id === userId && !e.is_all_day && Array.isArray(e.attendees) && e.attendees.length >= 2
           )
           let meetingHours = 0
           for (const m of userMeetings) {
