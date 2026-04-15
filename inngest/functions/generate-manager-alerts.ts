@@ -102,9 +102,10 @@ export const generateManagerAlerts = inngest.createFunction(
             .in('status', ['pending', 'in_progress', 'overdue', 'open']),
           supabase
             .from('outlook_calendar_events')
-            .select('user_id, start_time, end_time')
+            .select('user_id, start_time, end_time, is_all_day')
             .in('user_id', memberIds)
             .gte('start_time', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+            .lte('start_time', new Date().toISOString())
             .eq('is_cancelled', false),
         ])
 
@@ -113,7 +114,7 @@ export const generateManagerAlerts = inngest.createFunction(
           weeklyScores: (weeklyResult.data || []) as WeeklyScoreRow[],
           sentiments: (sentimentResult.data || []) as SentimentRow[],
           commitments: (commitmentsResult.data || []) as Array<{ assignee_id: string; status: string }>,
-          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string }>,
+          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string; is_all_day: boolean }>,
         }
       })
 
@@ -223,12 +224,19 @@ export const generateManagerAlerts = inngest.createFunction(
           }
 
           // 4. Meeting overload (last 7 days)
+          // Exclude all-day events (holidays, OOO, birthdays) — they're not real meetings.
+          // Guard against invalid dates producing NaN.
           const userMeetings = orgData.calendar.filter(
-            (e: { user_id: string }) => e.user_id === userId
+            (e: { user_id: string; is_all_day: boolean }) => e.user_id === userId && !e.is_all_day
           )
           let meetingHours = 0
           for (const m of userMeetings) {
-            meetingHours += (new Date(m.end_time).getTime() - new Date(m.start_time).getTime()) / (1000 * 60 * 60)
+            const start = new Date(m.start_time).getTime()
+            const end = new Date(m.end_time).getTime()
+            if (!start || !end || isNaN(start) || isNaN(end)) continue
+            const hours = (end - start) / (1000 * 60 * 60)
+            // Sanity check: skip events longer than 12 hours (likely data errors)
+            if (hours > 0 && hours <= 12) meetingHours += hours
           }
           if (meetingHours >= 30) {
             newAlerts.push({
