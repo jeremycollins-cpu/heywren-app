@@ -1,6 +1,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
+import { toLocalTime } from '@/lib/time/user-timezone'
 
 function getAdminClient() {
   return createClient(
@@ -256,10 +257,10 @@ export const sendNudges = inngest.createFunction(
   }
 )
 
-/** Returns a time-appropriate greeting. */
-function getGreeting(): string {
-  const hour = new Date().getUTCHours()
-  if (hour < 12) return 'Good morning!'
-  if (hour < 17) return 'Good afternoon!'
+/** Returns a time-appropriate greeting in the given timezone. */
+function getGreeting(timezone = 'America/Los_Angeles'): string {
+  const local = toLocalTime(new Date().toISOString(), timezone)
+  if (local.hours < 12) return 'Good morning!'
+  if (local.hours < 17) return 'Good afternoon!'
   return 'Hey there!'
 }

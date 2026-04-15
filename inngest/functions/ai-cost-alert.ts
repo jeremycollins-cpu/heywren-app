@@ -42,11 +42,12 @@ export const aiCostAlert = inngest.createFunction(
     const supabase = getAdminClient()
     const thresholdCents = getThresholdCents()
 
-    // Check yesterday's spend
-    const yesterday = new Date(Date.now() - 86400000)
-    const dayStart = yesterday.toISOString().slice(0, 10) + 'T00:00:00Z'
-    const dayEnd = yesterday.toISOString().slice(0, 10) + 'T23:59:59Z'
-    const dateLabel = yesterday.toISOString().slice(0, 10)
+    // Check yesterday's spend (in PT, since the cron runs at 8 AM PT)
+    const ptYesterday = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+    ptYesterday.setDate(ptYesterday.getDate() - 1)
+    const dateLabel = `${ptYesterday.getFullYear()}-${String(ptYesterday.getMonth() + 1).padStart(2, '0')}-${String(ptYesterday.getDate()).padStart(2, '0')}`
+    const dayStart = dateLabel + 'T00:00:00-08:00'
+    const dayEnd = dateLabel + 'T23:59:59-08:00'
 
     const { data: rows, error } = await supabase
       .from('ai_platform_usage')

@@ -5,6 +5,7 @@
 
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { toLocalTime, resolveUserTimezone } from '@/lib/time/user-timezone'
 
 function getAdminClient() {
   return createClient(
@@ -97,17 +98,18 @@ export const scanCalendarConflicts = inngest.createFunction(
         if (!events || events.length === 0) return
 
         const conflicts: Conflict[] = []
+        const userTz = await resolveUserTimezone(boundary.user_id, undefined)
 
-        // Group events by date
+        // Group events by local date (in user's timezone, not UTC)
         const eventsByDate = new Map<string, CalEvent[]>()
         for (const e of events) {
-          const date = new Date(e.start_time).toISOString().split('T')[0]
-          if (!eventsByDate.has(date)) eventsByDate.set(date, [])
-          eventsByDate.get(date)!.push(e)
+          const local = toLocalTime(e.start_time, userTz)
+          if (!eventsByDate.has(local.dateStr)) eventsByDate.set(local.dateStr, [])
+          eventsByDate.get(local.dateStr)!.push(e)
         }
 
         for (const [date, dayEvents] of eventsByDate) {
-          const dayOfWeek = new Date(date).getDay()
+          const dayOfWeek = toLocalTime(dayEvents[0].start_time, userTz).dayOfWeek
 
           // ── Check: Focus day ──
           if (boundary.focus_days?.includes(dayOfWeek) && dayEvents.length > 0) {
@@ -168,10 +170,10 @@ export const scanCalendarConflicts = inngest.createFunction(
           // ── Per-event checks ──
           for (let i = 0; i < dayEvents.length; i++) {
             const event = dayEvents[i]
-            const eventStart = new Date(event.start_time)
-            const eventStartMinutes = eventStart.getHours() * 60 + eventStart.getMinutes()
-            const eventEnd = new Date(event.end_time)
-            const eventEndMinutes = eventEnd.getHours() * 60 + eventEnd.getMinutes()
+            const eventStartLocal = toLocalTime(event.start_time, userTz)
+            const eventStartMinutes = eventStartLocal.timeMinutes
+            const eventEndLocal = toLocalTime(event.end_time, userTz)
+            const eventEndMinutes = eventEndLocal.timeMinutes
 
             // ── Check: Outside hours ──
             if (boundary.no_meetings_before) {
