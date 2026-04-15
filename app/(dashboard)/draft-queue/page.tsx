@@ -176,17 +176,9 @@ export default function DraftQueuePage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Draft Queue</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            HeyWren pre-writes follow-ups based on open commitments. Review, edit, and send when ready.
+            Review, edit, and send AI-generated follow-up drafts. Click &quot;Draft follow-up&quot; on any commitment to generate one.
           </p>
         </div>
-        <button
-          onClick={generateDrafts}
-          disabled={generating}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
-        >
-          <RefreshCw aria-hidden="true" className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-          {generating ? 'Generating...' : 'Generate Drafts'}
-        </button>
       </div>
 
       {/* Queue Stats */}
@@ -214,16 +206,9 @@ export default function DraftQueuePage() {
             </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No drafts yet</h3>
             <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-              Click &quot;Generate Drafts&quot; to have HeyWren create follow-up messages for your open commitments.
-              Drafts are also generated automatically every morning at 7 AM PT.
+              Go to your <a href="/commitments" className="text-indigo-600 hover:text-indigo-700 font-medium">Commitments</a> page
+              and click &quot;Draft follow-up&quot; on any commitment to generate a personalized follow-up email.
             </p>
-            <button
-              onClick={generateDrafts}
-              disabled={generating}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {generating ? 'Generating...' : 'Generate Drafts'}
-            </button>
           </div>
         ) : (
           drafts.map((draft) => (
@@ -353,8 +338,8 @@ export default function DraftQueuePage() {
         <ul className="text-sm text-indigo-800 dark:text-indigo-300 space-y-1">
           <li>&#10003; AI-generated drafts based on your real commitments</li>
           <li>&#10003; Full editor to customize before sending</li>
-          <li>&#10003; New drafts generated daily at 7 AM PT</li>
-          <li>&#10003; Click &quot;Generate Drafts&quot; anytime for fresh follow-ups</li>
+          <li>&#10003; Click &quot;Draft follow-up&quot; on any commitment to generate</li>
+          <li>&#10003; Only generates when you ask — no wasted AI usage</li>
         </ul>
       </div>
     </div>
