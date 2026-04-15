@@ -102,9 +102,10 @@ export const generateManagerAlerts = inngest.createFunction(
             .in('status', ['pending', 'in_progress', 'overdue', 'open']),
           supabase
             .from('outlook_calendar_events')
-            .select('user_id, start_time, end_time')
+            .select('user_id, start_time, end_time, is_all_day, attendees')
             .in('user_id', memberIds)
             .gte('start_time', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+            .lte('start_time', new Date().toISOString())
             .eq('is_cancelled', false),
         ])
 
@@ -113,7 +114,7 @@ export const generateManagerAlerts = inngest.createFunction(
           weeklyScores: (weeklyResult.data || []) as WeeklyScoreRow[],
           sentiments: (sentimentResult.data || []) as SentimentRow[],
           commitments: (commitmentsResult.data || []) as Array<{ assignee_id: string; status: string }>,
-          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string }>,
+          calendar: (calendarResult.data || []) as Array<{ user_id: string; start_time: string; end_time: string; is_all_day: boolean; attendees: any[] }>,
         }
       })
 
@@ -223,12 +224,21 @@ export const generateManagerAlerts = inngest.createFunction(
           }
 
           // 4. Meeting overload (last 7 days)
+          // Only count real meetings: not all-day events, and at least 2 attendees
+          // (user + someone else). Solo calendar blocks (focus time, travel, etc.)
+          // are not meetings.
           const userMeetings = orgData.calendar.filter(
-            (e: { user_id: string }) => e.user_id === userId
+            (e: { user_id: string; is_all_day: boolean; attendees: any[] }) =>
+              e.user_id === userId && !e.is_all_day && Array.isArray(e.attendees) && e.attendees.length >= 2
           )
           let meetingHours = 0
           for (const m of userMeetings) {
-            meetingHours += (new Date(m.end_time).getTime() - new Date(m.start_time).getTime()) / (1000 * 60 * 60)
+            const start = new Date(m.start_time).getTime()
+            const end = new Date(m.end_time).getTime()
+            if (!start || !end || isNaN(start) || isNaN(end)) continue
+            const hours = (end - start) / (1000 * 60 * 60)
+            // Sanity check: skip events longer than 12 hours (likely data errors)
+            if (hours > 0 && hours <= 12) meetingHours += hours
           }
           if (meetingHours >= 30) {
             newAlerts.push({
@@ -239,6 +249,34 @@ export const generateManagerAlerts = inngest.createFunction(
               body: `That's ${Math.round(meetingHours / 40 * 100)}% of a standard work week. ${name} may not have enough focus time for deep work.`,
               severity: meetingHours >= 35 ? 'critical' : 'warning',
               data: { meetingHours: Math.round(meetingHours) },
+              expires_at: expiresAt,
+            })
+          }
+
+          // 5. Excessive solo calendar blocks (no attendees or only the user)
+          // Could indicate someone blocking off their calendar to avoid meetings,
+          // poor calendar hygiene, or excessive travel blocking.
+          const soloBlocks = orgData.calendar.filter(
+            (e: { user_id: string; is_all_day: boolean; attendees: any[] }) =>
+              e.user_id === userId && !e.is_all_day && (!Array.isArray(e.attendees) || e.attendees.length < 2)
+          )
+          let soloHours = 0
+          for (const m of soloBlocks) {
+            const start = new Date(m.start_time).getTime()
+            const end = new Date(m.end_time).getTime()
+            if (!start || !end || isNaN(start) || isNaN(end)) continue
+            const hours = (end - start) / (1000 * 60 * 60)
+            if (hours > 0 && hours <= 12) soloHours += hours
+          }
+          if (soloBlocks.length >= 10 || soloHours >= 15) {
+            newAlerts.push({
+              organization_id: orgId,
+              target_user_id: userId,
+              alert_type: 'calendar_hygiene',
+              title: `${name} has ${soloBlocks.length} solo calendar blocks this week (${Math.round(soloHours)}h)`,
+              body: `${name} has a high number of calendar events with no other attendees. These may be focus time, travel, or personal blocks — worth a check-in to ensure they're not over-blocking.`,
+              severity: soloHours >= 20 ? 'warning' : 'info',
+              data: { soloBlocks: soloBlocks.length, soloHours: Math.round(soloHours) },
               expires_at: expiresAt,
             })
           }

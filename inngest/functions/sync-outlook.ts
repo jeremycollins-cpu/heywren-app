@@ -560,8 +560,11 @@ export async function syncTeamOutlook(
           email: a.emailAddress?.address || '',
           response: a.status?.response || 'none',
         }))
-        const eventStartTime = event.start?.dateTime || ''
-        const endTime = event.end?.dateTime || ''
+        // All-day events have start.date/end.date (not dateTime). Skip them
+        // for duration tracking — they're not real meetings (holidays, OOO, etc.)
+        const isAllDay = !event.start?.dateTime && !!event.start?.date
+        const eventStartTime = event.start?.dateTime || event.start?.date || ''
+        const endTime = event.end?.dateTime || event.end?.date || ''
         const location = event.location?.displayName || ''
 
         // Pre-AI filter: skip recurring, large meetings, blocked time, and events with no real body
@@ -581,7 +584,7 @@ export async function syncTeamOutlook(
               subject, organizer_name: organizerName, organizer_email: organizerEmail,
               attendees, start_time: eventStartTime, end_time: endTime,
               location, body_preview: bodyPreview, is_cancelled: false,
-              processed: true, commitments_found: 0,
+              processed: true, commitments_found: 0, is_all_day: isAllDay,
             })
           }
           continue
@@ -617,6 +620,7 @@ export async function syncTeamOutlook(
               body_preview: bodyPreview,
               is_cancelled: false,
               processed: false,
+              is_all_day: isAllDay,
             })
             .select()
             .single()
