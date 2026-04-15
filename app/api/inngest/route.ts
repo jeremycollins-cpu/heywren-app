@@ -10,7 +10,7 @@ import { dailyDigest } from '@/inngest/functions/daily-digest'
 import { sendNudges } from '@/inngest/functions/send-nudges'
 import { syncOutlook, adminFullResync } from '@/inngest/functions/sync-outlook'
 import { drainOutlookBacklog } from '@/inngest/functions/drain-outlook-backlog'
-import { generateDrafts } from '@/inngest/functions/generate-drafts'
+// generateDrafts removed — drafts are now generated on-demand per commitment
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
 import { scanAwaitingReplies } from '@/inngest/functions/scan-awaiting-replies'
@@ -57,7 +57,7 @@ export const { GET, POST, PUT } = serve({
     dailyDigest,          // 8 AM daily — team activity summary
     sendNudges,           // 9 AM weekdays — commitment reminders
     syncOutlook,          // 6 AM PT daily — sync Outlook emails & calendar
-    generateDrafts,       // 7 AM PT daily — AI follow-up draft generation
+    // generateDrafts removed — drafts are now on-demand per commitment (POST /api/drafts/generate)
     scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
     detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
     scanAwaitingReplies,  // 7 AM PT daily — "The Waiting Room" scan for sent items with no reply

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { generateFollowUpDraftsBatch } from '@/lib/ai/generate-drafts'
+import { generateFollowUpDraft } from '@/lib/ai/generate-drafts'
 import { logAiUsage } from '@/lib/ai/persist-usage'
 
 function getAdminClient() {
@@ -13,15 +13,15 @@ function getAdminClient() {
   )
 }
 
+// Generate a follow-up draft for a single commitment (on-demand).
+// User clicks "Draft follow-up" on a specific commitment card.
 export async function POST(request: NextRequest) {
-  // Origin validation to prevent CSRF
   const origin = request.headers.get('origin')
   const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
   if (origin && allowedOrigin && origin !== allowedOrigin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Authenticate user
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -29,9 +29,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get user's team
+  const body = await request.json()
+  const { commitmentId } = body
+
+  if (!commitmentId) {
+    return NextResponse.json({ error: 'Missing commitmentId' }, { status: 400 })
+  }
+
   const admin = getAdminClient()
 
+  // Get user's team
   const { data: membership } = await admin
     .from('team_members')
     .select('team_id')
@@ -45,95 +52,76 @@ export async function POST(request: NextRequest) {
 
   const teamId = membership.team_id
 
-  // Fetch open commitments that don't already have a draft
-  const { data: existingDrafts } = await admin
+  // Check if draft already exists for this commitment
+  const { data: existingDraft } = await admin
     .from('draft_queue')
-    .select('commitment_id')
-    .eq('team_id', teamId)
+    .select('id, subject, body, status')
+    .eq('commitment_id', commitmentId)
     .eq('user_id', user.id)
+    .in('status', ['ready', 'edited'])
+    .maybeSingle()
 
-  const existingCommitmentIds = (existingDrafts || []).map((d) => d.commitment_id)
+  if (existingDraft) {
+    return NextResponse.json({ draft: existingDraft, existing: true })
+  }
 
-  let query = admin
+  // Fetch the commitment
+  const { data: commitment, error: commitError } = await admin
     .from('commitments')
     .select('id, title, description, source, created_at, assignee_id')
+    .eq('id', commitmentId)
     .eq('team_id', teamId)
-    .or(`creator_id.eq.${user.id},assignee_id.eq.${user.id}`)
-    .eq('status', 'open')
-    .order('created_at', { ascending: false })
-    .limit(50)
+    .single()
 
-  if (existingCommitmentIds.length > 0) {
-    const escaped = existingCommitmentIds.map((id: string) => `"${id.replace(/"/g, '')}"`).join(',')
-    query = query.not('id', 'in', `(${escaped})`)
+  if (commitError || !commitment) {
+    return NextResponse.json({ error: 'Commitment not found' }, { status: 404 })
   }
 
-  const { data: commitments, error: commitError } = await query
-
-  if (commitError) {
-    console.error('Failed to fetch commitments:', commitError.message)
-    return NextResponse.json({ error: 'Failed to fetch commitments' }, { status: 500 })
-  }
-
-  if (!commitments || commitments.length === 0) {
-    return NextResponse.json({ drafts_generated: 0, message: 'No new commitments to draft follow-ups for' })
-  }
-
-  // Look up assignee names separately (assignee_id FK points to auth.users, not profiles)
-  const assigneeIds = [...new Set(commitments.map((c: any) => c.assignee_id).filter(Boolean))]
-  const assigneeNameMap = new Map<string, string>()
-  if (assigneeIds.length > 0) {
-    const { data: assigneeProfiles } = await admin
+  // Look up assignee name
+  let recipientName: string | undefined
+  if (commitment.assignee_id) {
+    const { data: assigneeProfile } = await admin
       .from('profiles')
-      .select('id, display_name')
-      .in('id', assigneeIds)
-    for (const p of assigneeProfiles || []) {
-      if (p.display_name) assigneeNameMap.set(p.id, p.display_name)
-    }
+      .select('display_name')
+      .eq('id', commitment.assignee_id)
+      .single()
+    recipientName = assigneeProfile?.display_name || undefined
   }
 
-  // Prepare commitments for AI
-  const commitmentsForAI = commitments.map((c: any) => ({
-    id: c.id,
-    title: c.title,
-    description: c.description || undefined,
-    source: c.source || undefined,
-    created_at: c.created_at,
-    recipient_name: c.assignee_id ? assigneeNameMap.get(c.assignee_id) : undefined,
-  }))
+  // Generate the draft
+  try {
+    const draft = await generateFollowUpDraft({
+      title: commitment.title,
+      description: commitment.description || undefined,
+      source: commitment.source || undefined,
+      created_at: commitment.created_at,
+      recipient_name: recipientName,
+    })
 
-  // Generate drafts in batches of 10
-  let totalGenerated = 0
+    const { data: inserted, error: insertErr } = await admin
+      .from('draft_queue')
+      .insert({
+        team_id: teamId,
+        user_id: user.id,
+        commitment_id: commitmentId,
+        subject: draft.subject,
+        body: draft.body,
+        status: 'ready',
+        generated_by: user.id,
+      })
+      .select()
+      .single()
 
-  for (let i = 0; i < commitmentsForAI.length; i += 10) {
-    const batch = commitmentsForAI.slice(i, i + 10)
-
-    try {
-      const drafts = await generateFollowUpDraftsBatch(batch)
-
-      for (const [commitmentId, draft] of drafts) {
-        const { error: insertErr } = await admin.from('draft_queue').insert({
-          team_id: teamId,
-          user_id: user.id,
-          commitment_id: commitmentId,
-          subject: draft.subject,
-          body: draft.body,
-          status: 'ready',
-          generated_by: user.id,
-        })
-
-        if (insertErr) {
-          console.error('Failed to insert draft for commitment ' + commitmentId + ':', insertErr.message)
-        } else {
-          totalGenerated++
-        }
-      }
-    } catch (err) {
-      console.error('Draft generation batch error:', (err as Error).message)
+    if (insertErr) {
+      console.error('Failed to insert draft:', insertErr.message)
+      return NextResponse.json({ error: 'Failed to save draft' }, { status: 500 })
     }
+
+    await logAiUsage(admin, { module: 'generate-drafts', trigger: 'on-demand', teamId, userId: user.id, itemsProcessed: 1 })
+
+    return NextResponse.json({ draft: inserted, existing: false })
+  } catch (err) {
+    console.error('Draft generation failed:', (err as Error).message)
+    return NextResponse.json({ error: 'Failed to generate draft' }, { status: 500 })
   }
-
-  await logAiUsage(admin, { module: 'generate-drafts', trigger: 'api/drafts/generate', teamId, userId: user.id, itemsProcessed: commitmentsForAI.length })
-
-  return NextResponse.json({ drafts_generated: totalGenerated })
 }

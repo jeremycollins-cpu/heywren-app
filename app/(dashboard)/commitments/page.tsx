@@ -6,7 +6,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell, ThumbsUp, ThumbsDown, Mail, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
@@ -153,6 +153,8 @@ export default function CommitmentsPage() {
   const [userId, setUserId] = useState<string>('')
   const [refreshing, setRefreshing] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Map<string, 'accurate' | 'inaccurate'>>(new Map())
+  const [draftLoading, setDraftLoading] = useState<Set<string>>(new Set())
+  const [drafts, setDrafts] = useState<Map<string, { id: string; subject: string; body: string }>>(new Map())
 
   const submitFeedback = async (commitmentId: string, feedback: 'accurate' | 'inaccurate') => {
     try {
@@ -168,6 +170,25 @@ export default function CommitmentsPage() {
         toast.error('Failed to submit feedback')
       }
     } catch { toast.error('Failed to submit feedback') }
+  }
+
+  const generateDraft = async (commitmentId: string) => {
+    setDraftLoading(prev => new Set(prev).add(commitmentId))
+    try {
+      const res = await fetch('/api/drafts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitmentId }),
+      })
+      const data = await res.json()
+      if (data.draft) {
+        setDrafts(prev => new Map(prev).set(commitmentId, data.draft))
+        toast.success(data.existing ? 'Draft already exists' : 'Draft generated')
+      } else {
+        toast.error(data.error || 'Failed to generate draft')
+      }
+    } catch { toast.error('Failed to generate draft') }
+    setDraftLoading(prev => { const next = new Set(prev); next.delete(commitmentId); return next })
   }
 
   const loadCommitments = async (isRefresh = false) => {
@@ -951,6 +972,17 @@ export default function CommitmentsPage() {
                       >
                         <Bell className="w-3 h-3" /> Remind
                       </button>
+                      {!drafts.has(c.id) && (
+                        <button
+                          onClick={() => generateDraft(c.id)}
+                          disabled={draftLoading.has(c.id)}
+                          className="text-xs px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                          title="Generate a follow-up email draft"
+                        >
+                          {draftLoading.has(c.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                          {draftLoading.has(c.id) ? 'Drafting...' : 'Draft follow-up'}
+                        </button>
+                      )}
                     </>
                   )}
                   {/* Feedback buttons — AI-detected commitments only */}
@@ -976,6 +1008,28 @@ export default function CommitmentsPage() {
                     <span className="text-[10px] text-gray-400 ml-auto">Thanks!</span>
                   )}
                 </div>
+
+                {/* Generated draft — shown inline after clicking "Draft follow-up" */}
+                {drafts.has(c.id) && (
+                  <div className="mb-2.5 px-3 py-2.5 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                    <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1">{drafts.get(c.id)!.subject}</p>
+                    <p className="text-xs text-blue-700/80 dark:text-blue-400/80 whitespace-pre-line leading-relaxed">{drafts.get(c.id)!.body}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Link
+                        href={`/draft-queue`}
+                        className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 transition"
+                      >
+                        Edit & Send
+                      </Link>
+                      <button
+                        onClick={() => setDrafts(prev => { const next = new Map(prev); next.delete(c.id); return next })}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 transition"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Completion evidence for likely_complete items */}
                 {isLikelyComplete && completionEvidence && (
