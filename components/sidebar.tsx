@@ -101,7 +101,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
           const [commitResult, pendingReviewResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
             supabase
               .from('commitments')
-              .select('status, created_at')
+              .select('status, created_at, assignee_id')
               .eq('team_id', teamId)
               .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
               .in('status', ['open', 'overdue'])
@@ -132,7 +132,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               .eq('status', 'pending'),
             supabase
               .from('awaiting_replies')
-              .select('id')
+              .select('id, conversation_id, source')
               .eq('team_id', teamId)
               .eq('user_id', user.user.id)
               .eq('status', 'waiting')
@@ -153,6 +153,26 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
             c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000
           ).length
 
+          // Count "For You" commitments — where user is assignee (not just creator).
+          // Matches the "For You" tab on the commitments page.
+          const forYouCount = commitments.filter(c =>
+            c.assignee_id === user.user.id || c.assignee_id === null
+          ).length
+
+          // Count waiting room threads (not individual messages).
+          // Group by conversation_id for emails, count ungrouped items individually.
+          const waitingItems = (waitingResult as any).data || []
+          const waitingThreads = new Set<string>()
+          let waitingUngrouped = 0
+          for (const item of waitingItems) {
+            if (item.conversation_id && item.source === 'outlook') {
+              waitingThreads.add(`outlook:${item.conversation_id}`)
+            } else {
+              waitingUngrouped++
+            }
+          }
+          const waitingThreadCount = waitingThreads.size + waitingUngrouped
+
           setBadges({
             overdue: overdueCount,
             urgent: urgentCount,
@@ -163,8 +183,8 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               return s || e.id
             })).size,
             missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
-            waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
-            openCommitments: commitments.filter(c => c.status === 'open').length,
+            waitingRoom: waitingThreadCount,
+            openCommitments: forYouCount,
             securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
           })
         }
@@ -330,7 +350,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
   const isSuperAdmin = userRole === 'super_admin'
 
-  const totalActionItems = badges.overdue + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom + badges.securityAlerts
+  const totalActionItems = badges.overdue + badges.pendingReview + badges.draftQueue + badges.missedEmails + badges.missedChats + badges.waitingRoom + badges.securityAlerts
 
   // Sidebar width: full (256px) or collapsed (64px for icon-only)
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
@@ -382,6 +402,9 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
               <div className="flex items-center flex-wrap gap-2 sm:gap-3 mt-1">
                 {badges.overdue > 0 && (
                   <span className="text-[10px] text-red-600 dark:text-red-400 font-medium">{badges.overdue} overdue</span>
+                )}
+                {badges.pendingReview > 0 && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">{badges.pendingReview} to review</span>
                 )}
                 {badges.draftQueue > 0 && (
                   <span className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">{badges.draftQueue} drafts</span>
