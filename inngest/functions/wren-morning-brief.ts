@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
 import { sendEmail } from '@/lib/email/send'
 import { buildMorningBriefEmail } from '@/lib/email/templates/morning-brief'
+import { todayInTimezone } from '@/lib/time/user-timezone'
 
 function getAdminClient() {
   return createClient(
@@ -46,10 +47,16 @@ export const wrenMorningBrief = inngest.createFunction(
 
       // Get all profiles with at least one integration
       const userIds = [...new Set(integrations.map(i => i.user_id))]
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, display_name, email, current_team_id, wren_preferences')
-        .in('id', userIds)
+      const [{ data: profiles }, { data: schedules }] = await Promise.all([
+        supabase.from('profiles')
+          .select('id, display_name, email, current_team_id, wren_preferences')
+          .in('id', userIds),
+        supabase.from('work_schedules')
+          .select('user_id, timezone')
+          .in('user_id', userIds),
+      ])
+
+      const tzMap = new Map((schedules || []).map((s: any) => [s.user_id, s.timezone]))
 
       return (profiles || [])
         .filter(p => {
@@ -64,6 +71,7 @@ export const wrenMorningBrief = inngest.createFunction(
           slackToken: slackTokenByTeam.get(p.current_team_id) || null,
           slackUserId: slackUserIdByUser.get(p.id) || null,
           tone: ((p.wren_preferences || {}) as Record<string, any>).tone || 'balanced',
+          timezone: tzMap.get(p.id) || null,
         }))
         .filter(u => u.teamId)
     })
@@ -75,13 +83,11 @@ export const wrenMorningBrief = inngest.createFunction(
     for (const user of users) {
       await step.run(`brief-${user.userId}`, async () => {
         try {
-          const today = new Date()
-          const todayStart = new Date(today)
-          todayStart.setHours(0, 0, 0, 0)
-          const todayEnd = new Date(today)
-          todayEnd.setHours(23, 59, 59, 999)
-
-          const todayStr = today.toISOString().split('T')[0]
+          // Use user's timezone (or PT fallback) for "today" definition
+          const userTz = user.timezone || 'America/Los_Angeles'
+          const todayStr = todayInTimezone(userTz)
+          const todayStart = new Date(todayStr + 'T00:00:00Z')
+          const todayEnd = new Date(todayStr + 'T23:59:59Z')
 
           const [overdueRes, missedRes, missedChatsRes, draftsRes, meetingsRes, conflictsRes, threatsRes, waitingRes] = await Promise.all([
             supabase.from('commitments')
@@ -183,7 +189,7 @@ export const wrenMorningBrief = inngest.createFunction(
 
             if (meetings.length > 0) {
               const meetingLines = meetings.map(m => {
-                const time = new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                const time = new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: userTz })
                 return `  ${time} — ${m.subject}`
               })
               sections.push(`*Today's meetings (${meetings.length}):*\n${meetingLines.join('\n')}`)
@@ -252,7 +258,7 @@ export const wrenMorningBrief = inngest.createFunction(
               calendarConflicts: calConflicts.length > 0 ? calConflicts : undefined,
               threats: threats.length > 0 ? threats.map(t => ({ subject: t.subject, fromEmail: t.from_email, threatLevel: t.threat_level })) : undefined,
               meetings: meetings.length > 0 ? meetings.map(m => ({
-                time: new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+                time: new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: userTz }),
                 subject: m.subject,
               })) : undefined,
               missedEmails: missed.length > 0 ? missed.map(e => ({ fromName: e.from_name, subject: e.subject, urgency: e.urgency })) : undefined,

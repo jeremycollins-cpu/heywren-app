@@ -244,6 +244,22 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // ── Timezone helper ────────────────────────────────────────────────
+    // Convert a UTC timestamp to local date/time in the given timezone.
+    function toLocal(utcTimestamp: string, timezone: string) {
+      const d = new Date(utcTimestamp)
+      const local = new Date(d.toLocaleString('en-US', { timeZone: timezone }))
+      return {
+        dateStr: local.toISOString().split('T')[0],
+        // Use the shifted Date for reliable local extraction
+        dayOfWeek: local.getDay(), // 0=Sun
+        hours: local.getHours(),
+        minutes: local.getMinutes(),
+        timeMinutes: local.getHours() * 60 + local.getMinutes(),
+        localDate: local,
+      }
+    }
+
     // ── Detect anomalies ─────────────────────────────────────────────────
     const anomalies: Anomaly[] = []
 
@@ -260,21 +276,32 @@ export async function GET(request: NextRequest) {
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       )
 
-      // Iterate each day in the lookback window
+      // Build a set of local-date strings for this user's activities
+      const activitiesByLocalDate = new Map<string, ActivityEvent[]>()
+      for (const a of activities) {
+        const local = toLocal(a.timestamp, tz)
+        if (!activitiesByLocalDate.has(local.dateStr)) {
+          activitiesByLocalDate.set(local.dateStr, [])
+        }
+        activitiesByLocalDate.get(local.dateStr)!.push(a)
+      }
+
+      // Iterate each day in the lookback window (in the user's timezone)
+      const todayLocal = toLocal(now.toISOString(), tz).dateStr
       for (let d = 0; d < daysParam; d++) {
         const dayDate = new Date(now)
-        dayDate.setUTCDate(dayDate.getUTCDate() - d)
-        const dateStr = dayDate.toISOString().split('T')[0]
-        const dayOfWeek = dayDate.getUTCDay() // 0=Sun
-
-        // Skip non-work days
-        if (!schedule.work_days.includes(dayOfWeek)) continue
+        dayDate.setDate(dayDate.getDate() - d)
+        const local = toLocal(dayDate.toISOString(), tz)
+        const dateStr = local.dateStr
 
         // Skip today (incomplete data)
-        if (d === 0) continue
+        if (dateStr === todayLocal) continue
 
-        // Get activities for this day
-        const dayActivities = activities.filter(a => a.timestamp.startsWith(dateStr))
+        // Skip non-work days (checked in user's local timezone)
+        if (!schedule.work_days.includes(local.dayOfWeek)) continue
+
+        // Get activities for this local date
+        const dayActivities = activitiesByLocalDate.get(dateStr) || []
 
         // ── Ghost Day: zero activity on a work day ────────────────────
         if (dayActivities.length === 0) {
@@ -292,18 +319,16 @@ export async function GET(request: NextRequest) {
           continue // no point checking idle/after-hours if no activity at all
         }
 
+        const [startH, startM] = schedule.start_time.split(':').map(Number)
+        const [endH, endM] = schedule.end_time.split(':').map(Number)
+        const startMinutes = startH * 60 + startM
+        const endMinutes = endH * 60 + endM
+
         // ── After-Hours Work ──────────────────────────────────────────
         if (schedule.after_hours_alert) {
           const afterHoursEvents = dayActivities.filter(a => {
-            const eventDate = new Date(a.timestamp)
-            const hours = eventDate.getUTCHours()
-            const minutes = eventDate.getUTCMinutes()
-            const timeMinutes = hours * 60 + minutes
-            const [startH, startM] = schedule.start_time.split(':').map(Number)
-            const [endH, endM] = schedule.end_time.split(':').map(Number)
-            const startMinutes = startH * 60 + startM
-            const endMinutes = endH * 60 + endM
-            return timeMinutes < startMinutes || timeMinutes > endMinutes
+            const localTime = toLocal(a.timestamp, tz)
+            return localTime.timeMinutes < startMinutes || localTime.timeMinutes > endMinutes
           })
 
           if (afterHoursEvents.length >= 3) {
@@ -323,13 +348,8 @@ export async function GET(request: NextRequest) {
 
         // ── Idle Periods: gaps during work hours ──────────────────────
         const workHourActivities = dayActivities.filter(a => {
-          const eventDate = new Date(a.timestamp)
-          const hours = eventDate.getUTCHours()
-          const minutes = eventDate.getUTCMinutes()
-          const timeMinutes = hours * 60 + minutes
-          const [startH, startM] = schedule.start_time.split(':').map(Number)
-          const [endH, endM] = schedule.end_time.split(':').map(Number)
-          return timeMinutes >= startH * 60 + startM && timeMinutes <= endH * 60 + endM
+          const localTime = toLocal(a.timestamp, tz)
+          return localTime.timeMinutes >= startMinutes && localTime.timeMinutes <= endMinutes
         }).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
 
         if (workHourActivities.length >= 2) {
@@ -341,8 +361,8 @@ export async function GET(request: NextRequest) {
                          new Date(workHourActivities[i - 1].timestamp).getTime()) / 60000
             if (gap > maxGapMinutes) {
               maxGapMinutes = gap
-              gapStart = new Date(workHourActivities[i - 1].timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-              gapEnd = new Date(workHourActivities[i].timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              gapStart = new Date(workHourActivities[i - 1].timestamp).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })
+              gapEnd = new Date(workHourActivities[i].timestamp).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })
             }
           }
 

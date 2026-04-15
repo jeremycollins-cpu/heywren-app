@@ -1,5 +1,6 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
+import { toLocalTime } from '@/lib/time/user-timezone'
 
 function getAdminClient() {
   return createClient(
@@ -35,6 +36,14 @@ export const learnResponsePatterns = inngest.createFunction(
       grouped.get(key)!.push(row)
     }
 
+    // Look up timezones for all users in this batch
+    const allUserIds = [...new Set(allResolved.map(r => r.user_id))]
+    const { data: schedules } = await supabase
+      .from('work_schedules')
+      .select('user_id, timezone')
+      .in('user_id', allUserIds)
+    const tzMap = new Map((schedules || []).map((s: any) => [s.user_id, s.timezone]))
+
     let updated = 0
     const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null
 
@@ -58,11 +67,12 @@ export const learnResponsePatterns = inngest.createFunction(
         }
       }
 
-      // Detect peak response hours
+      // Detect peak response hours (in user's local timezone)
+      const userTz = tzMap.get(resolved[0].user_id) || 'America/Los_Angeles'
       const hourCounts = new Array(24).fill(0)
       for (const item of resolved) {
-        const hour = new Date(item.updated_at).getHours()
-        hourCounts[hour]++
+        const local = toLocalTime(item.updated_at, userTz)
+        hourCounts[local.hours]++
       }
       const maxCount = Math.max(...hourCounts)
       const peakHours = hourCounts
