@@ -21,6 +21,25 @@ const MIN_REJECTIONS = 3            // 3+ total rejections from that domain
 const MAX_PATTERNS_PER_RUN = 5      // Don't flood patterns table
 const LOOKBACK_DAYS = 30
 
+// Domains where rejections reflect individual senders, not the domain itself.
+// "3 users rejected different gmail senders" ≠ "block gmail".
+const PERSONAL_DOMAIN_SAFELIST = new Set([
+  // Consumer email
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk',
+  'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
+  'aol.com', 'icloud.com', 'me.com', 'mac.com',
+  'protonmail.com', 'proton.me', 'zoho.com',
+  'mail.com', 'email.com', 'ymail.com', 'rocketmail.com',
+  'gmx.com', 'gmx.net', 'fastmail.com',
+  // ISP email
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net',
+  'cox.net', 'charter.net', 'earthlink.net',
+  // Regional
+  'outlook.co.uk', 'btinternet.com', 'sky.com',
+  'orange.fr', 'wanadoo.fr', 'web.de', 'gmx.de',
+  'qq.com', '163.com', '126.com',
+])
+
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
@@ -84,9 +103,12 @@ async function findRejectionClusters(supabase: ReturnType<typeof getAdminClient>
   if (error || !feedback || feedback.length === 0) return []
 
   // Group by domain: count unique users and total rejections
+  // Skip personal/shared email domains — rejections there are about individual
+  // senders, not the domain. "3 users rejected different gmail senders" ≠ "block gmail".
   const domainStats = new Map<string, { users: Set<string>; emailIds: string[] }>()
   for (const f of feedback) {
     if (!f.from_domain) continue
+    if (PERSONAL_DOMAIN_SAFELIST.has(f.from_domain.toLowerCase())) continue
     if (!domainStats.has(f.from_domain)) {
       domainStats.set(f.from_domain, { users: new Set(), emailIds: [] })
     }
