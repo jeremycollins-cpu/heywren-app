@@ -6,7 +6,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell } from 'lucide-react'
+import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell, ThumbsUp, ThumbsDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
@@ -152,6 +152,23 @@ export default function CommitmentsPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [userId, setUserId] = useState<string>('')
   const [refreshing, setRefreshing] = useState(false)
+  const [feedbackGiven, setFeedbackGiven] = useState<Map<string, 'accurate' | 'inaccurate'>>(new Map())
+
+  const submitFeedback = async (commitmentId: string, feedback: 'accurate' | 'inaccurate') => {
+    try {
+      const res = await fetch('/api/commitments/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitment_id: commitmentId, feedback }),
+      })
+      if (res.ok) {
+        setFeedbackGiven(prev => new Map(prev).set(commitmentId, feedback))
+        toast.success(feedback === 'accurate' ? 'Thanks! This helps improve detection.' : 'Got it — we\'ll learn from this.')
+      } else {
+        toast.error('Failed to submit feedback')
+      }
+    } catch { toast.error('Failed to submit feedback') }
+  }
 
   const loadCommitments = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -935,6 +952,28 @@ export default function CommitmentsPage() {
                         <Bell className="w-3 h-3" /> Remind
                       </button>
                     </>
+                  )}
+                  {/* Feedback buttons — AI-detected commitments only */}
+                  {c.source !== 'manual' && !feedbackGiven.has(c.id) && (
+                    <span className="inline-flex items-center gap-1 ml-auto">
+                      <button
+                        onClick={() => submitFeedback(c.id, 'accurate')}
+                        className="p-1 text-gray-300 hover:text-green-600 transition"
+                        title="Good detection"
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => submitFeedback(c.id, 'inaccurate')}
+                        className="p-1 text-gray-300 hover:text-red-500 transition"
+                        title="Not a real commitment"
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  )}
+                  {feedbackGiven.has(c.id) && (
+                    <span className="text-[10px] text-gray-400 ml-auto">Thanks!</span>
                   )}
                 </div>
 

@@ -81,7 +81,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data: existingDraft } = await admin
     .from('draft_queue')
-    .select('id, team_id, user_id')
+    .select('id, team_id, user_id, subject, body, commitment_id')
     .eq('id', body.id)
     .single()
 
@@ -118,6 +118,42 @@ export async function PATCH(request: NextRequest) {
   if (error) {
     console.error('Failed to update draft:', error.message)
     return NextResponse.json({ error: 'Failed to update draft' }, { status: 500 })
+  }
+
+  // Track edits as implicit feedback for AI draft quality improvement.
+  // Heavy edits = AI got it wrong, no edits = AI got it right.
+  if (body.status === 'sent' || body.status === 'dismissed' || body.subject !== undefined || body.body !== undefined) {
+    try {
+      const origSubject = existingDraft.subject || ''
+      const origBody = existingDraft.body || ''
+      const editedSubject = body.subject ?? origSubject
+      const editedBody = body.body ?? origBody
+      const origLen = origSubject.length + origBody.length
+      // Simple edit distance: count character-level changes as a percentage
+      const subjectChanged = origSubject !== editedSubject ? Math.abs(editedSubject.length - origSubject.length) + origSubject.length * 0.5 : 0
+      const bodyChanged = origBody !== editedBody ? Math.abs(editedBody.length - origBody.length) + origBody.length * 0.5 : 0
+      const editDistancePct = origLen > 0 ? Math.min(1, (subjectChanged + bodyChanged) / origLen) : 0
+
+      const action = body.status === 'dismissed' ? 'deleted'
+        : body.status === 'sent' && editDistancePct > 0.1 ? 'sent_edited'
+        : body.status === 'sent' ? 'sent'
+        : 'skipped'
+
+      await admin.from('draft_feedback').insert({
+        team_id: membership.team_id,
+        user_id: user.id,
+        original_subject: origSubject,
+        original_body: origBody,
+        edited_subject: editedSubject,
+        edited_body: editedBody,
+        edit_distance_pct: Math.round(editDistancePct * 100) / 100,
+        commitment_id: existingDraft.commitment_id || null,
+        action,
+      })
+    } catch (fbErr) {
+      // Non-fatal — don't block the draft update
+      console.error('Draft feedback tracking failed:', (fbErr as Error).message)
+    }
   }
 
   return NextResponse.json({ draft: updated })
