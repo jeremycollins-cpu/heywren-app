@@ -47,6 +47,7 @@ import { scheduleRecallBots, dispatchManualRecallBot } from '@/inngest/functions
 import { healthMonitor } from '@/inngest/functions/health-monitor'
 import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-github'
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
+import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -98,5 +99,7 @@ export const { GET, POST, PUT } = serve({
     syncGithubDaily,             // 6 AM UTC daily — refresh GitHub activity for all connected users
     // Cost monitoring
     aiCostAlert,                 // 8 AM PT daily — alert if AI spend exceeds threshold or cache rate drops
+    // Feedback loop
+    aggregateFeedbackPatterns,   // Monday 5 AM PT — turn cross-user rejection feedback into community patterns
   ],
 })
