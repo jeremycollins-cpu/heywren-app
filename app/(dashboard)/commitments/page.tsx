@@ -154,7 +154,7 @@ export default function CommitmentsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState<Map<string, 'accurate' | 'inaccurate'>>(new Map())
   const [draftLoading, setDraftLoading] = useState<Set<string>>(new Set())
-  const [drafts, setDrafts] = useState<Map<string, { id: string; subject: string; body: string }>>(new Map())
+  const [drafts, setDrafts] = useState<Map<string, { id: string; subject: string; body: string; channel?: string; outlookDraft?: { webLink?: string } | null }>>(new Map())
 
   const submitFeedback = async (commitmentId: string, feedback: 'accurate' | 'inaccurate') => {
     try {
@@ -182,8 +182,18 @@ export default function CommitmentsPage() {
       })
       const data = await res.json()
       if (data.draft) {
-        setDrafts(prev => new Map(prev).set(commitmentId, data.draft))
-        toast.success(data.existing ? 'Draft already exists' : 'Draft generated')
+        setDrafts(prev => new Map(prev).set(commitmentId, {
+          ...data.draft,
+          channel: data.channel,
+          outlookDraft: data.outlookDraft,
+        }))
+        if (data.existing) {
+          toast.success('Draft already exists')
+        } else if (data.outlookDraft?.webLink) {
+          toast.success('Draft created in Outlook')
+        } else {
+          toast.success('Draft generated')
+        }
       } else {
         toast.error(data.error || 'Failed to generate draft')
       }
@@ -1010,26 +1020,44 @@ export default function CommitmentsPage() {
                 </div>
 
                 {/* Generated draft — shown inline after clicking "Draft follow-up" */}
-                {drafts.has(c.id) && (
-                  <div className="mb-2.5 px-3 py-2.5 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
-                    <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1">{drafts.get(c.id)!.subject}</p>
-                    <p className="text-xs text-blue-700/80 dark:text-blue-400/80 whitespace-pre-line leading-relaxed">{drafts.get(c.id)!.body}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Link
-                        href={`/draft-queue`}
-                        className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 transition"
-                      >
-                        Edit & Send
-                      </Link>
-                      <button
-                        onClick={() => setDrafts(prev => { const next = new Map(prev); next.delete(c.id); return next })}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 transition"
-                      >
-                        Dismiss
-                      </button>
+                {drafts.has(c.id) && (() => {
+                  const d = drafts.get(c.id)!
+                  const isOutlook = d.outlookDraft?.webLink
+                  return (
+                    <div className="mb-2.5 px-3 py-2.5 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                      {isOutlook && (
+                        <p className="text-[10px] font-medium text-green-700 dark:text-green-400 mb-1.5">Draft created in your Outlook Drafts folder</p>
+                      )}
+                      <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-1">{d.subject}</p>
+                      <p className="text-xs text-blue-700/80 dark:text-blue-400/80 whitespace-pre-line leading-relaxed">{d.body}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        {isOutlook ? (
+                          <a
+                            href={d.outlookDraft!.webLink!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 transition"
+                          >
+                            Open in Outlook
+                          </a>
+                        ) : (
+                          <Link
+                            href="/draft-queue"
+                            className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 transition"
+                          >
+                            Edit & Send
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => setDrafts(prev => { const next = new Map(prev); next.delete(c.id); return next })}
+                          className="text-[10px] text-blue-500 hover:text-blue-700 transition"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
 
                 {/* Completion evidence for likely_complete items */}
                 {isLikelyComplete && completionEvidence && (
