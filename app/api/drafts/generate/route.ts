@@ -107,7 +107,6 @@ export async function POST(request: NextRequest) {
         subject: draft.subject,
         body: draft.body,
         status: 'ready',
-        generated_by: user.id,
       })
       .select()
       .single()
