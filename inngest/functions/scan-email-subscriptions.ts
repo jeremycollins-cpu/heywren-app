@@ -227,7 +227,7 @@ export const scanEmailSubscriptions = inngest.createFunction(
             .from('outlook_messages')
             .select('message_id, from_name, from_email, subject, body_preview, received_at, is_read')
             .eq('team_id', team.teamId)
-            .eq('user_id', userId)
+            .or(`user_id.eq.${userId},user_id.is.null`)
             .gte('received_at', thirtyDaysAgo)
             .order('received_at', { ascending: false })
             .limit(500)
@@ -280,11 +280,18 @@ export const scanEmailSubscriptions = inngest.createFunction(
             }
           }
 
-          // Check which senders are already tracked
+          // Check which senders are already tracked and shouldn't be re-surfaced.
+          // - active: currently showing in the UI
+          // - unsubscribed: user already unsubscribed (if it worked, no new emails arrive;
+          //   if it didn't, the sender ignored it — but we don't spam the user with retries)
+          // - kept: user explicitly chose to keep this subscription
+          // Only 'failed' senders are re-discovered, since the unsubscribe attempt
+          // didn't work and the user will keep receiving emails.
           const { data: existingSubs } = await supabase
             .from('email_subscriptions')
             .select('from_email, status')
             .eq('user_id', userId)
+            .in('status', ['active', 'unsubscribed', 'kept'])
             .in('from_email', [...senderMap.keys()])
 
           const trackedEmails = new Set(
