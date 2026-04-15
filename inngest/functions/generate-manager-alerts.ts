@@ -252,6 +252,34 @@ export const generateManagerAlerts = inngest.createFunction(
               expires_at: expiresAt,
             })
           }
+
+          // 5. Excessive solo calendar blocks (no attendees or only the user)
+          // Could indicate someone blocking off their calendar to avoid meetings,
+          // poor calendar hygiene, or excessive travel blocking.
+          const soloBlocks = orgData.calendar.filter(
+            (e: { user_id: string; is_all_day: boolean; attendees: any[] }) =>
+              e.user_id === userId && !e.is_all_day && (!Array.isArray(e.attendees) || e.attendees.length < 2)
+          )
+          let soloHours = 0
+          for (const m of soloBlocks) {
+            const start = new Date(m.start_time).getTime()
+            const end = new Date(m.end_time).getTime()
+            if (!start || !end || isNaN(start) || isNaN(end)) continue
+            const hours = (end - start) / (1000 * 60 * 60)
+            if (hours > 0 && hours <= 12) soloHours += hours
+          }
+          if (soloBlocks.length >= 10 || soloHours >= 15) {
+            newAlerts.push({
+              organization_id: orgId,
+              target_user_id: userId,
+              alert_type: 'calendar_hygiene',
+              title: `${name} has ${soloBlocks.length} solo calendar blocks this week (${Math.round(soloHours)}h)`,
+              body: `${name} has a high number of calendar events with no other attendees. These may be focus time, travel, or personal blocks — worth a check-in to ensure they're not over-blocking.`,
+              severity: soloHours >= 20 ? 'warning' : 'info',
+              data: { soloBlocks: soloBlocks.length, soloHours: Math.round(soloHours) },
+              expires_at: expiresAt,
+            })
+          }
         }
 
         // Deduplicate: don't create alerts that already exist (active, same type + target + this week)
