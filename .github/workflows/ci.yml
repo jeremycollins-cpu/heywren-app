@@ -11,6 +11,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  migration-rls-check:
+    name: Migration RLS Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check every CREATE TABLE has RLS enabled
+        run: node scripts/check-migration-rls.js
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
