@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   MailX, Check, X, Shield, Eye, EyeOff, Loader2,
-  Inbox, AlertCircle, MailCheck, ChevronDown, ChevronUp,
+  Inbox, AlertCircle, MailCheck, ChevronDown, ChevronUp, RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
@@ -45,6 +45,7 @@ export default function UnsubscribePage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({})
   const [showHandled, setShowHandled] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   const fetchSubscriptions = async () => {
     try {
@@ -130,6 +131,24 @@ export default function UnsubscribePage() {
     fetchSubscriptions()
   }
 
+  const handleScanNow = async () => {
+    setScanning(true)
+    try {
+      const res = await fetch('/api/email-subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'scan' }),
+      })
+      if (!res.ok) throw new Error('Scan failed to schedule')
+      toast.success('Scan started — new subscriptions will appear in ~1 minute')
+      setTimeout(() => fetchSubscriptions(), 60000)
+    } catch (err) {
+      toast.error('Could not start scan')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   function formatDate(dateStr: string) {
     const d = new Date(dateStr)
     const now = new Date()
@@ -155,19 +174,30 @@ export default function UnsubscribePage() {
               Clean up your inbox — one-click unsubscribe from newsletters and marketing emails
             </p>
           </div>
-          {subscriptions.length > 0 && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleUnsubscribeAll}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg transition hover:opacity-90"
-              style={{
-                background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)',
-              }}
+              onClick={handleScanNow}
+              disabled={scanning}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-50"
+              title="Scan inbox for new marketing senders"
             >
-              <MailX className="w-4 h-4" />
-              Unsubscribe All ({stats.oneClickCount})
+              {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {scanning ? 'Scanning…' : 'Scan now'}
             </button>
-          )}
+            {subscriptions.length > 0 && (
+              <button
+                onClick={handleUnsubscribeAll}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg transition hover:opacity-90"
+                style={{
+                  background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)',
+                }}
+              >
+                <MailX className="w-4 h-4" />
+                Unsubscribe All ({stats.oneClickCount})
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Stats cards */}

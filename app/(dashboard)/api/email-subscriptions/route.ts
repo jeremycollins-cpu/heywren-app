@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { inngest } from '@/inngest/client'
 
 function getAdminClient() {
   return createClient(
@@ -75,7 +76,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { subscriptionId, action } = await request.json()
+    const body = await request.json()
+    const { subscriptionId, action } = body
+
+    // On-demand scan trigger (no subscriptionId needed)
+    if (action === 'scan') {
+      await inngest.send({
+        name: 'subscriptions/scan',
+        data: { userId: userData.user.id },
+      })
+      return NextResponse.json({ success: true, scheduled: true })
+    }
 
     if (!subscriptionId || !['unsubscribe', 'keep'].includes(action)) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
