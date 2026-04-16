@@ -195,8 +195,8 @@ describe('DashboardPage', () => {
       setStore({
         commitments: [
           { id: '1', title: 'Old open', description: null, status: 'open', source: 'slack', source_ref: null, created_at: tenDaysAgo, updated_at: tenDaysAgo },
-          { id: '2', title: 'Overdue', description: null, status: 'overdue', source: 'slack', source_ref: null, created_at: sixDaysAgo, updated_at: sixDaysAgo },
-          { id: '3', title: 'Completed', description: null, status: 'completed', source: 'slack', source_ref: null, created_at: twoDaysAgo, updated_at: todayStr },
+          { id: '2', title: 'Late task', description: null, status: 'overdue', source: 'slack', source_ref: null, created_at: sixDaysAgo, updated_at: sixDaysAgo },
+          { id: '3', title: 'Done task', description: null, status: 'completed', source: 'slack', source_ref: null, created_at: twoDaysAgo, updated_at: todayStr },
         ],
         mentions: [],
         integrationCount: 1,
