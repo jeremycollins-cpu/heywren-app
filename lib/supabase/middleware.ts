@@ -49,6 +49,23 @@ export async function updateSession(request: NextRequest) {
     return response
   }
 
+  // Track last activity — throttled to one DB write per 5 minutes via cookie
+  const ACTIVITY_COOKIE = 'wren_last_ping'
+  const ACTIVITY_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+  const lastPing = request.cookies.get(ACTIVITY_COOKIE)?.value
+  const now = Date.now()
+  if (!lastPing || now - Number(lastPing) > ACTIVITY_INTERVAL_MS) {
+    // Fire-and-forget — don't block the response on this write
+    supabase.from('profiles').update({ last_active_at: new Date().toISOString() }).eq('id', user.id).then()
+    response.cookies.set(ACTIVITY_COOKIE, String(now), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 300, // 5 minutes in seconds
+      path: '/',
+    })
+  }
+
   // MFA enforcement — reads from JWT cookie, no additional network call
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
   if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {

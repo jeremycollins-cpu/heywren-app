@@ -1040,7 +1040,7 @@ function MemberRow({ member, anomalyCount, onSelect, onRemove, canRemove }: {
           </div>
           <div>
             <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{formatRelativeTime(member.last_sign_in)}</p>
-            <p className="text-[9px] text-gray-400 font-medium">Last Login</p>
+            <p className="text-[9px] text-gray-400 font-medium">Last Active</p>
           </div>
           <div>
             <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{formatRelativeTime(member.last_sync)}</p>

@@ -1728,7 +1728,7 @@ function AdminContent() {
                 </p>
               </div>
               <div className="bg-white border rounded-lg p-3">
-                <p className="text-xs text-gray-500">Last Sign In</p>
+                <p className="text-xs text-gray-500">Last Active</p>
                 <p className="font-semibold text-sm">{selectedUser.activityLog?.lastSignIn ? new Date(selectedUser.activityLog.lastSignIn).toLocaleString() : 'Never'}</p>
               </div>
               <div className="bg-white border rounded-lg p-3">
