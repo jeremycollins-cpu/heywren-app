@@ -51,7 +51,6 @@ async function extractPdf(buffer: Buffer): Promise<string> {
   // pdf-parse pulls in a debug shim that tries to read a sample file at
   // import time when NODE_ENV !== 'production'. Importing the inner module
   // directly avoids that.
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore — no types published for pdf-parse's internal entrypoint
   const mod = await import('pdf-parse/lib/pdf-parse.js')
   const pdfParse = (mod.default || mod) as (data: Buffer) => Promise<{ text: string }>

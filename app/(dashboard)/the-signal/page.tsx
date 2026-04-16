@@ -141,7 +141,7 @@ function ListPage() {
           <CalendarDays className="w-10 h-10 text-gray-400 mx-auto mb-3" aria-hidden="true" />
           <p className="text-gray-700 dark:text-gray-300 font-medium mb-1">No signals yet</p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-            Generate your first Signal. It pulls the last 30 days of activity — the more you've connected to Wren, the richer it gets.
+            Generate your first Signal. It pulls the last 30 days of activity — the more you&apos;ve connected to Wren, the richer it gets.
           </p>
           <button
             onClick={() => startNewBriefing()}
