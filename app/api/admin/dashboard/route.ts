@@ -244,12 +244,15 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Get auth user for last sign-in
-    let lastSignIn: string | null = null
-    try {
-      const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
-      lastSignIn = authUser?.user?.last_sign_in_at || null
-    } catch { /* ignore */ }
+    // Use last_active_at from profiles (updated by middleware on every page visit)
+    // Falls back to auth last_sign_in_at for users who haven't visited since the migration
+    let lastSignIn: string | null = resolvedProfile.last_active_at || null
+    if (!lastSignIn) {
+      try {
+        const { data: authUser } = await adminDb.auth.admin.getUserById(userId)
+        lastSignIn = authUser?.user?.last_sign_in_at || null
+      } catch { /* ignore */ }
+    }
 
     // Get org domains
     let orgDomains: string[] = []

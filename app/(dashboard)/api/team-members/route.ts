@@ -157,7 +157,7 @@ async function getOrgHierarchyMembers(
   const userIds = orgMembers.map((m: any) => m.user_id)
   const { data: profiles } = await admin
     .from('profiles')
-    .select('id, email, display_name, avatar_url, job_title, onboarding_completed')
+    .select('id, email, display_name, avatar_url, job_title, onboarding_completed, last_active_at')
     .in('id', userIds)
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
@@ -180,14 +180,7 @@ async function getOrgHierarchyMembers(
     }
   }
 
-  // Get last sign-in from auth.users
-  const { data: authData } = await admin.auth.admin.listUsers()
-  const authMap = new Map<string, string | null>()
-  for (const u of authData?.users || []) {
-    if (userIds.includes(u.id)) {
-      authMap.set(u.id, u.last_sign_in_at || null)
-    }
-  }
+  // last_active_at is already included in the profiles query above
 
   // Get department and team names for context
   const deptIds = [...new Set(orgMembers.map((m: any) => m.department_id))]
@@ -222,7 +215,7 @@ async function getOrgHierarchyMembers(
       team_name: team?.name || null,
       onboarded: p?.onboarding_completed ?? false,
       integrations: integ?.providers || [],
-      last_sign_in: authMap.get(m.user_id) || null,
+      last_sign_in: p?.last_active_at || null,
       last_sync: integ?.lastSync || null,
     }
   })
