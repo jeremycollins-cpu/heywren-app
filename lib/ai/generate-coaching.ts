@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { recordTokenUsage } from './token-usage'
+import { isActive, isCompleted, isExcluded } from '@/lib/commitments/status'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -48,9 +49,10 @@ export function buildCommunicationProfile(
     m => new Date(m.received_at || m.created_at).getTime() >= thirtyDaysAgo
   )
 
-  const completed = recent.filter(c => c.status === 'completed')
-  const completionRate = recent.length > 0
-    ? Math.round((completed.length / recent.length) * 100)
+  const completed = recent.filter(c => isCompleted(c.status))
+  const relevant = recent.filter(c => !isExcluded(c.status))
+  const completionRate = relevant.length > 0
+    ? Math.round((completed.length / relevant.length) * 100)
     : 0
 
   const completionDays = completed
@@ -97,7 +99,7 @@ export function buildCommunicationProfile(
       if (!s.name) continue
       if (!stakeholderMap[s.name]) stakeholderMap[s.name] = { interactions: 0, openCommitments: 0 }
       stakeholderMap[s.name].interactions++
-      if (c.status === 'open' || c.status === 'in_progress') {
+      if (isActive(c.status)) {
         stakeholderMap[s.name].openCommitments++
       }
     }

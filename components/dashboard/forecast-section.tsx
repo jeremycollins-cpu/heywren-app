@@ -1,6 +1,7 @@
 'use client'
 
 import type { Commitment } from '@/lib/stores/dashboard-store'
+import { isActive, isCompleted, isExcluded } from '@/lib/commitments/status'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -11,9 +12,10 @@ interface ForecastSectionProps {
 }
 
 export function ForecastSection({ commitments }: ForecastSectionProps) {
-  const open = commitments.filter(c => c.status === 'open')
-  const completed = commitments.filter(c => c.status === 'completed')
-  const completionRate = commitments.length > 0 ? completed.length / commitments.length : 0
+  const open = commitments.filter(c => isActive(c.status))
+  const completed = commitments.filter(c => isCompleted(c.status))
+  const relevant = commitments.filter(c => !isExcluded(c.status))
+  const completionRate = relevant.length > 0 ? completed.length / relevant.length : 0
   const daysToClean = completionRate > 0 ? Math.ceil(open.length / (completionRate * 7)) * 7 : null
   const staleItems = open.filter(c => daysSince(c.created_at) > 7).length
 

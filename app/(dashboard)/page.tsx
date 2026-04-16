@@ -6,6 +6,7 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { isActive, isCompleted } from '@/lib/commitments/status'
 import { useDashboardStore } from '@/lib/stores/dashboard-store'
 import { useRealtime } from '@/lib/hooks/use-realtime'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
@@ -147,9 +148,9 @@ export default function DashboardPage() {
 
   if (loading) return <LoadingSkeleton />
 
-  const openCommitments = commitments.filter(c => c.status === 'open')
-  const completedCommitments = commitments.filter(c => c.status === 'completed')
-  const urgentCount = commitments.filter(c => c.status === 'open' && daysSince(c.created_at) > 5).length
+  const openCommitments = commitments.filter(c => isActive(c.status))
+  const completedCommitments = commitments.filter(c => isCompleted(c.status))
+  const urgentCount = commitments.filter(c => isActive(c.status) && daysSince(c.created_at) > 5).length
   const overdueCount = commitments.filter(c => c.status === 'overdue').length
   const avgScore = getAvgScore(commitments)
   const staleItems = openCommitments.filter(c => daysSince(c.created_at) > 7).length

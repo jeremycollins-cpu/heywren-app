@@ -3,6 +3,7 @@
 // Shows: real weekly stats, source breakdown, recent activity timeline
 
 'use client'
+import { isActive, isCompleted, isExcluded, followThroughRate } from '@/lib/commitments/status'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -238,10 +239,10 @@ export default function WeeklyPage() {
   const weekLabel = `Week of ${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 
   const thisWeekNew = commitments.filter(c => isThisWeek(c.created_at))
-  const completedThisWeek = commitments.filter(c => c.status === 'completed' && isThisWeek(c.updated_at))
-  const open = commitments.filter(c => c.status === 'open')
-  const completed = commitments.filter(c => c.status === 'completed')
-  const followThrough = commitments.length > 0 ? Math.round((completed.length / commitments.length) * 100) : 0
+  const completedThisWeek = commitments.filter(c => isCompleted(c.status) && isThisWeek(c.updated_at))
+  const open = commitments.filter(c => isActive(c.status))
+  const completed = commitments.filter(c => isCompleted(c.status))
+  const followThrough = followThroughRate(commitments)
 
   const slackCount = commitments.filter(c => c.source === 'slack').length
   const outlookCount = commitments.filter(c => c.source === 'outlook' || c.source === 'email').length
@@ -648,7 +649,7 @@ export default function WeeklyPage() {
                   const d = daysSince(c.created_at)
                   return d >= weeksAgo * 7 && d < (weeksAgo + 1) * 7
                 })
-                const completed = weekCommitments.filter(c => c.status === 'completed').length
+                const completed = weekCommitments.filter(c => isCompleted(c.status)).length
                 const total = weekCommitments.length
                 const weekStart = new Date(Date.now() - (weeksAgo * 7 + 6) * 86400000)
                 return { total, completed, label: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), isThisWeek: weeksAgo === 0 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { isActive, isCompleted } from '@/lib/commitments/status'
 
 function getAdminClient() {
   return createClient(
@@ -435,8 +436,8 @@ export async function GET(request: NextRequest) {
       diagnostics: {
         commitments: {
           total: commitmentData.length,
-          open: commitmentData.filter(c => c.status === 'open').length,
-          completed: commitmentData.filter(c => c.status === 'completed').length,
+          open: commitmentData.filter(c => isActive(c.status)).length,
+          completed: commitmentData.filter(c => isCompleted(c.status)).length,
           bySource: {
             slack: commitmentData.filter(c => c.source === 'slack').length,
             outlook: commitmentData.filter(c => c.source === 'outlook').length,

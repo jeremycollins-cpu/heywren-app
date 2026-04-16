@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isActive, isCompleted, isExcluded, followThroughRate } from '@/lib/commitments/status'
 import {
   RefreshCw, CheckCircle2, AlertCircle, Loader2, Mail, Zap,
   Clock, Activity, TrendingUp, Shield, ArrowRight,
@@ -107,21 +108,12 @@ export default function SyncPage() {
 
         const allCommitments = commitments || []
         const weekAgo = Date.now() - 7 * 86400000
-        const actionable = allCommitments.filter((c: { status: string }) =>
-          !['completed', 'cancelled', 'dropped', 'likely_complete'].includes(c.status)
-        )
-        const relevantTotal = allCommitments.filter((c: { status: string }) =>
-          !['cancelled', 'dropped'].includes(c.status)
-        ).length
-        const completedCount = allCommitments.filter((c: { status: string }) =>
-          c.status === 'completed' || c.status === 'likely_complete'
-        ).length
         setCommitmentStats({
           total: allCommitments.length,
-          open: actionable.length,
-          completed: completedCount,
+          open: allCommitments.filter((c: { status: string }) => isActive(c.status)).length,
+          completed: allCommitments.filter((c: { status: string }) => isCompleted(c.status)).length,
           thisWeek: allCommitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
-          followThrough: relevantTotal > 0 ? Math.round(completedCount / relevantTotal * 100) : 0,
+          followThrough: followThroughRate(allCommitments),
         })
 
         // Fetch data counts scoped to the current user

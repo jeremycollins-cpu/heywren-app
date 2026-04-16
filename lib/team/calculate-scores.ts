@@ -163,7 +163,7 @@ export async function calculateWeeklyScores(
     .select('creator_id, completed_at, created_at, due_date')
     .in('team_id', teamIds)
     .in('creator_id', userIds)
-    .eq('status', 'completed')
+    .in('status', ['completed', 'likely_complete'])
     .gte('completed_at', weekStartStr)
     .lt('completed_at', weekEndStr)
 
