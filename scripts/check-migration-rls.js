@@ -57,12 +57,25 @@ const missing = createdTables.filter(
   (t) => !t.skipped && !rlsEnabled.has(t.name)
 )
 
-if (missing.length > 0) {
+// Tables whose CREATE TABLE lives outside the migration files (e.g. created
+// manually or via an external script). We still require RLS to appear in a
+// migration. Add entries here when a table is discovered without a tracked
+// CREATE TABLE statement.
+const EXTERNAL_TABLES = ['outlook_messages']
+
+const missingExternal = EXTERNAL_TABLES.filter((t) => !rlsEnabled.has(t))
+
+const allMissing = [
+  ...missing.map((t) => `  - ${t.name}  (${t.file}:${t.line})`),
+  ...missingExternal.map((t) => `  - ${t}  (CREATE TABLE not in migrations — listed in EXTERNAL_TABLES)`),
+]
+
+if (allMissing.length > 0) {
   console.error(
-    `\nFound ${missing.length} table(s) created without ENABLE ROW LEVEL SECURITY:\n`
+    `\nFound ${allMissing.length} table(s) without ENABLE ROW LEVEL SECURITY:\n`
   )
-  for (const t of missing) {
-    console.error(`  - ${t.name}  (${t.file}:${t.line})`)
+  for (const line of allMissing) {
+    console.error(line)
   }
   console.error(
     '\nAdd `ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;` in the same or a' +
@@ -72,6 +85,7 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
+const totalChecked = createdTables.length + EXTERNAL_TABLES.length
 console.log(
-  `check-migration-rls: OK — ${createdTables.length} tables checked, all have RLS enabled.`
+  `check-migration-rls: OK — ${totalChecked} tables checked, all have RLS enabled.`
 )
