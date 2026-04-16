@@ -49,13 +49,10 @@ import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-gith
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 
-if (!process.env.INNGEST_SIGNING_KEY) {
-  throw new Error(
-    'INNGEST_SIGNING_KEY is not set — the Inngest serve endpoint must not run without authentication'
-  )
-}
-
-export const { GET, POST, PUT } = serve({
+// Security: at request time, refuse to serve if INNGEST_SIGNING_KEY is missing.
+// The check must NOT run at module load — Next.js evaluates API routes at build
+// time to collect page data, and CI builds don't set the signing key.
+const handlers = serve({
   client: inngest,
   functions: [
     processSlackMention,  // @HeyWren mentions — detects commitments and replies in Slack
@@ -109,3 +106,17 @@ export const { GET, POST, PUT } = serve({
     aggregateFeedbackPatterns,   // Monday 5 AM PT — turn cross-user rejection feedback into community patterns
   ],
 })
+
+function requireSigningKey<T extends (...args: any[]) => any>(handler: T): T {
+  return (async (...args: Parameters<T>) => {
+    if (!process.env.INNGEST_SIGNING_KEY) {
+      console.error('INNGEST_SIGNING_KEY is not set — refusing to serve Inngest request')
+      return new Response('Inngest signing key not configured', { status: 503 })
+    }
+    return handler(...args)
+  }) as T
+}
+
+export const GET = requireSigningKey(handlers.GET)
+export const POST = requireSigningKey(handlers.POST)
+export const PUT = requireSigningKey(handlers.PUT)
