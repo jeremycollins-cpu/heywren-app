@@ -58,6 +58,222 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+function DiagnoseResultView({ result }: { result: any }) {
+  if (result?.error) {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{result.error}</p>
+          {result.detail && <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">{result.detail}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  const { email, headersLoaded, headerFetchError, tier1, tier2, wouldAlert } = result
+  const tier2Ran = tier2 && !('skipped' in tier2)
+  const verdict = tier2Ran ? tier2 : null
+  const signals: ThreatSignal[] = (verdict?.signals || tier1?.signals || []) as ThreatSignal[]
+  const spf = verdict?.spfResult ?? tier1?.spfResult
+  const dkim = verdict?.dkimResult ?? tier1?.dkimResult
+  const dmarc = verdict?.dmarcResult ?? tier1?.dmarcResult
+  const hasAuthResults = [spf, dkim, dmarc].some(r => r && r !== 'none')
+
+  let verdictReason = ''
+  if (wouldAlert) {
+    verdictReason = `AI detected a ${verdict.threatLevel} ${(threatTypeConfig[verdict.threatType]?.label || verdict.threatType).toLowerCase()} threat at ${Math.round(verdict.confidence * 100)}% confidence.`
+  } else if (tier2Ran && verdict) {
+    verdictReason = verdict.isThreat
+      ? `AI flagged this as a possible threat but confidence (${Math.round(verdict.confidence * 100)}%) is below the 75% alert threshold.`
+      : 'AI analyzed the content and determined this is not a threat.'
+  } else {
+    verdictReason = 'Tier 1 header checks passed cleanly, so AI content analysis was skipped.'
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Verdict banner */}
+      <div className={`rounded-lg border p-4 flex items-start gap-3 ${
+        wouldAlert
+          ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+          : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+      }`}>
+        {wouldAlert
+          ? <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+          : <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+        }
+        <div>
+          <p className={`text-sm font-semibold ${wouldAlert ? 'text-red-900 dark:text-red-200' : 'text-green-900 dark:text-green-200'}`}>
+            {wouldAlert ? 'This email would trigger a security alert' : 'This email would NOT trigger a security alert'}
+          </p>
+          <p className={`text-sm mt-1 ${wouldAlert ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>
+            {verdictReason}
+          </p>
+        </div>
+      </div>
+
+      {/* Email analyzed */}
+      <div className="bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+        <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <Mail className="w-3.5 h-3.5" /> Email analyzed
+        </h4>
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{email.subject || '(no subject)'}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          From: {email.fromName || email.fromEmail} &middot; {formatDate(email.receivedAt)}
+        </p>
+      </div>
+
+      {/* AI verdict details */}
+      {verdict && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">AI Verdict</h4>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-full ${threatLevelStyles[verdict.threatLevel as keyof typeof threatLevelStyles]?.badge || 'bg-gray-600 text-white'}`}>
+              {String(verdict.threatLevel).toUpperCase()}
+            </span>
+            {threatTypeConfig[verdict.threatType] && (() => {
+              const cfg = threatTypeConfig[verdict.threatType]
+              const Icon = cfg.icon
+              return (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full ${cfg.color}`}>
+                  <Icon className="w-3 h-3" />
+                  {cfg.label}
+                </span>
+              )
+            })()}
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {Math.round(verdict.confidence * 100)}% confidence
+              <span className="text-gray-400 dark:text-gray-500"> &middot; alert threshold 75%</span>
+            </span>
+          </div>
+          {verdict.explanation && (
+            <p className="text-sm text-gray-700 dark:text-gray-300">{verdict.explanation}</p>
+          )}
+        </div>
+      )}
+
+      {/* Signals */}
+      {signals.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            Detection signals ({signals.length})
+          </h4>
+          <div className="space-y-1.5">
+            {signals.map((signal, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                  signal.weight === 'critical' ? 'bg-red-500' :
+                  signal.weight === 'high' ? 'bg-orange-500' :
+                  signal.weight === 'medium' ? 'bg-amber-500' : 'bg-blue-400'
+                }`} />
+                <span className="text-gray-700 dark:text-gray-300">
+                  {signal.detail}
+                  <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wide">{signal.weight}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {signals.length === 0 && (
+        <div className="text-sm text-gray-500 dark:text-gray-400 italic">
+          No suspicious signals detected.
+        </div>
+      )}
+
+      {/* Email authentication */}
+      {hasAuthResults && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Email authentication</h4>
+          <div className="flex gap-2 text-xs flex-wrap">
+            {([['SPF', spf], ['DKIM', dkim], ['DMARC', dmarc]] as const).map(([name, result]) => {
+              if (!result || result === 'none') return null
+              const passed = result === 'pass'
+              return (
+                <span key={name} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium ${
+                  passed
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+                }`}>
+                  {passed ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                  {name}: {result}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recommended actions */}
+      {verdict && (verdict.recommendedActions?.length > 0 || verdict.doNotActions?.length > 0) && (
+        <div className="grid grid-cols-2 gap-4">
+          {verdict.recommendedActions?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> What to do
+              </h4>
+              <ul className="space-y-1">
+                {verdict.recommendedActions.map((action: string, i: number) => (
+                  <li key={i} className="text-sm text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
+                    <span className="text-green-500 mt-0.5">+</span>
+                    {action}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {verdict.doNotActions?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <XCircle className="w-3 h-3" /> What NOT to do
+              </h4>
+              <ul className="space-y-1">
+                {verdict.doNotActions.map((action: string, i: number) => (
+                  <li key={i} className="text-sm text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
+                    <span className="text-red-500 mt-0.5">-</span>
+                    {action}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Notices */}
+      {!tier2Ran && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-800 rounded-lg p-3">
+          <span className="font-medium text-gray-700 dark:text-gray-300">AI content analysis skipped.</span>{' '}
+          Tier 1 header checks found no suspicious signals, so the email was cleared without running the AI model.
+        </div>
+      )}
+      {headerFetchError && (
+        <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+          <span className="font-medium">Could not load authentication headers:</span> {headerFetchError}
+        </div>
+      )}
+      {!headersLoaded && !headerFetchError && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 italic">
+          Authentication headers were not available for this email.
+        </div>
+      )}
+
+      {/* Raw JSON (collapsible for debugging) */}
+      <details className="group">
+        <summary className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer select-none inline-flex items-center gap-1">
+          <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+          View raw JSON response
+        </summary>
+        <pre className="mt-2 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      </details>
+    </div>
+  )
+}
+
 export default function SecurityAlertsPage() {
   const [alerts, setAlerts] = useState<ThreatAlert[]>([])
   const [resolved, setResolved] = useState<ThreatAlert[]>([])
@@ -254,11 +470,7 @@ export default function SecurityAlertsPage() {
                 {diagnosing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Diagnose'}
               </button>
             </div>
-            {diagnoseResult && (
-              <pre className="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
-                {JSON.stringify(diagnoseResult, null, 2)}
-              </pre>
-            )}
+            {diagnoseResult && <DiagnoseResultView result={diagnoseResult} />}
           </div>
         )}
       </div>
