@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/client'
 import { AlertTriangle, ArrowRight, X } from 'lucide-react'
 import Sidebar from '@/components/sidebar'
 import Header from '@/components/header'
@@ -76,10 +76,7 @@ export default function DashboardLayout({
   const [authChecked, setAuthChecked] = useState(false)
   const shouldAutoStartWalkthrough = useWalkthroughAutoStart()
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const supabase = createClient()
 
   // Auth guard: redirect to login if session is invalid, check onboarding
   useEffect(() => {

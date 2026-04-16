@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/client'
 
 interface InviteDetails {
   id: string
@@ -45,10 +45,7 @@ export default function InviteAcceptPage() {
     team_name: string | null
   } | null>(null)
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const supabase = createClient()
 
   // Check auth status and fetch invite details
   useEffect(() => {
