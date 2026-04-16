@@ -26,6 +26,9 @@ const MARKETING_SENDER_PATTERNS = [
   /info@/i, /hello@/i, /team@/i, /support@/i, /sales@/i,
   /mailer@/i, /campaigns?@/i, /engage@/i, /outreach@/i,
   /announce@/i, /community@/i, /contact@/i, /email@/i,
+  // Bulk-mail subdomains (NetSuite, Marketo, Pardot, Salesforce, Mailchimp, SendGrid, etc.)
+  /@(na|eu|us|mail|email|bounces?|send|smtp|marketing|campaigns?|newsletter|notify)\./i,
+  /@(mailer|mailgun|sendgrid|mailchimp|mandrill|postmark|mailjet|amazonses|sparkpost|netsuite|marketo|pardot|hubspot|customer\.io|intercom|klaviyo)\./i,
 ]
 
 // Subject patterns indicating marketing/transactional emails
@@ -35,15 +38,40 @@ const MARKETING_SUBJECT_PATTERNS = [
   /\bunsubscribe\b/i, /\bsubscription\b/i,
   /\b\d+% off\b/i, /\blimited time\b/i, /\bspecial offer\b/i,
   /\bdon't miss\b/i, /\blast chance\b/i, /\bact now\b/i,
-  /\bfree (trial|demo|ebook|guide|webinar)\b/i,
+  /\bfree (trial|demo|ebook|guide|webinar|report|whitepaper)\b/i,
   /\bnew (features?|release|version|update)\b/i,
   /\bproduct update\b/i, /\bwhat's new\b/i,
   /\byour (weekly|daily|monthly)\b/i,
+  // Gated-content / lead-magnet marketing
+  /\b(get|download|grab|claim) (your|the|my) /i,
+  /\b(handbook|ebook|e-book|whitepaper|white paper|cheat sheet|playbook|toolkit)\b/i,
+  /\b(we wrote|we created|we built) a /i,
+  /\baccess (to |your |the |our )/i,
+  /\bregister (now|today|for)/i,
+  /\b(join us|save your (seat|spot)|rsvp)/i,
 ]
 
-function isLikelyMarketing(fromEmail: string, subject: string): boolean {
+// Body-preview signals that strongly indicate marketing/cold outreach even
+// when the footer (with "unsubscribe") doesn't fit in the preview window.
+const MARKETING_BODY_SIGNALS = [
+  /unsubscribe/i, /opt[- ]?out/i,
+  /view (this )?(email |message )?(online|in (your )?browser)/i,
+  /having trouble (reading|viewing) this email/i,
+  /you (are )?receiv(ing|ed) this (email|message) because/i,
+  /to stop receiving/i, /manage (your )?preferences/i,
+  // Cold sales outreach tells
+  /\bnot a fit\b/i,
+  /\breply with ["']?not (interested|a fit)["']?/i,
+  /\bif (i'?m|this is) off (here|base)\b/i,
+  /\bwon'?t follow up\b/i,
+  /\bquick (question|favor|intro)\b/i,
+  /\bworth a (quick |brief )?(chat|call|convo)/i,
+]
+
+function isLikelyMarketing(fromEmail: string, subject: string, bodyPreview?: string): boolean {
   if (MARKETING_SENDER_PATTERNS.some(p => p.test(fromEmail))) return true
   if (MARKETING_SUBJECT_PATTERNS.some(p => p.test(subject))) return true
+  if (bodyPreview && MARKETING_BODY_SIGNALS.some(p => p.test(bodyPreview))) return true
   return false
 }
 
@@ -179,18 +207,28 @@ async function fetchUnsubscribeHeaders(
 
 export const scanEmailSubscriptions = inngest.createFunction(
   { id: 'scan-email-subscriptions' },
-  { cron: 'TZ=America/Los_Angeles 0 7 * * *' }, // 7 AM PT daily
-  async ({ step }) => {
+  [
+    { cron: 'TZ=America/Los_Angeles 0 7 * * *' }, // 7 AM PT daily
+    { event: 'subscriptions/scan' },              // on-demand trigger
+  ],
+  async ({ step, event }) => {
     const supabase = getAdminClient()
     const startTime = Date.now()
 
-    // Get all teams with active Outlook integrations
+    // On-demand runs can target a single user's teams
+    const targetUserId = (event as any)?.data?.userId || null
+
+    // Get all teams with active Outlook integrations (optionally filtered to one user)
     const teams = await step.run('get-outlook-teams', async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('integrations')
         .select('id, team_id, config')
         .eq('provider', 'outlook')
         .eq('status', 'connected')
+
+      if (targetUserId) query = query.eq('user_id', targetUserId)
+
+      const { data } = await query
 
       return (data || []).map(i => ({
         integrationId: i.id,
@@ -248,7 +286,7 @@ export const scanEmailSubscriptions = inngest.createFunction(
           }>()
 
           for (const email of emails) {
-            if (!isLikelyMarketing(email.from_email, email.subject)) continue
+            if (!isLikelyMarketing(email.from_email, email.subject, email.body_preview)) continue
 
             const key = email.from_email.toLowerCase()
             const existing = senderMap.get(key)
@@ -328,43 +366,39 @@ export const scanEmailSubscriptions = inngest.createFunction(
               msToken = token
               headersFetched++
 
-              // Determine detection method
+              // Determine detection method (header > body_link > sender_pattern)
               let detectionMethod = 'sender_pattern'
-              if (url || mailto) detectionMethod = 'header'
-
-              // Also check body preview for unsubscribe links as fallback
-              if (!url && !mailto) {
-                const bodyLower = sender.bodyPreview.toLowerCase()
-                if (bodyLower.includes('unsubscribe') || bodyLower.includes('opt out') || bodyLower.includes('opt-out')) {
-                  detectionMethod = 'body_link'
-                }
+              if (url || mailto) {
+                detectionMethod = 'header'
+              } else if (MARKETING_BODY_SIGNALS.some(p => p.test(sender.bodyPreview))) {
+                detectionMethod = 'body_link'
               }
 
-              // Only surface if we have some unsubscribe signal
-              if (url || mailto || detectionMethod === 'body_link') {
-                const { error: insertErr } = await supabase
-                  .from('email_subscriptions')
-                  .insert({
-                    team_id: team.teamId,
-                    user_id: userId,
-                    from_name: sender.fromName,
-                    from_email: sender.fromEmail.toLowerCase(),
-                    sender_domain: extractDomain(sender.fromEmail),
-                    subject: sender.subject,
-                    body_preview: sender.bodyPreview,
-                    received_at: sender.receivedAt,
-                    outlook_message_id: sender.messageId,
-                    is_read: sender.isRead,
-                    unsubscribe_url: url,
-                    unsubscribe_mailto: mailto,
-                    has_one_click: hasOneClick,
-                    detection_method: detectionMethod,
-                    email_count: sender.count,
-                    first_seen_at: sender.firstSeen,
-                  })
+              // Surface any sender matched as marketing, even without an unsubscribe link.
+              // The UI disables the one-click button and tells the user to unsubscribe
+              // manually in Outlook — that's still better than hiding the sender entirely.
+              const { error: insertErr } = await supabase
+                .from('email_subscriptions')
+                .insert({
+                  team_id: team.teamId,
+                  user_id: userId,
+                  from_name: sender.fromName,
+                  from_email: sender.fromEmail.toLowerCase(),
+                  sender_domain: extractDomain(sender.fromEmail),
+                  subject: sender.subject,
+                  body_preview: sender.bodyPreview,
+                  received_at: sender.receivedAt,
+                  outlook_message_id: sender.messageId,
+                  is_read: sender.isRead,
+                  unsubscribe_url: url,
+                  unsubscribe_mailto: mailto,
+                  has_one_click: hasOneClick,
+                  detection_method: detectionMethod,
+                  email_count: sender.count,
+                  first_seen_at: sender.firstSeen,
+                })
 
-                if (!insertErr) found++
-              }
+              if (!insertErr) found++
             } catch (err) {
               errors++
               console.error(`Failed to fetch headers for ${sender.messageId}:`, (err as Error).message)
