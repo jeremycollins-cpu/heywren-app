@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { detectCommitmentsBatchViaBatchApi, getDetectionStats, calculatePriorityScore } from '@/lib/ai/detect-commitments'
 import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
 import { logAiUsage } from '@/lib/ai/persist-usage'
+import { reportError } from '@/lib/monitoring/report-error'
 
 // Re-export so drain-outlook-backlog's existing import still works
 export { insertCommitmentIfNotDuplicate, buildCommitmentMetadata }
@@ -311,7 +312,17 @@ export async function syncTeamOutlook(
           totalCommitments += inserted
         }
       } catch (err) {
-        console.error('Batch AI error:', (err as Error).message)
+        const errMsg = (err as Error).message
+        console.error('Batch AI error:', errMsg)
+        await reportError({
+          source: 'inngest/sync-outlook',
+          message: `Commitment detection batch failed (phase 1, ${chunk.length} emails) — marked processed with 0 commitments`,
+          severity: 'critical',
+          userId,
+          teamId,
+          errorKey: `batch_api_fail:detect-commitments:${userId}`,
+          details: { phase: 'phase1-unprocessed', chunkSize: chunk.length, error: errMsg },
+        })
         // Mark failed messages as processed to prevent infinite retry loop
         for (const item of chunk) {
           await supabase
@@ -502,7 +513,17 @@ export async function syncTeamOutlook(
               .eq('id', item.dbId)
           }
         } catch (err) {
-          console.error('Batch AI error:', (err as Error).message)
+          const errMsg = (err as Error).message
+          console.error('Batch AI error:', errMsg)
+          await reportError({
+            source: 'inngest/sync-outlook',
+            message: `Commitment detection batch failed (phase 2 fresh fetch, ${batch.length} emails) — marked processed with 0 commitments`,
+            severity: 'critical',
+            userId,
+            teamId,
+            errorKey: `batch_api_fail:detect-commitments:${userId}`,
+            details: { phase: 'phase2-fresh', batchSize: batch.length, error: errMsg },
+          })
           // Mark failed messages as processed to prevent infinite retry loop
           for (const item of batch) {
             await supabase
@@ -682,7 +703,17 @@ export async function syncTeamOutlook(
               .eq('id', item.dbId)
           }
         } catch (err) {
-          console.error('Calendar batch AI error:', (err as Error).message)
+          const errMsg = (err as Error).message
+          console.error('Calendar batch AI error:', errMsg)
+          await reportError({
+            source: 'inngest/sync-outlook',
+            message: `Commitment detection batch failed (calendar, ${calBatch.length} events) — marked processed with 0 commitments`,
+            severity: 'critical',
+            userId,
+            teamId,
+            errorKey: `batch_api_fail:detect-commitments-calendar:${userId}`,
+            details: { phase: 'calendar', batchSize: calBatch.length, error: errMsg },
+          })
           for (const item of calBatch) {
             await supabase
               .from('outlook_calendar_events')

@@ -14,7 +14,7 @@ import {
   Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
-  AtSign, Inbox, Bell, Sparkles,
+  AtSign, Inbox, Bell, Sparkles, Activity,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -327,6 +327,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     { href: '/team-management/ai-usage', label: 'Team AI Usage', icon: Cpu },
     { href: '/people-insights', label: 'People Insights', icon: Network },
     { href: '/settings', label: 'Settings', icon: Settings },
+    { href: '/settings/system-health', label: 'System Health', icon: Activity },
   ]
 
   const superAdminLinks = [

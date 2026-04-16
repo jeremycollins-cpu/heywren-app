@@ -6,6 +6,7 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import { reportError } from '@/lib/monitoring/report-error'
+import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
 
 function getAdminClient() {
   return createClient(
@@ -120,7 +121,78 @@ export const healthMonitor = inngest.createFunction(
       checks.push(`Orphaned profiles: ${count || 0}`)
     })
 
-    // ── 4. Cleanup old errors (> 30 days) ──
+    // ── 4. Check for stalled commitment detection ──
+    // If emails ARE flowing in but no commitments have been created in 3+ days,
+    // detection is silently broken. This is the exact failure mode we want to
+    // catch before the user notices.
+    await step.run('check-stalled-commitment-detection', async () => {
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+
+      // Find users whose emails synced in last 24h but haven't had a commitment in 3+ days
+      const { data: activeUsers } = await supabase
+        .from('outlook_messages')
+        .select('user_id, team_id')
+        .gte('received_at', oneDayAgo)
+        .not('user_id', 'is', null)
+        .limit(1000)
+
+      const pairs = new Map<string, { userId: string; teamId: string }>()
+      for (const row of activeUsers || []) {
+        if (row.user_id && row.team_id) pairs.set(`${row.team_id}:${row.user_id}`, { userId: row.user_id, teamId: row.team_id })
+      }
+
+      let stalled = 0
+      for (const { userId, teamId } of pairs.values()) {
+        const { count: recentCount } = await supabase
+          .from('commitments')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', teamId)
+          .gte('created_at', threeDaysAgo)
+
+        if ((recentCount || 0) === 0) {
+          // Double-check: do they actually have ANY commitments ever? Skip brand-new users.
+          const { count: totalCount } = await supabase
+            .from('commitments')
+            .select('id', { count: 'exact', head: true })
+            .eq('team_id', teamId)
+
+          if ((totalCount || 0) < 5) continue // new user, nothing to flag
+
+          stalled++
+          await reportError({
+            source: 'health-monitor',
+            message: `No commitments detected in 3+ days despite active email sync — detection pipeline may be broken`,
+            severity: 'critical',
+            userId,
+            teamId,
+            errorKey: `stalled_commitment_detection:${userId}`,
+            details: { totalCommitments: totalCount },
+          })
+
+          // Alert the user so they don't quietly think "nothing to do this week"
+          try {
+            await sendProactiveAlert({
+              teamId,
+              userId,
+              notificationType: 'anomaly',
+              title: 'Commitment detection may be broken',
+              body: 'Emails are flowing into Wren but no new commitments have been created in 3+ days. Check System Health for details.',
+              link: '/settings/system-health',
+              slackText:
+                '*:warning: Commitment detection may be broken*\n> Wren is receiving your emails but hasn\'t created any commitments in 3+ days. Visit System Health for details.',
+              idempotencyKey: `stalled-commitments-${userId}-${new Date(now).toISOString().slice(0, 10)}`,
+            })
+          } catch {
+            // best-effort
+          }
+        }
+      }
+
+      checks.push(`Commitment detection: ${stalled} users stalled`)
+    })
+
+    // ── 5. Cleanup old errors (> 30 days) ──
     await step.run('cleanup-old-errors', async () => {
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
       const { error } = await supabase
