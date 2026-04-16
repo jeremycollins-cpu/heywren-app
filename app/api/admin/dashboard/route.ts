@@ -232,7 +232,7 @@ export async function GET(request: NextRequest) {
         provider: int.provider,
         hasToken,
         hasRefreshToken: hasRefresh,
-        tokenPreview: hasToken ? `...${int.access_token.slice(-8)}` : 'none',
+        tokenPreview: hasToken ? '[set]' : 'none',
         connectedAt: int.updated_at,
         lastUpdated: lastSync,
         ownedByUser: int.user_id === userId,

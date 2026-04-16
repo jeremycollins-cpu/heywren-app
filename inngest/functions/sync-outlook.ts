@@ -149,7 +149,7 @@ async function refreshMicrosoftToken(
 
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) {
-      console.error('Token refresh failed:', tokenData.error_description || tokenData.error)
+      console.error('Token refresh failed:', tokenData.error)
       return null
     }
 
@@ -769,6 +769,21 @@ export const adminFullResync = inngest.createFunction(
   async ({ event }) => {
     const { userId, teamId } = event.data
     const supabase = getAdminClient()
+
+    // Verify the user actually belongs to the specified team
+    if (teamId) {
+      const { data: membership } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('team_id', teamId)
+        .maybeSingle()
+
+      if (!membership) {
+        console.error(`[Admin Resync] User ${userId} is not a member of team ${teamId} — aborting`)
+        return { success: false, error: 'User is not a member of the specified team' }
+      }
+    }
 
     console.log(`[Admin Resync] Starting 90-day full resync for user ${userId}`)
 

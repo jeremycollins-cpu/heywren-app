@@ -44,8 +44,8 @@ async function refreshToken(
 
   const data = await tokenRes.json()
   if (!data.access_token) {
-    console.error('[graph-client] Token refresh failed:', data.error_description || data.error)
-    await reportError({ source: 'graph-client', message: `Token refresh failed: ${data.error_description || data.error}`, severity: 'critical', errorKey: 'token_refresh_failed', details: { error: data.error, description: data.error_description } })
+    console.error('[graph-client] Token refresh failed:', data.error)
+    await reportError({ source: 'graph-client', message: `Token refresh failed: ${data.error}`, severity: 'critical', errorKey: 'token_refresh_failed', details: { error: data.error } })
     return null
   }
 

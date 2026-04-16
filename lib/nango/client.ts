@@ -23,7 +23,7 @@ export async function getConnectionToken(
     )
     return response.data?.credentials?.access_token || null
   } catch (error) {
-    console.error('Failed to get Nango token:', error)
+    console.error('Failed to get Nango token:', (error as Error).message)
     return null
   }
 }
@@ -39,7 +39,7 @@ export async function refreshConnectionToken(
     )
     return response.data?.credentials?.access_token || null
   } catch (error) {
-    console.error('Failed to refresh Nango token:', error)
+    console.error('Failed to refresh Nango token:', (error as Error).message)
     return null
   }
 }
@@ -54,7 +54,7 @@ export async function deleteConnection(
     })
     return true
   } catch (error) {
-    console.error('Failed to delete Nango connection:', error)
+    console.error('Failed to delete Nango connection:', (error as Error).message)
     return false
   }
 }
@@ -85,7 +85,7 @@ export async function handleNangoCallback(
     })
     return response.data
   } catch (error) {
-    console.error('Failed to handle Nango callback:', error)
+    console.error('Failed to handle Nango callback:', (error as Error).message)
     throw error
   }
 }

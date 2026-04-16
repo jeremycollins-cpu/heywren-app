@@ -49,6 +49,12 @@ import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-gith
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 
+if (!process.env.INNGEST_SIGNING_KEY) {
+  throw new Error(
+    'INNGEST_SIGNING_KEY is not set — the Inngest serve endpoint must not run without authentication'
+  )
+}
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
