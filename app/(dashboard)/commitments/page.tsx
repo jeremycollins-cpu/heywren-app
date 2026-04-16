@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Search, Filter, CheckCircle2, X, ChevronDown, Plus, Send, RefreshCw, ListChecks, ArrowDownLeft, ArrowUpRight, Bell, ThumbsUp, ThumbsDown, Mail, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { safeHref } from '@/lib/url/safe-href'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 import { useTodo } from '@/lib/contexts/todo-context'
 import { useCelebration } from '@/lib/contexts/celebration-context'
@@ -923,7 +924,7 @@ export default function CommitmentsPage() {
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {c.source_url && (
                     <a
-                      href={c.source_url}
+                      href={safeHref(c.source_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-medium transition-colors"

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { inngest } from '@/inngest/client'
 import { generateThemes } from '@/lib/ai/generate-themes'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 import { mergeDuplicateCommitments, findDuplicateCommitments } from '@/lib/ai/dedup-commitments'
 
 function getAdminClient() {
@@ -574,7 +575,7 @@ export async function POST(request: NextRequest) {
               .select('subject, from_name, from_email, to_recipients, received_at')
               .eq('team_id', targetTeamId)
               .or(`user_id.eq.${userId},user_id.is.null`)
-              .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+              .or(`from_email.eq.${sf(userEmail)},to_recipients.ilike.%${sf(userEmail)}%`)
               .gte('received_at', thirtyDaysAgo)
               .order('received_at', { ascending: false })
               .limit(100)

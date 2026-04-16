@@ -5,6 +5,7 @@
 
 import { Clock, AlarmClock, Copy, ExternalLink, Info, BarChart3, Sparkles, Cpu, Bot } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { safeHref } from '@/lib/url/safe-href'
 
 export interface CycleTimeSummary {
   median_hours: number | null
@@ -201,7 +202,7 @@ export function StalePrList({
                 </button>
                 {pr.url && (
                   <a
-                    href={pr.url}
+                    href={safeHref(pr.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 transition"
@@ -466,7 +467,7 @@ export function RefactorRatioCard({ refactor }: { refactor: RefactorRatioSummary
                     −{formatCompact(r.net_lines_removed)} net
                   </span>
                   {r.url && (
-                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-500">
+                    <a href={safeHref(r.url)} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-500">
                       <ExternalLink size={11} />
                     </a>
                   )}

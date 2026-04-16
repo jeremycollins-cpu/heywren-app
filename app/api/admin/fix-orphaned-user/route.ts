@@ -1,11 +1,10 @@
 // app/api/admin/fix-orphaned-user/route.ts
 // Admin endpoint to fix users who are missing team associations.
-// Protected by service role key check — only callable from server/admin contexts.
+// Protected by session-based admin check (team owner or admin role).
 //
 // Usage:
 //   POST /api/admin/fix-orphaned-user
 //   Body: { email: "user@example.com", forceTeamId?: "uuid" }
-//   Headers: { Authorization: "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
 
 import { NextRequest, NextResponse } from 'next/server'
 import { fixOrphanedUser } from '@/lib/team/ensure-team'
@@ -13,44 +12,29 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth: require service role key or authenticated admin
-    const authHeader = request.headers.get('authorization')
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    // Auth: require authenticated admin user (session-based only)
+    const { createClient: createSessionClient } = await import('@/lib/supabase/server')
+    const supabase = await createSessionClient()
+    const { data: userData } = await supabase.auth.getUser()
 
-    let isAuthorized = false
-
-    // Check Bearer token matches service role key
-    if (authHeader?.startsWith('Bearer ') && authHeader.slice(7) === serviceKey) {
-      isAuthorized = true
+    if (!userData?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if caller is an authenticated admin user
-    if (!isAuthorized) {
-      const { createClient: createSessionClient } = await import('@/lib/supabase/server')
-      const supabase = await createSessionClient()
-      const { data: userData } = await supabase.auth.getUser()
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
-      if (userData?.user) {
-        const supabaseAdmin = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
+    const { data: membership } = await supabaseAdmin
+      .from('team_members')
+      .select('role')
+      .eq('user_id', userData.user.id)
+      .in('role', ['owner', 'admin'])
+      .limit(1)
+      .single()
 
-        const { data: membership } = await supabaseAdmin
-          .from('team_members')
-          .select('role')
-          .eq('user_id', userData.user.id)
-          .in('role', ['owner', 'admin'])
-          .limit(1)
-          .single()
-
-        if (membership) {
-          isAuthorized = true
-        }
-      }
-    }
-
-    if (!isAuthorized) {
+    if (!membership) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
