@@ -63,7 +63,18 @@ const KNOWN_SCAM_PATTERNS = [
   /won.*lottery|prize.*claim/i,
   /bitcoin.*investment/i,
   /inherit.*million/i,
+  // Fake e-signature / document-share phishing (DocuSign/Adobe Sign impersonation)
+  /agreement\s+signature\s+required/i,
+  /signature\s+required\s+today/i,
+  /past\s+due\s+reminder/i,
+  /has\s+sent\s+you\s+a\s+document/i,
+  /shared\s+a\s+document\s+with\s+you/i,
+  /review\s+and\s+sign\s+document/i,
+  /e[-\s]?sign(ature)?\s+(required|requested|pending)/i,
 ]
+
+// Long opaque tracking IDs appended to phishing subjects ("Ref~ID#: dc8e8098a0ea6afbdce28b0bb05ea952")
+const SUSPICIOUS_REF_ID_PATTERN = /ref[~\s#:]*id[#:\s]*[a-f0-9]{16,}/i
 
 const PRESSURE_PATTERNS = [
   /act\s+(now|immediately|fast|quickly)/i,
@@ -126,6 +137,34 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     if (dmarcResult === 'fail') {
       signals.push({ signal: 'dmarc_fail', detail: 'DMARC policy failed — domain owner does not authorize this sender', weight: 'critical' })
     }
+    // Missing authentication is suspicious on its own — legitimate senders almost always publish SPF/DKIM/DMARC
+    if (spfResult === 'none' && dkimResult === 'none' && dmarcResult === 'none') {
+      signals.push({
+        signal: 'no_auth_results',
+        detail: 'Email has no SPF, DKIM, or DMARC authentication — legitimate senders publish at least one',
+        weight: 'medium',
+      })
+    }
+  }
+
+  // ── Sender spoofing: From address matches a recipient (user sending to themselves) ──
+  // Legitimate self-sent emails are rare and typically don't include phishing indicators.
+  // Spoofers set the From to the victim's own address to bypass "trusted contact" heuristics.
+  if (email.fromEmail) {
+    const fromLower = email.fromEmail.toLowerCase().trim()
+    const recipientEmails = [email.toRecipients, email.ccRecipients]
+      .filter(Boolean)
+      .join(';')
+      .split(/[;,]/)
+      .map(e => e.trim().toLowerCase())
+      .filter(Boolean)
+    if (recipientEmails.includes(fromLower)) {
+      signals.push({
+        signal: 'sender_spoofing_self',
+        detail: `Email appears to come from your own address (${email.fromEmail}). This is a common spoofing tactic — real self-sent emails rarely ask you to sign or click links.`,
+        weight: 'high',
+      })
+    }
   }
 
   // ── Reply-to mismatch ──
@@ -168,6 +207,14 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
       signals.push({ signal: 'scam_pattern', detail: `Matches known scam pattern: "${fullText.match(pattern)?.[0]}"`, weight: 'high' })
       break // One match is enough
     }
+  }
+
+  if (SUSPICIOUS_REF_ID_PATTERN.test(fullText)) {
+    signals.push({
+      signal: 'suspicious_ref_id',
+      detail: `Subject contains a long opaque tracking ID (e.g. "Ref~ID#: ...") often used by phishing campaigns to look official`,
+      weight: 'medium',
+    })
   }
 
   let pressureCount = 0
