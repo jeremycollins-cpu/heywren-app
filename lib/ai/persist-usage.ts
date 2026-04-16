@@ -51,12 +51,11 @@ export async function logAiUsage(
   params: LogAiUsageParams
 ): Promise<void> {
   const usage = getTokenUsage()
-
-  // Nothing to log if no API calls were made
-  if (usage.api_calls === 0) return
-
   const costCents = estimateCostCents(usage)
 
+  // Always insert a row — System Health and the per-module dashboard need
+  // a heartbeat even for runs that made zero API calls (clean inbox, nothing
+  // to process). Cost queries can filter WHERE api_calls > 0.
   try {
     await supabase.from('ai_platform_usage').insert({
       team_id: params.teamId || null,
