@@ -879,6 +879,22 @@ function IntegrationsContent() {
     }
   }, [])
 
+  /** Fetch HMAC-signed OAuth state from the server to prevent CSRF. */
+  const getSignedState = async (redirect: string): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/integrations/oauth-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect }),
+      })
+      if (!res.ok) return null
+      const { state } = await res.json()
+      return state || null
+    } catch {
+      return null
+    }
+  }
+
   const handleSlackConnect = async () => {
     const supabase = createClient()
     const { data: userData } = await supabase.auth.getUser()
@@ -904,7 +920,8 @@ function IntegrationsContent() {
       'team:read',
     ].join(',')
 
-    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
     window.location.href = authUrl
   }
@@ -919,7 +936,8 @@ function IntegrationsContent() {
 
     const clientId = process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
-    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const scopes = [
       'openid',
       'profile',
@@ -945,7 +963,8 @@ function IntegrationsContent() {
 
     const clientId = process.env.NEXT_PUBLIC_ZOOM_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/zoom/connect`
-    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
 
     const authUrl = `https://zoom.us/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
     window.location.href = authUrl
@@ -961,7 +980,8 @@ function IntegrationsContent() {
 
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/google/connect`
-    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const scopes = [
       'openid',
       'profile',
@@ -983,7 +1003,8 @@ function IntegrationsContent() {
 
     const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/github/connect`
-    const state = btoa(JSON.stringify({ userId: userData.user.id, redirect: 'dashboard' }))
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const scopes = 'read:user repo'
 
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`

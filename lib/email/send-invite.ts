@@ -3,6 +3,10 @@
 
 import { Resend } from 'resend'
 
+function escHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 interface SendInviteParams {
   email: string
   inviterName: string
@@ -62,8 +66,8 @@ function buildEmailHtml({
             <td style="padding:40px;">
               <h2 style="margin:0 0 8px;color:#1a1a2e;font-size:20px;font-weight:600;">You've been invited!</h2>
               <p style="margin:0 0 24px;color:#4a4a68;font-size:15px;line-height:1.6;">
-                <strong>${inviterName}</strong> has invited you to join
-                <strong>${organizationName}</strong> on HeyWren as a <strong>${roleLabel}</strong>.
+                <strong>${escHtml(inviterName)}</strong> has invited you to join
+                <strong>${escHtml(organizationName)}</strong> on HeyWren as a <strong>${escHtml(roleLabel)}</strong>.
               </p>
 
               <p style="margin:0 0 32px;color:#4a4a68;font-size:15px;line-height:1.6;">

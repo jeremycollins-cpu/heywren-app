@@ -24,8 +24,12 @@ async function checkSuperAdmin(): Promise<boolean> {
   return profile?.role === 'super_admin'
 }
 
-// GET — read a config value by key
+// GET — read a config value by key (super admin only)
 export async function GET(request: NextRequest) {
+  if (!(await checkSuperAdmin())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   const key = request.nextUrl.searchParams.get('key')
   if (!key) {
     return NextResponse.json({ error: 'Missing key parameter' }, { status: 400 })

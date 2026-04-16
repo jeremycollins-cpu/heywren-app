@@ -65,15 +65,11 @@ export async function POST(request: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .eq('team_id', team.id)
 
+    // Only reveal that a team exists — don't leak team IDs, names, or member counts
     return NextResponse.json({
       teamExists: true,
       domain,
       isPersonalEmail: false,
-      team: {
-        id: team.id,
-        name: team.name,
-        memberCount: count || 1,
-      },
     })
   } catch (error: any) {
     console.error('Check domain error:', error)

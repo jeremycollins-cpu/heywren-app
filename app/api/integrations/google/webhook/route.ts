@@ -15,6 +15,18 @@ function getAdminClient() {
 }
 
 export async function POST(request: NextRequest) {
+  // Verify webhook bearer token — reject unauthenticated callers
+  const webhookSecret = process.env.GOOGLE_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    console.error('GOOGLE_WEBHOOK_SECRET is not set — rejecting webhook')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 })
+  }
+
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   let body: any
   try {
     body = await request.json()
