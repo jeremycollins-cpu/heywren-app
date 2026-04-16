@@ -68,6 +68,10 @@ export default function SecurityAlertsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [showResolved, setShowResolved] = useState(false)
+  const [showDiagnose, setShowDiagnose] = useState(false)
+  const [diagnoseQuery, setDiagnoseQuery] = useState('')
+  const [diagnoseResult, setDiagnoseResult] = useState<any>(null)
+  const [diagnosing, setDiagnosing] = useState(false)
 
   const fetchAlerts = async () => {
     setRefreshing(true)
@@ -109,6 +113,26 @@ export default function SecurityAlertsPage() {
       toast.error('Failed to update alert')
     } finally {
       setActionLoading(prev => ({ ...prev, [alertId]: false }))
+    }
+  }
+
+  const handleDiagnose = async () => {
+    if (!diagnoseQuery.trim()) return
+    setDiagnosing(true)
+    setDiagnoseResult(null)
+    try {
+      const res = await fetch('/api/email-threats/diagnose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectContains: diagnoseQuery.trim() }),
+      })
+      const data = await res.json()
+      setDiagnoseResult(data)
+      if (!res.ok) toast.error(data.error || 'Diagnose failed')
+    } catch {
+      toast.error('Diagnose failed')
+    } finally {
+      setDiagnosing(false)
     }
   }
 
@@ -198,6 +222,46 @@ export default function SecurityAlertsPage() {
           </div>
         </div>
       )}
+
+      {/* Diagnose panel — helps verify detection against a specific email */}
+      <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl">
+        <button
+          onClick={() => setShowDiagnose(!showDiagnose)}
+          className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+        >
+          <span>Not seeing an alert you expected? Diagnose a specific email</span>
+          {showDiagnose ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        {showDiagnose && (
+          <div className="px-5 pb-5 border-t border-gray-200 dark:border-border-dark pt-4 space-y-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Enter part of the subject line to run threat detection against that email. This does not create an alert — it just shows what signals fire and what the AI decides.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={diagnoseQuery}
+                onChange={e => setDiagnoseQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleDiagnose()}
+                placeholder='e.g. "Past Due Reminder"'
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              />
+              <button
+                onClick={handleDiagnose}
+                disabled={diagnosing || !diagnoseQuery.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50"
+              >
+                {diagnosing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Diagnose'}
+              </button>
+            </div>
+            {diagnoseResult && (
+              <pre className="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
+                {JSON.stringify(diagnoseResult, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Active alerts */}
       {alerts.length > 0 && (
