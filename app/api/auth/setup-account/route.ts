@@ -14,7 +14,7 @@ function getAdminClient() {
 export async function POST(request: NextRequest) {
   const supabaseAdmin = getAdminClient()
   try {
-    const { sessionId, userId, email, companyName } = await request.json()
+    const { sessionId, email, companyName } = await request.json()
 
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing session ID' }, { status: 400 })
@@ -26,14 +26,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or incomplete checkout session' }, { status: 400 })
     }
 
-    // Get user ID from metadata or request body
-    const resolvedUserId = checkoutSession.metadata?.userId !== 'pending'
-      ? checkoutSession.metadata?.userId
-      : userId
+    // Only trust userId from Stripe metadata — never from the request body
+    const resolvedUserId = checkoutSession.metadata?.userId
     const resolvedPlan = checkoutSession.metadata?.plan || 'basic'
 
-    if (!resolvedUserId) {
-      return NextResponse.json({ error: 'Could not determine user' }, { status: 400 })
+    if (!resolvedUserId || resolvedUserId === 'pending') {
+      return NextResponse.json({ error: 'Checkout session missing user information. Please retry signup.' }, { status: 400 })
     }
 
     // Check if user already has a team

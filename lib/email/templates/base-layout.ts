@@ -2,6 +2,16 @@
 // Shared HTML email wrapper used by all HeyWren transactional emails.
 // Uses hosted PNG images from /api/email-assets for maximum email client compatibility.
 
+/** Escape HTML entities to prevent injection in email templates. */
+export function escHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export interface BaseLayoutOptions {
   preheader?: string
   body: string
@@ -154,8 +164,8 @@ export function statRow(stats: { label: string; value: string; change?: string }
       ? `<div style="font-size:12px;margin-top:2px;color:${s.change.startsWith('+') || s.change.startsWith('↑') ? '#16a34a' : s.change.startsWith('-') || s.change.startsWith('↓') ? '#dc2626' : '#6b7280'};">${s.change}</div>`
       : ''
     return `<td style="padding:14px 12px;text-align:center;width:${Math.floor(100 / stats.length)}%;">
-      <div class="stat-value" style="font-size:26px;font-weight:800;color:#1a1a2e;letter-spacing:-0.02em;">${s.value}</div>
-      <div style="font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">${s.label}</div>
+      <div class="stat-value" style="font-size:26px;font-weight:800;color:#1a1a2e;letter-spacing:-0.02em;">${escHtml(s.value)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">${escHtml(s.label)}</div>
       ${changeHtml}
     </td>`
   }).join('')
@@ -167,12 +177,12 @@ export function statRow(stats: { label: string; value: string; change?: string }
 
 /** Renders a section heading inside the email body. */
 export function sectionHeading(text: string): string {
-  return `<h2 style="margin:28px 0 10px;color:#1a1a2e;font-size:18px;font-weight:700;letter-spacing:-0.01em;">${text}</h2>`
+  return `<h2 style="margin:28px 0 10px;color:#1a1a2e;font-size:18px;font-weight:700;letter-spacing:-0.01em;">${escHtml(text)}</h2>`
 }
 
 /** Renders body paragraph text. */
 export function paragraph(text: string): string {
-  return `<p style="margin:0 0 16px;color:#4a4a68;font-size:15px;line-height:1.7;">${text}</p>`
+  return `<p style="margin:0 0 16px;color:#4a4a68;font-size:15px;line-height:1.7;">${escHtml(text)}</p>`
 }
 
 /** Renders a highlighted insight/callout box with wren icon. */
@@ -187,7 +197,7 @@ export function insightBox(text: string): string {
             <img src="${assetUrl}?type=insight-icon" width="22" height="22" alt="" style="display:block;border:0;" />
           </td>
           <td>
-            <p style="margin:0;color:#3730a3;font-size:14px;line-height:1.6;font-weight:500;">${text}</p>
+            <p style="margin:0;color:#3730a3;font-size:14px;line-height:1.6;font-weight:500;">${escHtml(text)}</p>
           </td>
         </tr>
       </table>
@@ -201,8 +211,8 @@ export function wrenGreeting(userName: string, message: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
   <tr>
     <td>
-      <p style="margin:0 0 4px;color:#1a1a2e;font-size:17px;font-weight:600;">Hi ${userName},</p>
-      <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">${message}</p>
+      <p style="margin:0 0 4px;color:#1a1a2e;font-size:17px;font-weight:600;">Hi ${escHtml(userName)},</p>
+      <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">${escHtml(message)}</p>
     </td>
   </tr>
 </table>`
