@@ -112,14 +112,18 @@ function getInitials(name: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00Z')
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  if (dateStr === today.toISOString().split('T')[0]) return 'Today'
-  if (dateStr === yesterday.toISOString().split('T')[0]) return 'Yesterday'
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  // dateStr is already a local-timezone date (YYYY-MM-DD) from the API.
+  // Parse at noon UTC to avoid date-boundary shifts, and render with
+  // timeZone: 'UTC' so the browser doesn't re-interpret the date.
+  const d = new Date(dateStr + 'T12:00:00Z')
+  const now = new Date()
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  const yesterdayDate = new Date(now)
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+  const yesterdayStr = yesterdayDate.toLocaleDateString('en-CA', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  if (dateStr === todayStr) return 'Today'
+  if (dateStr === yesterdayStr) return 'Yesterday'
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────

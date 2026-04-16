@@ -22,21 +22,48 @@ export interface LocalTime {
 
 /**
  * Convert a UTC timestamp to local date/time in the given IANA timezone.
+ *
+ * Uses Intl.DateTimeFormat.formatToParts() for reliable timezone conversion.
+ * Avoids the fragile `new Date(d.toLocaleString())` pattern which breaks in
+ * Node 18+ due to Unicode narrow no-break space (\u202f) in locale output,
+ * and produces wrong results when the server timezone is not UTC.
  */
 export function toLocalTime(utcTimestamp: string, timezone: string): LocalTime {
   const d = new Date(utcTimestamp)
-  // Use toLocaleString to get the local date/time components
-  const local = new Date(d.toLocaleString('en-US', { timeZone: timezone }))
-  const year = local.getFullYear()
-  const month = String(local.getMonth() + 1).padStart(2, '0')
-  const day = String(local.getDate()).padStart(2, '0')
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find(p => p.type === type)?.value || ''
+
+  const year = get('year')
+  const month = get('month')
+  const day = get('day')
+  const hours = parseInt(get('hour'), 10)
+  const minutes = parseInt(get('minute'), 10)
+
+  const weekdayStr = get('weekday')
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  }
 
   return {
     dateStr: `${year}-${month}-${day}`,
-    dayOfWeek: local.getDay(),
-    hours: local.getHours(),
-    minutes: local.getMinutes(),
-    timeMinutes: local.getHours() * 60 + local.getMinutes(),
+    dayOfWeek: weekdayMap[weekdayStr] ?? new Date(
+      `${year}-${month}-${day}T12:00:00Z`
+    ).getUTCDay(),
+    hours,
+    minutes,
+    timeMinutes: hours * 60 + minutes,
     formatted: d.toLocaleString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -56,8 +83,13 @@ export function todayInTimezone(timezone: string): string {
  * Get "yesterday" as a YYYY-MM-DD string in the given timezone.
  */
 export function yesterdayInTimezone(timezone: string): string {
-  const yesterday = new Date(Date.now() - 86400000)
-  return toLocalTime(yesterday.toISOString(), timezone).dateStr
+  const today = todayInTimezone(timezone)
+  const [y, m, d] = today.split('-').map(Number)
+  const prev = new Date(Date.UTC(y, m - 1, d - 1, 12)) // noon UTC avoids DST edge cases
+  const yy = prev.getUTCFullYear()
+  const mm = String(prev.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(prev.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
 }
 
 /**

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { toLocalTime } from '@/lib/time/user-timezone'
 
 function getAdminClient() {
   return createClient(
@@ -245,19 +246,23 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Timezone helper ────────────────────────────────────────────────
-    // Convert a UTC timestamp to local date/time in the given timezone.
-    function toLocal(utcTimestamp: string, timezone: string) {
-      const d = new Date(utcTimestamp)
-      const local = new Date(d.toLocaleString('en-US', { timeZone: timezone }))
-      return {
-        dateStr: local.toISOString().split('T')[0],
-        // Use the shifted Date for reliable local extraction
-        dayOfWeek: local.getDay(), // 0=Sun
-        hours: local.getHours(),
-        minutes: local.getMinutes(),
-        timeMinutes: local.getHours() * 60 + local.getMinutes(),
-        localDate: local,
+    // Alias the shared utility for brevity within this function.
+    const toLocal = (utcTimestamp: string, timezone: string) =>
+      toLocalTime(utcTimestamp, timezone)
+
+    // Walk backward through calendar days in a timezone, yielding YYYY-MM-DD strings.
+    function localDaysBack(daysBack: number, timezone: string): string[] {
+      const todayStr = toLocal(now.toISOString(), timezone).dateStr
+      const [y, m, d] = todayStr.split('-').map(Number)
+      const dates: string[] = []
+      for (let i = 0; i < daysBack; i++) {
+        const dt = new Date(Date.UTC(y, m - 1, d - i, 12)) // noon UTC avoids DST shifts
+        const yy = dt.getUTCFullYear()
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+        const dd = String(dt.getUTCDate()).padStart(2, '0')
+        dates.push(`${yy}-${mm}-${dd}`)
       }
+      return dates
     }
 
     // ── Detect anomalies ─────────────────────────────────────────────────
@@ -286,19 +291,19 @@ export async function GET(request: NextRequest) {
         activitiesByLocalDate.get(local.dateStr)!.push(a)
       }
 
-      // Iterate each day in the lookback window (in the user's timezone)
-      const todayLocal = toLocal(now.toISOString(), tz).dateStr
-      for (let d = 0; d < daysParam; d++) {
-        const dayDate = new Date(now)
-        dayDate.setDate(dayDate.getDate() - d)
-        const local = toLocal(dayDate.toISOString(), tz)
-        const dateStr = local.dateStr
+      // Iterate each day in the lookback window (in the user's local timezone)
+      const localDates = localDaysBack(daysParam, tz)
+      const todayLocal = localDates[0] // index 0 = today
 
+      for (const dateStr of localDates) {
         // Skip today (incomplete data)
         if (dateStr === todayLocal) continue
 
-        // Skip non-work days (checked in user's local timezone)
-        if (!schedule.work_days.includes(local.dayOfWeek)) continue
+        // Derive day-of-week from the local date itself (noon UTC keeps the date stable)
+        const dayOfWeek = new Date(dateStr + 'T12:00:00Z').getUTCDay()
+
+        // Skip non-work days
+        if (!schedule.work_days.includes(dayOfWeek)) continue
 
         // Get activities for this local date
         const dayActivities = activitiesByLocalDate.get(dateStr) || []
@@ -418,7 +423,7 @@ export async function GET(request: NextRequest) {
       const overdueCount = userCommitments.filter((c: { status: string }) => c.status === 'overdue').length
 
       if (openCount >= 10 || overdueCount >= 3) {
-        const dateStr = now.toISOString().split('T')[0]
+        const dateStr = toLocal(now.toISOString(), tz).dateStr
         const key = `${uid}:${dateStr}:overloaded`
         anomalies.push({
           userId: uid,
