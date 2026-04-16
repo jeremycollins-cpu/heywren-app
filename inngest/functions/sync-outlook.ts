@@ -519,10 +519,15 @@ export async function syncTeamOutlook(
   }
 
   // Phase 3: Calendar events (next 2 weeks)
+  // Uses its own dedicated time budget so email processing above can't starve it.
+  // Previously, users with large email backlogs saw 0 calendar events because
+  // this phase was gated by the shared TIME_BUDGET_MS and skipped entirely.
   let calendarCommitments = 0
   let calendarEventsScanned = 0
 
-  if (Date.now() - startTime < TIME_BUDGET_MS) {
+  {
+    const CALENDAR_BUDGET_MS = 90000 // 90s dedicated for calendar fetch + AI
+    const calStart = Date.now()
     const now = new Date()
     const calDaysBack = options?.daysBack || 1
     const startDate = new Date(now.getTime() - calDaysBack * 24 * 60 * 60 * 1000).toISOString()
@@ -536,7 +541,7 @@ export async function syncTeamOutlook(
 
     let calNextLink: string | null = calendarUrl
 
-    while (calNextLink && Date.now() - startTime < TIME_BUDGET_MS) {
+    while (calNextLink && Date.now() - calStart < CALENDAR_BUDGET_MS) {
       const { data: calData, token: updatedToken } = await graphFetch(
         calNextLink, msToken, supabase, integrationId, refreshToken
       )

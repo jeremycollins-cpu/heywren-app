@@ -399,6 +399,9 @@ export default function SyncPage() {
           {dataCounts.slackMessages === 0 && hasSlack && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">No Slack messages synced yet. Click &ldquo;Sync Slack History&rdquo; below to pull in your messages.</p>
           )}
+          {dataCounts.calendarEvents === 0 && hasOutlook && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">No calendar events synced yet. Click &ldquo;Sync Outlook History&rdquo; below to pull in your upcoming meetings.</p>
+          )}
         </div>
       )}
 

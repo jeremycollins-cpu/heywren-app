@@ -582,12 +582,15 @@ export async function POST(request: NextRequest) {
 
   // ================================================================
   // PHASE 3: Fetch calendar events from Graph API
+  // Uses its own dedicated time budget so email processing above can't starve it.
   // ================================================================
   let calendarEventsScanned = 0
   let calendarEventsNew = 0
   let calendarCommitments = 0
 
-  if (Date.now() - startTime < TIME_BUDGET_MS) {
+  {
+    const CALENDAR_BUDGET_MS = 90000 // 90s dedicated for calendar fetch + AI
+    const calStart = Date.now()
     const now = new Date()
     const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString()
     const endDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() // 2 weeks ahead
@@ -601,8 +604,8 @@ export async function POST(request: NextRequest) {
     let calNextLink: string | null = calendarUrl
 
     while (calNextLink) {
-      if (Date.now() - startTime > TIME_BUDGET_MS) {
-        errors.push('Time budget reached during calendar sync. Click sync again to continue.')
+      if (Date.now() - calStart > CALENDAR_BUDGET_MS) {
+        errors.push('Calendar sync time budget reached. Click sync again to continue.')
         break
       }
 
