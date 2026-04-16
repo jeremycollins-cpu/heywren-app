@@ -4,10 +4,10 @@ const nextConfig = {
   // mapping needed. The previous `env` block existed only to inject hardcoded
   // production fallbacks, which was a security issue (see PR #226).
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   async headers() {
     return [
