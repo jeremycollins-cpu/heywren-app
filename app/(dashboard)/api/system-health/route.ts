@@ -6,7 +6,6 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
-import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdminClient() {
   return createClient(
@@ -55,9 +54,20 @@ export async function GET() {
 
     const admin = getAdminClient()
     const userId = userData.user.id
-    const teamId = await resolveTeamId(admin, userId)
-    if (!teamId) {
-      return NextResponse.json({ error: 'No team' }, { status: 400 })
+
+    // Anchor on organization_id, not team_id. Users are UNIQUE(org, user) per
+    // migration 019, so organization_id is the stable identity that can't drift
+    // between the read path (this endpoint) and the write path (AI pipelines
+    // writing ai_platform_usage / system_errors / etc via trigger fill-in).
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('organization_id, current_team_id')
+      .eq('id', userId)
+      .single()
+
+    const organizationId = profile?.organization_id
+    if (!organizationId) {
+      return NextResponse.json({ error: 'No organization' }, { status: 400 })
     }
 
     const now = Date.now()
@@ -107,13 +117,13 @@ export async function GET() {
             .from('ai_platform_usage')
             .select('created_at, items_processed, api_calls')
             .eq('module', def.module)
-            .eq('team_id', teamId)
+            .eq('organization_id', organizationId)
             .gte('created_at', weekAgo)
             .order('created_at', { ascending: false }),
           admin
             .from('system_errors')
             .select('id', { count: 'exact', head: true })
-            .eq('team_id', teamId)
+            .eq('organization_id', organizationId)
             .ilike('error_key', `%${def.module}%`)
             .gte('created_at', dayAgo),
         ])
@@ -163,32 +173,31 @@ export async function GET() {
       admin
         .from('commitments')
         .select('created_at')
-        .eq('team_id', teamId)
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(1),
+      // outlook_messages has no organization_id column yet — filter by user_id,
+      // which is sufficient since UNIQUE(org, user) guarantees no cross-org leakage.
       admin
         .from('outlook_messages')
         .select('received_at')
-        .eq('team_id', teamId)
         .eq('user_id', userId)
         .order('received_at', { ascending: false })
         .limit(1),
       admin
         .from('outlook_messages')
         .select('id', { count: 'exact', head: true })
-        .eq('team_id', teamId)
         .eq('user_id', userId)
         .eq('processed', false)
         .lt('created_at', new Date(now - 3600000).toISOString()),
       admin
         .from('integrations')
         .select('id, provider, config, refresh_token')
-        .eq('team_id', teamId)
         .eq('user_id', userId),
       admin
         .from('system_errors')
         .select('id, source, message, severity, error_key, created_at')
-        .eq('team_id', teamId)
+        .eq('organization_id', organizationId)
         .gte('created_at', dayAgo)
         .order('created_at', { ascending: false })
         .limit(10),
