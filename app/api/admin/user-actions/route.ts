@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: !error,
-      message: error ? `Failed: ${error.message}` : 'Onboarding marked as complete',
+      message: error ? 'Failed to update onboarding status' : 'Onboarding marked as complete',
     })
   }
 
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: !error,
-      message: error ? `Failed: ${error.message}` : `Role updated to ${body.role}`,
+      message: error ? 'Failed to update role' : `Role updated to ${body.role}`,
     })
   }
 
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: !error,
-      message: error ? `Failed to delete auth user: ${error.message}` : 'User completely deleted',
+      message: error ? 'Failed to delete user' : 'User completely deleted',
     })
   }
 
@@ -205,11 +205,11 @@ export async function POST(request: NextRequest) {
           }).eq('id', integration.id)
           return NextResponse.json({ success: true, message: `${provider} token refreshed successfully` })
         }
-        return NextResponse.json({ error: `Token refresh failed: ${tokenData.error_description || tokenData.error}` }, { status: 400 })
+        return NextResponse.json({ error: 'Token refresh failed' }, { status: 400 })
       }
       return NextResponse.json({ error: `Token refresh not supported for ${provider}` }, { status: 400 })
     } catch (err) {
-      return NextResponse.json({ error: `Token refresh error: ${(err as Error).message}` }, { status: 500 })
+      return NextResponse.json({ error: 'Token refresh error' }, { status: 500 })
     }
   }
 
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
       allowed_domains: cleanDomains,
     }).eq('id', orgId)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Failed to update domains' }, { status: 500 })
     return NextResponse.json({ success: true, message: `Domains updated: ${cleanDomains.join(', ') || 'none'}` })
   }
 
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
       email: profile.email,
     })
 
-    if (error) return NextResponse.json({ error: `Failed: ${error.message}` }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Failed to send password reset' }, { status: 500 })
     return NextResponse.json({ success: true, message: `Password reset email sent to ${profile.email}` })
   }
 
@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
       email: profile.email,
     })
 
-    if (error || !data) return NextResponse.json({ error: `Failed: ${error?.message || 'Unknown error'}` }, { status: 500 })
+    if (error || !data) return NextResponse.json({ error: 'Failed to generate magic link' }, { status: 500 })
 
     const link = data.properties?.action_link || ''
     return NextResponse.json({ success: true, message: `Magic link generated for ${profile.email}`, link })
@@ -492,10 +492,10 @@ export async function POST(request: NextRequest) {
         subject: `[TEST] ${subject}`,
         html,
       })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return NextResponse.json({ error: 'Failed to send test email' }, { status: 500 })
       return NextResponse.json({ success: true, message: `Test "${template}" email sent to ${userEmail} (${data?.id})` })
     } catch (err) {
-      return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to send test email' }, { status: 500 })
     }
   }
 
@@ -516,7 +516,7 @@ export async function POST(request: NextRequest) {
           error: 'admin_notes column not found. Run: ALTER TABLE profiles ADD COLUMN admin_notes text;',
         }, { status: 500 })
       }
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to save notes' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, message: 'Notes saved' })
@@ -709,7 +709,7 @@ export async function POST(request: NextRequest) {
       .eq('id', membership.organization_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update billing type' }, { status: 500 })
     }
 
     // Also update the team

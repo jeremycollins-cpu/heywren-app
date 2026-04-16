@@ -190,7 +190,12 @@ async function syncZoomRecordings(
 
     // Download transcript
     const transcriptRes = await fetch(
-      `${transcriptFile.download_url}?access_token=${accessToken}`
+      transcriptFile.download_url,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
     )
 
     if (!transcriptRes.ok) continue

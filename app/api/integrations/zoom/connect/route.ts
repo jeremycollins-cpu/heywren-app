@@ -61,9 +61,9 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json()
 
     if (tokenData.error) {
-      console.error('Zoom token exchange error:', tokenData.error, tokenData.reason)
+      console.error('Zoom token exchange error:', tokenData.error)
       return NextResponse.json(
-        { error: tokenData.reason || 'Failed to get access token' },
+        { error: 'Failed to get access token' },
         { status: 400 }
       )
     }

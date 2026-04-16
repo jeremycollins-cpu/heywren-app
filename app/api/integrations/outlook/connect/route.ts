@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const redirect = stateData?.redirect || 'dashboard'
 
   if (error) {
-    console.error('Microsoft OAuth error:', error, errorDescription)
+    console.error('Microsoft OAuth error:', error)
     const redirectUrl = redirect === 'onboarding'
       ? '/onboarding/integrations?outlook=error'
       : '/integrations?status=error'
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json()
 
     if (tokenData.error) {
-      console.error('Token exchange error:', tokenData.error, tokenData.error_description)
+      console.error('Token exchange error:', tokenData.error)
       const errorRedirect = redirect === 'onboarding'
         ? '/onboarding/integrations?outlook=error'
         : '/integrations?status=error'

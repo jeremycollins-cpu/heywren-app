@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Onboarding complete update failed:', error)
       return NextResponse.json(
-        { error: 'Failed to mark onboarding complete: ' + error.message },
+        { error: 'Failed to update onboarding status' },
         { status: 500 }
       )
     }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('Complete onboarding error:', err)
     return NextResponse.json(
-      { error: err.message || 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json()
 
     if (tokenData.error) {
-      console.error('Google token exchange error:', tokenData.error, tokenData.error_description)
+      console.error('Google token exchange error:', tokenData.error)
       return NextResponse.json(
-        { error: tokenData.error_description || 'Failed to get access token' },
+        { error: 'Failed to get access token' },
         { status: 400 }
       )
     }

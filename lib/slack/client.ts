@@ -84,6 +84,14 @@ export async function verifySlackSignature(
   body: string
 ): Promise<boolean> {
   const crypto = require('crypto')
+
+  // Reject requests older than 5 minutes to prevent replay attacks
+  const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 60 * 5
+  if (parseInt(timestamp) < fiveMinutesAgo) {
+    console.warn('Slack signature verification failed — timestamp too old (possible replay attack)')
+    return false
+  }
+
   const baseString = `v0:${timestamp}:${body}`
   const mySignature =
     'v0=' +

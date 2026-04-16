@@ -304,7 +304,7 @@ When suggesting actions, be specific: "Reply to Sarah's email about the Q2 budge
     })
   } catch (err: any) {
     console.error('Chat error:', err)
-    return NextResponse.json({ error: err.message || 'Chat failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 

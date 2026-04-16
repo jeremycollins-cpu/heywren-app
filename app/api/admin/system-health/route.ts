@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
 
     if (
       !callerProfile ||
-      !['admin', 'super_admin'].includes(callerProfile.role)
+      callerProfile.role !== 'super_admin'
     ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
