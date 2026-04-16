@@ -23,7 +23,7 @@ function getAdminClient() {
   )
 }
 
-const MAX_EMAILS_PER_USER = 50
+const MAX_EMAILS_PER_USER = 250
 const MIN_CONFIDENCE_TO_ALERT = 0.75
 const TIME_BUDGET_MS = 240000 // 4 minutes
 
