@@ -217,6 +217,22 @@ function IntegrationsSetupContent() {
     }
   }
 
+  /** Fetch HMAC-signed OAuth state from the server to prevent CSRF. */
+  const getSignedState = async (redirect: string): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/integrations/oauth-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect }),
+      })
+      if (!res.ok) return null
+      const { state } = await res.json()
+      return state || null
+    } catch {
+      return null
+    }
+  }
+
   const handleSlackConnect = async () => {
     const { data: authData } = await supabase.auth.getUser()
     if (!authData?.user) {
@@ -226,7 +242,8 @@ function IntegrationsSetupContent() {
 
     const clientId = process.env.NEXT_PUBLIC_SLACK_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`
-    const state = btoa(JSON.stringify({ userId: authData.user.id, redirect: 'onboarding' }))
+    const state = await getSignedState('onboarding')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const scopes = [
       'channels:read',
       'channels:history',
@@ -255,7 +272,8 @@ function IntegrationsSetupContent() {
 
     const clientId = process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || ''
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/outlook/connect`
-    const state = btoa(JSON.stringify({ userId: authData.user.id, redirect: 'onboarding' }))
+    const state = await getSignedState('onboarding')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
     const scopes = [
       'openid',
       'profile',

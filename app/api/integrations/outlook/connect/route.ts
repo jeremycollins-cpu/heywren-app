@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureTeamForUser } from '@/lib/team/ensure-team'
+import { verifyOAuthState } from '@/lib/crypto/oauth-state'
 
 function getAdminClient() {
   return createClient(
@@ -16,18 +17,10 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
-  // Parse state
-  let userId: string | null = null
-  let redirect = 'dashboard'
-  try {
-    if (state) {
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      userId = stateData.userId || null
-      redirect = stateData.redirect || 'dashboard'
-    }
-  } catch (e) {
-    console.error('Failed to parse state:', e)
-  }
+  // Verify HMAC-signed state to prevent CSRF
+  const stateData = state ? verifyOAuthState(state) : null
+  const userId = stateData?.userId || null
+  const redirect = stateData?.redirect || 'dashboard'
 
   if (error) {
     console.error('Microsoft OAuth error:', error, errorDescription)

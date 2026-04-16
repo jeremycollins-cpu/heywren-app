@@ -26,6 +26,18 @@ function getAdminClient() {
 }
 
 export async function POST(req: NextRequest) {
+  // Verify webhook secret — reject unauthenticated callers
+  const webhookSecret = process.env.RECALL_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    console.error('[recall-webhook] RECALL_WEBHOOK_SECRET is not set — rejecting webhook')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 })
+  }
+
+  const authHeader = req.headers.get('x-recall-signature') || req.headers.get('authorization')
+  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const body = await req.json()
 

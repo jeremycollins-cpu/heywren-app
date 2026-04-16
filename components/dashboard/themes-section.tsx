@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import {
-  Sparkles, TrendingUp, Minus, AlertCircle,
+  Sparkles, TrendingUp, Minus, AlertCircle, ArrowRight,
   Mail, Calendar, MessageSquare, CheckCircle2,
   ChevronDown, ChevronUp,
   Eye, Clock,
@@ -414,10 +415,22 @@ export function ThemesSection() {
       </div>
 
       {/* Theme Cards */}
-      <div className="px-5 pb-5 space-y-2">
+      <div className="px-5 pb-4 space-y-2">
         {data.themes.map((theme, i) => (
           <ThemeCard key={i} theme={theme} index={i} />
         ))}
+      </div>
+
+      {/* Full Signal CTA */}
+      <div className="px-5 pb-5">
+        <Link
+          href="/the-signal"
+          className="flex items-center justify-center gap-2 w-full py-2.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-950/50 rounded-xl transition"
+        >
+          <Sparkles className="w-4 h-4" aria-hidden="true" />
+          Open The Signal — upload context, refine, and export
+          <ArrowRight className="w-4 h-4" aria-hidden="true" />
+        </Link>
       </div>
     </section>
   )

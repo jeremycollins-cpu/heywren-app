@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 
 export async function GET() {
   const supabase = await createClient()
@@ -40,7 +41,7 @@ export async function GET() {
           .select('created_at')
           .eq('team_id', teamId)
           .or(`user_id.eq.${user.id},user_id.is.null`)
-          .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+          .or(`from_email.eq.${sf(userEmail)},to_recipients.ilike.%${sf(userEmail)}%`)
           .order('created_at', { ascending: false })
           .limit(1)
       : Promise.resolve({ data: null }),

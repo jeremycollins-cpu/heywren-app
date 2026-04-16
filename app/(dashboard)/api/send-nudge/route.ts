@@ -114,16 +114,17 @@ export async function POST(request: NextRequest) {
     if (channels.includes('email')) {
       if (targetProfile.email) {
         const targetName = targetProfile.display_name || targetProfile.email.split('@')[0]
+        const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
         const emailResult = await sendEmail({
           to: targetProfile.email,
           subject: `Message from ${callerName}`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px;">
-              <p style="color: #374151;">Hi ${targetName},</p>
+              <p style="color: #374151;">Hi ${esc(targetName)},</p>
               <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="color: #111827; margin: 0; white-space: pre-wrap;">${message.trim()}</p>
+                <p style="color: #111827; margin: 0; white-space: pre-wrap;">${esc(message.trim())}</p>
               </div>
-              <p style="color: #6b7280; font-size: 14px;">— ${callerName} via HeyWren</p>
+              <p style="color: #6b7280; font-size: 14px;">— ${esc(callerName)} via HeyWren</p>
             </div>
           `,
           emailType: 'nudge',

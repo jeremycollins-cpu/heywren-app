@@ -41,12 +41,13 @@ export async function GET(
       return NextResponse.json({ error: 'No team found' }, { status: 400 })
     }
 
-    // Fetch transcript (RLS-like check via team_id)
+    // Fetch transcript (RLS-like check via team_id + user_id)
     const { data: transcript, error: fetchError } = await supabase
       .from('meeting_transcripts')
       .select('*')
       .eq('id', id)
       .eq('team_id', profile.current_team_id)
+      .eq('user_id', user.id)
       .single()
 
     if (fetchError || !transcript) {

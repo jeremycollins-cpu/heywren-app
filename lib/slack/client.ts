@@ -88,7 +88,7 @@ export async function verifySlackSignature(
   const mySignature =
     'v0=' +
     crypto
-      .createHmac('sha256', process.env.SLACK_CLIENT_SECRET!)
+      .createHmac('sha256', process.env.SLACK_SIGNING_SECRET!)
       .update(baseString)
       .digest('hex')
 

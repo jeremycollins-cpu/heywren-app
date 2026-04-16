@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
 import { ensureTeamForUser } from '@/lib/team/ensure-team'
+import { verifyOAuthState } from '@/lib/crypto/oauth-state'
 
 function getAdminClient() {
   return createClient(
@@ -19,22 +20,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing authorization code' }, { status: 400 })
   }
 
-  // Parse userId from state
-  let userId: string | null = null
-  let redirect = 'dashboard'
-  try {
-    if (state) {
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      userId = stateData.userId || null
-      redirect = stateData.redirect || 'dashboard'
-    }
-  } catch (e) {
-    console.error('Failed to parse state:', e)
+  // Verify HMAC-signed state to prevent CSRF
+  if (!state) {
+    return NextResponse.json({ error: 'Missing state parameter' }, { status: 400 })
   }
-
-  if (!userId) {
-    return NextResponse.json({ error: 'Missing user context. Please try connecting again.' }, { status: 400 })
+  const stateData = verifyOAuthState(state)
+  if (!stateData) {
+    return NextResponse.json({ error: 'Invalid or tampered state. Please try connecting again.' }, { status: 400 })
   }
+  const userId = stateData.userId
+  const redirect = stateData.redirect || 'dashboard'
 
   try {
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/slack/connect`

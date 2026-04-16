@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { isActive, isCompleted } from '@/lib/commitments/status'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 
 function getAdminClient() {
   return createClient(
@@ -164,7 +165,7 @@ export async function GET(request: NextRequest) {
       userTeamId && slackUserId
         ? adminDb.from('slack_messages').select('id, processed, commitments_found').eq('team_id', userTeamId).eq('user_id', slackUserId)
         : userTeamId ? adminDb.from('slack_messages').select('id, processed, commitments_found').eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ data: [], count: 0 }),
-      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).or(`user_id.eq.${userId}${userEmail ? `,organizer_email.eq.${userEmail}` : ''}`) : Promise.resolve({ count: 0 }),
+      userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).or(`user_id.eq.${userId}${userEmail ? `,organizer_email.eq.${sf(userEmail)}` : ''}`) : Promise.resolve({ count: 0 }),
       userTeamId ? adminDb.from('awaiting_replies').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']) : Promise.resolve({ count: 0 }),
       // Recent activity for support debugging
       userOrgId
@@ -175,7 +176,7 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('awaiting_replies').select('subject, status, urgency, sent_at, days_waiting').eq('team_id', userTeamId).eq('user_id', userId).in('status', ['waiting', 'snoozed']).order('sent_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Recent emails scoped to user (by user_id or email match)
       userTeamId && userEmail
-        ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`).order('received_at', { ascending: false }).limit(10)
+        ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).or(`user_id.eq.${userId},from_email.eq.${sf(userEmail)},to_recipients.ilike.%${sf(userEmail)}%`).order('received_at', { ascending: false }).limit(10)
         : userTeamId ? adminDb.from('outlook_messages').select('subject, from_name, received_at, processed').eq('team_id', userTeamId).eq('user_id', userId).order('received_at', { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
       // Integration health: full details including tokens and config
       adminDb.from('integrations').select('id, provider, access_token, refresh_token, config, updated_at').eq('user_id', userId),
@@ -184,7 +185,7 @@ export async function GET(request: NextRequest) {
       userTeamId ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),
       // Emails likely belonging to this user but not yet tagged
       userTeamId && userEmail
-        ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null).or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+        ? adminDb.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).is('user_id', null).or(`from_email.eq.${sf(userEmail)},to_recipients.ilike.%${sf(userEmail)}%`)
         : Promise.resolve({ count: 0 }),
       // Calendar events tagged with this user's user_id
       userTeamId ? adminDb.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', userTeamId).eq('user_id', userId) : Promise.resolve({ count: 0 }),

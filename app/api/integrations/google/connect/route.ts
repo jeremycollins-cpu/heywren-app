@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureTeamForUser } from '@/lib/team/ensure-team'
 import { inngest } from '@/inngest/client'
+import { verifyOAuthState } from '@/lib/crypto/oauth-state'
 
 function getAdminClient() {
   return createClient(
@@ -21,18 +22,10 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   const error = searchParams.get('error')
 
-  // Parse state
-  let userId: string | null = null
-  let redirect = 'dashboard'
-  try {
-    if (state) {
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-      userId = stateData.userId || null
-      redirect = stateData.redirect || 'dashboard'
-    }
-  } catch (e) {
-    console.error('Failed to parse Google OAuth state:', e)
-  }
+  // Verify HMAC-signed state to prevent CSRF
+  const stateData = state ? verifyOAuthState(state) : null
+  const userId = stateData?.userId || null
+  const redirect = stateData?.redirect || 'dashboard'
 
   if (error) {
     console.error('Google OAuth error:', error)

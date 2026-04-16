@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { WebClient } from '@slack/web-api'
 import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 import { resolveTeamId } from '@/lib/team/resolve-team'
 
 // GET — Fetch pending/snoozed missed chats for current user's team
@@ -106,7 +107,7 @@ export async function GET() {
       .eq('team_id', teamId)
       .not('channel_id', 'like', 'D%')
       .not('channel_id', 'like', 'G%')
-      .or(`user_id.eq.${slackUserId},message_text.ilike.%<@${slackUserId}>%`)
+      .or(`user_id.eq.${sf(slackUserId)},message_text.ilike.%<@${sf(slackUserId)}>%`)
 
     totalEvaluated = (dmCount || 0) + (channelCount || 0)
   }
