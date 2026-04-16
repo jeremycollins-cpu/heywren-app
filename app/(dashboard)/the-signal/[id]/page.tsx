@@ -24,14 +24,14 @@ function periodLabel(periodStart: string): string {
 
 export default function MonthlyBriefingDetailPage() {
   return (
-    <UpgradeGate featureKey="monthly_briefing">
+    <UpgradeGate featureKey="the_signal">
       <Detail />
     </UpgradeGate>
   )
 }
 
 interface DetailState {
-  briefing: MonthlyBriefing | null
+  signal: MonthlyBriefing | null
   sections: BriefingSection[]
   uploads: BriefingUpload[]
   messages: BriefingMessage[]
@@ -40,30 +40,30 @@ interface DetailState {
 function Detail() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
-  const briefingId = params.id
+  const signalId = params.id
 
   const [loading, setLoading] = useState(true)
   const [state, setState] = useState<DetailState>({
-    briefing: null, sections: [], uploads: [], messages: [],
+    signal: null, sections: [], uploads: [], messages: [],
   })
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
 
   const fetchBriefing = async () => {
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}`)
+      const res = await fetch(`/api/the-signal/${signalId}`)
       if (res.status === 404) {
         toast.error('Briefing not found.')
-        router.push('/monthly-briefing')
+        router.push('/the-signal')
         return
       }
       const json = await res.json()
       if (!res.ok) {
-        toast.error(json.error || 'Could not load briefing.')
+        toast.error(json.error || 'Could not load signal.')
         return
       }
       setState({
-        briefing: json.briefing,
+        signal: json.briefing,
         sections: json.sections || [],
         uploads: json.uploads || [],
         messages: json.messages || [],
@@ -79,17 +79,17 @@ function Detail() {
   useEffect(() => {
     fetchBriefing()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [briefingId])
+  }, [signalId])
 
   // Poll while generation is in progress or uploads are being extracted.
   const inFlight = useMemo(() => {
-    if (!state.briefing) return false
-    const genInFlight = ['pending', 'aggregating', 'extracting', 'synthesizing'].includes(state.briefing.status)
+    if (!state.signal) return false
+    const genInFlight = ['pending', 'aggregating', 'extracting', 'synthesizing'].includes(state.signal.status)
     const uploadsExtracting = state.uploads.some(u =>
       u.extraction_status === 'pending' || u.extraction_status === 'extracting'
     )
     return genInFlight || uploadsExtracting
-  }, [state.briefing, state.uploads])
+  }, [state.signal, state.uploads])
 
   useEffect(() => {
     if (!inFlight) return
@@ -128,7 +128,7 @@ function Detail() {
   const regenerate = async () => {
     setRegenerating(true)
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/regenerate`, {
+      const res = await fetch(`/api/the-signal/${signalId}/regenerate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -146,12 +146,12 @@ function Detail() {
   }
 
   const deleteBriefing = async () => {
-    if (!confirm('Delete this briefing permanently?')) return
+    if (!confirm('Delete this signal permanently?')) return
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/the-signal/${signalId}`, { method: 'DELETE' })
       if (res.ok) {
         toast.success('Briefing deleted.')
-        router.push('/monthly-briefing')
+        router.push('/the-signal')
       }
     } catch { /* ignore */ }
   }
@@ -164,9 +164,9 @@ function Detail() {
     )
   }
 
-  if (!state.briefing) return null
+  if (!state.signal) return null
 
-  const b = state.briefing
+  const b = state.signal
   const isReady = b.status === 'ready'
   const isFailed = b.status === 'failed'
 
@@ -174,11 +174,11 @@ function Detail() {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Back */}
       <Link
-        href="/monthly-briefing"
+        href="/the-signal"
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 mb-4"
       >
         <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-        All briefings
+        All signals
       </Link>
 
       {/* Header */}
@@ -187,7 +187,7 @@ function Detail() {
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-5 h-5 text-violet-600" aria-hidden="true" />
             <span className="text-xs font-semibold uppercase tracking-wide text-violet-600">
-              Monthly Briefing · {periodLabel(b.period_start)}
+              The Signal · {periodLabel(b.period_start)}
             </span>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1" style={{ letterSpacing: '-0.025em' }}>
@@ -222,7 +222,7 @@ function Detail() {
         <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl p-4 mb-6 flex items-center gap-3">
           <Loader2 className="w-4 h-4 text-blue-600 animate-spin flex-shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Wren is working on your briefing</p>
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Wren is working on your signal</p>
             <p className="text-xs text-blue-700 dark:text-blue-300">{b.status_detail || 'Hang tight — this usually takes under a minute.'}</p>
           </div>
         </div>
@@ -261,7 +261,7 @@ function Detail() {
               .map(section => (
                 <SectionCard
                   key={section.id}
-                  briefingId={briefingId}
+                  briefingId={signalId}
                   section={section}
                   active={section.id === activeSectionId}
                   onSelect={() => setActiveSectionId(section.id)}
@@ -275,7 +275,7 @@ function Detail() {
         {/* Side column: uploads + chat */}
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <UploadsPanel
-            briefingId={briefingId}
+            briefingId={signalId}
             uploads={state.uploads}
             canRegenerate={isReady || isFailed}
             onAdded={addUpload}
@@ -285,7 +285,7 @@ function Detail() {
           />
           <div className="h-[520px]">
             <RefineChat
-              briefingId={briefingId}
+              briefingId={signalId}
               messages={state.messages}
               activeSection={activeSection}
               onMessageAppended={appendMessage}

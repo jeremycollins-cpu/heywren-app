@@ -65,7 +65,7 @@ export default function RefineChat({
     setSending(true)
 
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/chat`, {
+      const res = await fetch(`/api/the-signal/${briefingId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

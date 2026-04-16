@@ -43,7 +43,7 @@ function StatusPill({ status }: { status: string }) {
 
 export default function MonthlyBriefingListPage() {
   return (
-    <UpgradeGate featureKey="monthly_briefing">
+    <UpgradeGate featureKey="the_signal">
       <ListPage />
     </UpgradeGate>
   )
@@ -57,7 +57,7 @@ function ListPage() {
 
   const fetchBriefings = async () => {
     try {
-      const res = await fetch('/api/monthly-briefing')
+      const res = await fetch('/api/the-signal')
       const json = await res.json()
       setBriefings(json.briefings || [])
     } catch (err) {
@@ -82,7 +82,7 @@ function ListPage() {
   const startNewBriefing = async (periodStart?: string) => {
     setCreating(true)
     try {
-      const res = await fetch('/api/monthly-briefing', {
+      const res = await fetch('/api/the-signal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ periodStart }),
@@ -92,8 +92,8 @@ function ListPage() {
         toast.error(json.error || 'Could not start briefing.')
         return
       }
-      toast.success('Briefing queued — opening it now.')
-      router.push(`/monthly-briefing/${json.id}`)
+      toast.success('Signal queued — opening it now.')
+      router.push(`/the-signal/${json.id}`)
     } catch (err) {
       toast.error('Network error.')
     } finally {
@@ -116,10 +116,10 @@ function ListPage() {
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-5 h-5 text-violet-600" aria-hidden="true" />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Monthly Briefing</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">The Signal</h1>
           </div>
           <p className="text-gray-500 dark:text-gray-400 max-w-2xl">
-            Wren synthesizes the past month's emails, chats, calendar, meetings, and any context you upload into a personal CEO-style briefing — highlights, risks, priorities, and what to focus on next.
+            Wren synthesizes your emails, chats, calendar, meetings, and any context you upload into an executive briefing — highlights, risks, priorities, and what to focus on next. Scales from a daily glance to board-ready output.
           </p>
         </div>
         <button
@@ -132,16 +132,16 @@ function ListPage() {
           }}
         >
           {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          New briefing for this month
+          New Signal
         </button>
       </div>
 
       {briefings.length === 0 ? (
         <div className="text-center py-16 border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-2xl">
           <CalendarDays className="w-10 h-10 text-gray-400 mx-auto mb-3" aria-hidden="true" />
-          <p className="text-gray-700 dark:text-gray-300 font-medium mb-1">No briefings yet</p>
+          <p className="text-gray-700 dark:text-gray-300 font-medium mb-1">No signals yet</p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-            Generate your first one. It uses the last 30 days of activity — the more you've connected to Wren, the richer it gets.
+            Generate your first Signal. It pulls the last 30 days of activity — the more you've connected to Wren, the richer it gets.
           </p>
           <button
             onClick={() => startNewBriefing()}
@@ -149,7 +149,7 @@ function ListPage() {
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Generate this month's briefing
+            Generate your first Signal
           </button>
         </div>
       ) : (
@@ -157,7 +157,7 @@ function ListPage() {
           {briefings.map(b => (
             <Link
               key={b.id}
-              href={`/monthly-briefing/${b.id}`}
+              href={`/the-signal/${b.id}`}
               className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
             >
               <div className="flex items-start justify-between gap-4">

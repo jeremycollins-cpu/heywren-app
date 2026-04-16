@@ -78,7 +78,7 @@ export default function UploadsPanel({
       for (const file of list) {
         const form = new FormData()
         form.append('file', file)
-        const res = await fetch(`/api/monthly-briefing/${briefingId}/upload`, {
+        const res = await fetch(`/api/the-signal/${briefingId}/upload`, {
           method: 'POST',
           body: form,
         })
@@ -96,7 +96,7 @@ export default function UploadsPanel({
 
   const remove = async (uploadId: string) => {
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/upload?uploadId=${uploadId}`, {
+      const res = await fetch(`/api/the-signal/${briefingId}/upload?uploadId=${uploadId}`, {
         method: 'DELETE',
       })
       if (res.ok) {

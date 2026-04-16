@@ -41,7 +41,7 @@ export default function SectionCard({ briefingId, section, active, onSelect, onU
   const save = async () => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/sections/${section.id}`, {
+      const res = await fetch(`/api/the-signal/${briefingId}/sections/${section.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, summary, bullets }),
@@ -61,7 +61,7 @@ export default function SectionCard({ briefingId, section, active, onSelect, onU
 
   const togglePin = async () => {
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/sections/${section.id}`, {
+      const res = await fetch(`/api/the-signal/${briefingId}/sections/${section.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pinned: !section.pinned }),
@@ -77,7 +77,7 @@ export default function SectionCard({ briefingId, section, active, onSelect, onU
   const remove = async () => {
     if (!confirm(`Delete the "${section.title}" section?`)) return
     try {
-      const res = await fetch(`/api/monthly-briefing/${briefingId}/sections/${section.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/the-signal/${briefingId}/sections/${section.id}`, { method: 'DELETE' })
       if (res.ok) {
         onDeleted(section.id)
         toast.success('Section deleted.')
