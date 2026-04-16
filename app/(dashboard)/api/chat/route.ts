@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { isActive, isCompleted } from '@/lib/commitments/status'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -100,12 +101,12 @@ export async function POST(request: NextRequest) {
     const missedChats = missedChatsRes.data || []
 
     // Build context summary
-    const activeCommitments = commitments.filter(c => c.status === 'open' || c.status === 'pending')
+    const activeCommitments = commitments.filter(c => isActive(c.status))
     const overdueCommitments = commitments.filter(c => {
       const age = Math.floor((Date.now() - new Date(c.created_at).getTime()) / 86400000)
-      return (c.status === 'open' || c.status === 'pending') && age > 7
+      return isActive(c.status) && age > 7
     })
-    const completedCommitments = commitments.filter(c => c.status === 'completed')
+    const completedCommitments = commitments.filter(c => isCompleted(c.status))
 
     const contextBlock = buildContextBlock({
       firstName,

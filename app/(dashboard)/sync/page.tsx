@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isActive, isCompleted, isExcluded, followThroughRate } from '@/lib/commitments/status'
 import {
   RefreshCw, CheckCircle2, AlertCircle, Loader2, Mail, Zap,
   Clock, Activity, TrendingUp, Shield, ArrowRight,
@@ -33,7 +34,7 @@ export default function SyncPage() {
   const [outlookResult, setOutlookResult] = useState<SyncResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
-  const [commitmentStats, setCommitmentStats] = useState({ total: 0, open: 0, completed: 0, thisWeek: 0 })
+  const [commitmentStats, setCommitmentStats] = useState({ total: 0, open: 0, completed: 0, thisWeek: 0, followThrough: 0 })
   const [dataCounts, setDataCounts] = useState({ emails: 0, slackMessages: 0, calendarEvents: 0 })
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -109,9 +110,10 @@ export default function SyncPage() {
         const weekAgo = Date.now() - 7 * 86400000
         setCommitmentStats({
           total: allCommitments.length,
-          open: allCommitments.filter((c: { status: string }) => c.status === 'open' || c.status === 'overdue').length,
-          completed: allCommitments.filter((c: { status: string }) => c.status === 'completed').length,
+          open: allCommitments.filter((c: { status: string }) => isActive(c.status)).length,
+          completed: allCommitments.filter((c: { status: string }) => isCompleted(c.status)).length,
           thisWeek: allCommitments.filter((c: { created_at: string }) => new Date(c.created_at).getTime() > weekAgo).length,
+          followThrough: followThroughRate(allCommitments),
         })
 
         // Fetch data counts scoped to the current user
@@ -119,25 +121,23 @@ export default function SyncPage() {
         const slackUserId = profile?.slack_user_id || ''
 
         const [emailCount, slackCount, calendarCount] = await Promise.all([
-          // Emails: user is sender or recipient
+          // Emails: user owns the record OR is sender/recipient (case-insensitive)
           userEmail
             ? supabase.from('outlook_messages').select('id', { count: 'exact', head: true })
                 .eq('team_id', teamId)
-                .or(`user_id.eq.${userData.user.id},user_id.is.null`)
-                .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+                .or(`user_id.eq.${userData.user.id},from_email.ilike.${userEmail},to_recipients.ilike.%${userEmail}%`)
             : supabase.from('outlook_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
-          // Slack: messages authored by user
+          // Slack: messages authored by user (0 if no Slack mapping)
           slackUserId
             ? supabase.from('slack_messages').select('id', { count: 'exact', head: true })
                 .eq('team_id', teamId)
                 .eq('user_id', slackUserId)
-            : supabase.from('slack_messages').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
-          // Calendar: events where user is organizer or attendee
+            : { count: 0 },
+          // Calendar: user owns the record OR is organizer/attendee (case-insensitive)
           userEmail
             ? supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true })
                 .eq('team_id', teamId)
-                .or(`user_id.eq.${userData.user.id},user_id.is.null`)
-                .or(`organizer_email.eq.${userEmail},attendees::text.ilike.%${userEmail}%`)
+                .or(`user_id.eq.${userData.user.id},organizer_email.ilike.${userEmail},attendees::text.ilike.%${userEmail}%`)
             : supabase.from('outlook_calendar_events').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
         ])
         setDataCounts({
@@ -350,7 +350,7 @@ export default function SyncPage() {
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">{commitmentStats.completed}</p>
           <p className="text-xs text-gray-400 mt-1">
-            {commitmentStats.total > 0 ? `${Math.round(commitmentStats.completed / commitmentStats.total * 100)}% follow-through` : 'none yet'}
+            {commitmentStats.total > 0 ? `${commitmentStats.followThrough}% follow-through` : 'none yet'}
           </p>
         </div>
         <div className="bg-white dark:bg-surface-dark-secondary border border-gray-200 dark:border-border-dark rounded-xl p-4">

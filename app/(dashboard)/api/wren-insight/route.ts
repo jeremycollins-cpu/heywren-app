@@ -3,6 +3,7 @@
 // Uses the same context model as the chat but asks for one concise observation.
 
 import { NextResponse } from 'next/server'
+import { isActive, isCompleted } from '@/lib/commitments/status'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
@@ -103,12 +104,12 @@ export async function GET() {
     const readyDrafts = draftsRes.data || []
     const hasRules = (rulesRes.data || []).length > 0
 
-    const active = commitments.filter(c => c.status === 'open' || c.status === 'pending')
+    const active = commitments.filter(c => isActive(c.status))
     const overdue = active.filter(c => {
       const age = Math.floor((Date.now() - new Date(c.created_at).getTime()) / 86400000)
       return age > 7
     })
-    const completed = commitments.filter(c => c.status === 'completed')
+    const completed = commitments.filter(c => isCompleted(c.status))
 
     const toneInstruction = tone === 'direct'
       ? 'Be blunt and direct. No fluff.'

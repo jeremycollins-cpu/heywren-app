@@ -1,6 +1,7 @@
 'use client'
 
 import type { Commitment } from '@/lib/stores/dashboard-store'
+import { isCompleted, isExcluded } from '@/lib/commitments/status'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -25,8 +26,9 @@ function getStreakDays(commitments: Commitment[]): number {
 }
 
 function getFollowThroughPercent(commitments: Commitment[]): number {
-  if (commitments.length === 0) return 0
-  return Math.round((commitments.filter(c => c.status === 'completed').length / commitments.length) * 100)
+  const relevant = commitments.filter(c => !isExcluded(c.status))
+  if (relevant.length === 0) return 0
+  return Math.round((relevant.filter(c => isCompleted(c.status)).length / relevant.length) * 100)
 }
 
 function get7DayTrend(commitments: Commitment[]): number[] {
@@ -63,7 +65,7 @@ export function HeroStats({ commitments }: HeroStatsProps) {
   const streak = getStreakDays(commitments)
   const followThrough = getFollowThroughPercent(commitments)
   const trend = get7DayTrend(commitments)
-  const completed = commitments.filter(c => c.status === 'completed').length
+  const completed = commitments.filter(c => isCompleted(c.status)).length
   const xp = (commitments.length * 10) + (completed * 25)
   const level = getLevel(xp)
 

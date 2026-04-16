@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { isActive, isCompleted } from '@/lib/commitments/status'
 import {
   Users, Mail, Crown, Shield, UserPlus, BarChart3,
   CheckCircle2, AlertTriangle, Building2, Layers,
@@ -209,8 +210,8 @@ export default function TeamManagementPage() {
         if (!key) continue
         if (!memberCommitments.has(key)) memberCommitments.set(key, { open: 0, completed: 0 })
         const stats = memberCommitments.get(key)!
-        if (c.status === 'open' || c.status === 'overdue') stats.open++
-        if (c.status === 'completed') stats.completed++
+        if (isActive(c.status)) stats.open++
+        if (isCompleted(c.status)) stats.completed++
       }
 
       const { data: missedEmails } = await supabase
