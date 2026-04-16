@@ -8,7 +8,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/client'
 
 function CallbackContent() {
   const router = useRouter()
@@ -18,10 +18,7 @@ function CallbackContent() {
   const [error, setError] = useState<string | null>(null)
   const provisioning = useRef(false)
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const supabase = createClient()
 
   useEffect(() => {
     // Prevent double-execution in React strict mode

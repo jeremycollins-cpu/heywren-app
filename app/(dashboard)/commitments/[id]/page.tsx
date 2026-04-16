@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtime } from '@/lib/hooks/use-realtime'
+import { safeHref } from '@/lib/url/safe-href'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, CheckCircle2, Clock, AlertTriangle, Hash,
@@ -444,7 +445,7 @@ export default function CommitmentDetailPage() {
               <span className="inline-flex items-center gap-1"><Hash className="w-3 h-3" />{meta.channelName}</span>
             )}
             {commitment.source_url && (
-              <a href={commitment.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-indigo-500 hover:text-indigo-600">
+              <a href={safeHref(commitment.source_url)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-indigo-500 hover:text-indigo-600">
                 <ExternalLink className="w-3 h-3" /> View in {sourceInfo.label}
               </a>
             )}

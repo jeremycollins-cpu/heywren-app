@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { Commitment } from '@/lib/stores/dashboard-store'
+import { safeHref } from '@/lib/url/safe-href'
 
 function daysSince(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24))
@@ -158,7 +159,7 @@ export function NudgeCard({ commitment: c, onDone, onSnooze, onDismiss, onRemind
         </Link>
         {c.source_url && (
           <a
-            href={c.source_url}
+            href={safeHref(c.source_url)}
             target="_blank"
             rel="noopener noreferrer"
             className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"

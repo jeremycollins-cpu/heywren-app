@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 import { resolveTeamId } from '@/lib/team/resolve-team'
 
 function getAdmin() {
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
         .eq('team_id', teamId)
         .eq('user_id', user.id)
         .eq('status', 'pending')
-        .ilike('from_email', `%@${from_domain}`)
+        .ilike('from_email', `%@${sf(from_domain)}`)
     }
   }
 

@@ -38,21 +38,24 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // ── Verify webhook signature ──
+  // ── Verify webhook signature (fail closed) ──
   const signature = request.headers.get('x-zm-signature') || ''
   const timestamp = request.headers.get('x-zm-request-timestamp') || ''
   const secret = process.env.ZOOM_WEBHOOK_SECRET_TOKEN
 
-  if (secret) {
-    const message = `v0:${timestamp}:${rawBody}`
-    const expectedSig = 'v0=' + crypto.createHmac('sha256', secret).update(message).digest('hex')
-    try {
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-      }
-    } catch {
+  if (!secret) {
+    console.error('ZOOM_WEBHOOK_SECRET_TOKEN is not set — rejecting webhook')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 })
+  }
+
+  const message = `v0:${timestamp}:${rawBody}`
+  const expectedSig = 'v0=' + crypto.createHmac('sha256', secret).update(message).digest('hex')
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
+  } catch {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   // ── Handle recording.completed ──

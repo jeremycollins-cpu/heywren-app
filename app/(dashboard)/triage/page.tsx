@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import UpgradeGate from '@/components/upgrade-gate'
 import toast from 'react-hot-toast'
+import { safeHref } from '@/lib/url/safe-href'
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton'
 
 interface CommitmentMetadata {
@@ -438,7 +439,7 @@ export default function TriagePage() {
                   )}
                   {current.source_url && (
                     <a
-                      href={current.source_url}
+                      href={safeHref(current.source_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 transition ml-auto"

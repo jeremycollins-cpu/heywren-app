@@ -3,6 +3,7 @@ import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateThemes } from '@/lib/ai/generate-themes'
 import { logAiUsage } from '@/lib/ai/persist-usage'
+import { sanitizeFilterValue as sf } from '@/lib/supabase/sanitize-filter'
 
 function getAdminClient() {
   return createClient(
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
               .select('subject, from_name, from_email, to_recipients, received_at')
               .eq('team_id', teamId)
               .or(`user_id.eq.${userId},user_id.is.null`)
-              .or(`from_email.eq.${userEmail},to_recipients.ilike.%${userEmail}%`)
+              .or(`from_email.eq.${sf(userEmail)},to_recipients.ilike.%${sf(userEmail)}%`)
               .gte('received_at', thirtyDaysAgo)
               .order('received_at', { ascending: false })
               .limit(100)

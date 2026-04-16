@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTodo } from '@/lib/contexts/todo-context'
+import { safeHref } from '@/lib/url/safe-href'
 
 interface WrenMention {
   id: string
@@ -192,7 +193,7 @@ function MentionCard({ mention, onAddTodo, onDismiss }: { mention: WrenMention; 
         </button>
         {mention.source_url && (
           <a
-            href={mention.source_url}
+            href={safeHref(mention.source_url)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition"
