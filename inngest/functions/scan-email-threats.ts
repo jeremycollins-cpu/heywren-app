@@ -71,6 +71,8 @@ export const scanEmailThreats = inngest.createFunction(
 
       await step.run(`scan-${integration.user_id}`, async () => {
         const lookbackDate = new Date(Date.now() - daysBack * 86400000).toISOString()
+        let userScanned = 0
+        let userThreats = 0
 
         // Build token refresh context for Graph API calls
         const ctx = {
@@ -145,6 +147,7 @@ export const scanEmailThreats = inngest.createFunction(
           // ── Tier 1: Header & pattern analysis ──
           const tier1 = tier1Analysis(emailInput)
           totalScanned++
+          userScanned++
 
           // If tier 1 found nothing AND we had full header data, skip tier 2.
           // But if headers failed to load, run tier 2 anyway since we can't
@@ -195,6 +198,7 @@ export const scanEmailThreats = inngest.createFunction(
 
           if (!error) {
             totalThreats++
+            userThreats++
 
             // Proactive alert for high/critical threats
             if (assessment.threatLevel === 'critical' || assessment.threatLevel === 'high') {
@@ -215,10 +219,19 @@ export const scanEmailThreats = inngest.createFunction(
             }
           }
         }
+
+        // Log per-user heartbeat so System Health can see this user's scan ran,
+        // even if Tier 2 AI never fired (no suspicious emails → api_calls=0).
+        await logAiUsage(supabase, {
+          module: 'detect-email-threats',
+          trigger: 'scan-email-threats',
+          teamId: integration.team_id,
+          userId: integration.user_id,
+          itemsProcessed: userScanned,
+          metadata: { threats: userThreats },
+        })
       })
     }
-
-    await logAiUsage(getAdminClient(), { module: 'detect-email-threats', trigger: 'scan-email-threats', itemsProcessed: totalScanned })
 
     return { success: true, scanned: totalScanned, threats: totalThreats, users: integrations.length }
   }

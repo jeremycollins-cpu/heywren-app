@@ -129,25 +129,38 @@ export const healthMonitor = inngest.createFunction(
       const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
 
-      // Find users whose emails synced in last 24h but haven't had a commitment in 3+ days
+      // Find users whose emails synced in last 24h
       const { data: activeUsers } = await supabase
         .from('outlook_messages')
-        .select('user_id, team_id')
+        .select('user_id')
         .gte('received_at', oneDayAgo)
         .not('user_id', 'is', null)
         .limit(1000)
 
-      const pairs = new Map<string, { userId: string; teamId: string }>()
-      for (const row of activeUsers || []) {
-        if (row.user_id && row.team_id) pairs.set(`${row.team_id}:${row.user_id}`, { userId: row.user_id, teamId: row.team_id })
+      const activeUserIds = Array.from(new Set((activeUsers || []).map(r => r.user_id).filter(Boolean))) as string[]
+      if (activeUserIds.length === 0) {
+        checks.push('Commitment detection: 0 active users to check')
+        return
       }
 
+      // Resolve each active user's organization (and team, for the alert payload).
+      // organization_id is the stable key — see migration 019. team_id can drift.
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, organization_id, current_team_id')
+        .in('id', activeUserIds)
+
       let stalled = 0
-      for (const { userId, teamId } of pairs.values()) {
+      for (const p of profiles || []) {
+        const userId = p.id
+        const organizationId = p.organization_id
+        const teamId = p.current_team_id
+        if (!organizationId) continue
+
         const { count: recentCount } = await supabase
           .from('commitments')
           .select('id', { count: 'exact', head: true })
-          .eq('team_id', teamId)
+          .eq('organization_id', organizationId)
           .gte('created_at', threeDaysAgo)
 
         if ((recentCount || 0) === 0) {
@@ -155,7 +168,7 @@ export const healthMonitor = inngest.createFunction(
           const { count: totalCount } = await supabase
             .from('commitments')
             .select('id', { count: 'exact', head: true })
-            .eq('team_id', teamId)
+            .eq('organization_id', organizationId)
 
           if ((totalCount || 0) < 5) continue // new user, nothing to flag
 
@@ -167,24 +180,26 @@ export const healthMonitor = inngest.createFunction(
             userId,
             teamId,
             errorKey: `stalled_commitment_detection:${userId}`,
-            details: { totalCommitments: totalCount },
+            details: { totalCommitments: totalCount, organizationId },
           })
 
           // Alert the user so they don't quietly think "nothing to do this week"
-          try {
-            await sendProactiveAlert({
-              teamId,
-              userId,
-              notificationType: 'anomaly',
-              title: 'Commitment detection may be broken',
-              body: 'Emails are flowing into Wren but no new commitments have been created in 3+ days. Check System Health for details.',
-              link: '/settings/system-health',
-              slackText:
-                '*:warning: Commitment detection may be broken*\n> Wren is receiving your emails but hasn\'t created any commitments in 3+ days. Visit System Health for details.',
-              idempotencyKey: `stalled-commitments-${userId}-${new Date(now).toISOString().slice(0, 10)}`,
-            })
-          } catch {
-            // best-effort
+          if (teamId) {
+            try {
+              await sendProactiveAlert({
+                teamId,
+                userId,
+                notificationType: 'anomaly',
+                title: 'Commitment detection may be broken',
+                body: 'Emails are flowing into Wren but no new commitments have been created in 3+ days. Check System Health for details.',
+                link: '/settings/system-health',
+                slackText:
+                  '*:warning: Commitment detection may be broken*\n> Wren is receiving your emails but hasn\'t created any commitments in 3+ days. Visit System Health for details.',
+                idempotencyKey: `stalled-commitments-${userId}-${new Date(now).toISOString().slice(0, 10)}`,
+              })
+            } catch {
+              // best-effort
+            }
           }
         }
       }
