@@ -160,6 +160,7 @@ function AnthropicAdminCard() {
   const [showKeyInput, setShowKeyInput] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const [syncDays, setSyncDays] = useState(7)
 
   const refresh = async () => {
     const res = await fetch('/api/integrations/anthropic-admin')
@@ -207,13 +208,16 @@ function AnthropicAdminCard() {
     }
   }
 
-  const triggerSync = async () => {
+  const triggerSync = async (daysOverride?: number) => {
+    const days = daysOverride ?? syncDays
     setMode('syncing')
     try {
-      const res = await fetch('/api/integrations/anthropic-admin/sync', { method: 'POST' })
+      const res = await fetch(`/api/integrations/anthropic-admin/sync?days=${days}`, {
+        method: 'POST',
+      })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Sync failed')
-      toast.success(`Synced ${body.rows ?? 0} row${body.rows === 1 ? '' : 's'}`)
+      toast.success(`Synced ${body.rows ?? 0} row${body.rows === 1 ? '' : 's'} across ${days} days`)
       await refresh()
     } catch (err: any) {
       toast.error(err.message || 'Sync failed')
@@ -261,8 +265,21 @@ function AnthropicAdminCard() {
               {status.last_sync_status === 'failed' && <span className="text-red-600 dark:text-red-400"> · last sync failed</span>}
             </div>
           </div>
+          <select
+            value={syncDays}
+            onChange={(e) => setSyncDays(parseInt(e.target.value, 10))}
+            disabled={mode !== 'idle'}
+            title="Lookback window for Sync now"
+            className="text-xs border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+          </select>
           <button
-            onClick={triggerSync}
+            onClick={() => triggerSync()}
             disabled={mode !== 'idle'}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 rounded-lg transition"
           >
@@ -286,7 +303,8 @@ function AnthropicAdminCard() {
             <p>
               Every 24 hours HeyWren pulls the previous 7 days of per-user Claude Code totals
               (sessions, tokens, cost, lines of code, commits, PRs, tool acceptance) and merges
-              them into this dashboard.
+              them into this dashboard. Use the lookback selector next to Sync now to backfill
+              a wider window (up to 90 days) on demand.
             </p>
             <p>
               The key is stored AES-256-GCM encrypted at rest. Only the last 8 characters of its
