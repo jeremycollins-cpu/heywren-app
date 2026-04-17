@@ -45,6 +45,8 @@ interface Commitment {
   due_date: string | null
   created_at: string
   updated_at: string
+  asana_gid: string | null
+  asana_url: string | null
 }
 
 function daysSince(dateStr: string): number {
@@ -156,6 +158,9 @@ export default function CommitmentsPage() {
   const [feedbackGiven, setFeedbackGiven] = useState<Map<string, 'accurate' | 'inaccurate'>>(new Map())
   const [draftLoading, setDraftLoading] = useState<Set<string>>(new Set())
   const [drafts, setDrafts] = useState<Map<string, { id: string; subject: string; body: string; channel?: string; outlookDraft?: { webLink?: string } | null }>>(new Map())
+  const [hasAsana, setHasAsana] = useState(false)
+  const [asanaSending, setAsanaSending] = useState<Set<string>>(new Set())
+  const [asanaLinks, setAsanaLinks] = useState<Map<string, string>>(new Map())
 
   const submitFeedback = async (commitmentId: string, feedback: 'accurate' | 'inaccurate') => {
     try {
@@ -171,6 +176,37 @@ export default function CommitmentsPage() {
         toast.error('Failed to submit feedback')
       }
     } catch { toast.error('Failed to submit feedback') }
+  }
+
+  const sendToAsana = async (commitmentId: string) => {
+    if (!hasAsana) {
+      toast.error('Connect Asana on the Integrations page first')
+      return
+    }
+    setAsanaSending(prev => new Set(prev).add(commitmentId))
+    try {
+      const res = await fetch('/api/commitments/create-asana-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitmentId }),
+      })
+      const data = await res.json()
+      if (res.ok && data.task?.permalink_url) {
+        setAsanaLinks(prev => new Map(prev).set(commitmentId, data.task.permalink_url))
+        // Reflect the persisted asana_gid on the local commitment so the
+        // button switches to "Open in Asana" without a full reload.
+        setCommitments(prev => prev.map(c => c.id === commitmentId
+          ? { ...c, asana_gid: data.task.gid, asana_url: data.task.permalink_url }
+          : c
+        ))
+        toast.success(data.existing ? 'Already in Asana' : 'Created in Asana')
+      } else {
+        toast.error(data.error || 'Failed to create Asana task')
+      }
+    } catch {
+      toast.error('Failed to create Asana task')
+    }
+    setAsanaSending(prev => { const next = new Set(prev); next.delete(commitmentId); return next })
   }
 
   const generateDraft = async (commitmentId: string) => {
@@ -253,6 +289,18 @@ export default function CommitmentsPage() {
         .limit(200)
 
       if (data) setCommitments(data)
+
+      // Detect whether the user has Asana connected so we can show the
+      // "Send to Asana" button. This is a single lightweight row lookup —
+      // failures are non-fatal (button stays hidden / shows a toast on click).
+      const { data: asanaIntegration } = await supabase
+        .from('integrations')
+        .select('id')
+        .eq('user_id', userData.user.id)
+        .eq('provider', 'asana')
+        .maybeSingle()
+      setHasAsana(!!asanaIntegration)
+
       if (isRefresh) toast.success('Commitments refreshed')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load commitments'
@@ -993,6 +1041,29 @@ export default function CommitmentsPage() {
                           {draftLoading.has(c.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
                           {draftLoading.has(c.id) ? 'Drafting...' : 'Draft follow-up'}
                         </button>
+                      )}
+                      {hasAsana && (
+                        (c.asana_url || asanaLinks.has(c.id)) ? (
+                          <a
+                            href={safeHref(c.asana_url || asanaLinks.get(c.id) || '')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs px-3 py-1 bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 font-medium transition-colors flex items-center gap-1"
+                            title="Open in Asana"
+                          >
+                            <span className="font-bold">A</span> Open in Asana
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => sendToAsana(c.id)}
+                            disabled={asanaSending.has(c.id)}
+                            className="text-xs px-3 py-1 bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                            title="Create an Asana task from this commitment"
+                          >
+                            {asanaSending.has(c.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <span className="font-bold">A</span>}
+                            {asanaSending.has(c.id) ? 'Sending...' : 'Send to Asana'}
+                          </button>
+                        )
                       )}
                     </>
                   )}

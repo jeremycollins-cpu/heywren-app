@@ -90,6 +90,10 @@ export interface Commitment {
   created_at: string
   updated_at: string
   completed_at?: string
+  // Asana cross-link — set when the commitment was sent to Asana via the
+  // "Send to Asana" action. NULL otherwise.
+  asana_gid?: string | null
+  asana_url?: string | null
 }
 
 export interface Nudge {
