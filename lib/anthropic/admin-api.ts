@@ -55,25 +55,18 @@ export class AnthropicAdminApiError extends Error {
   }
 }
 
-/**
- * Fetch daily per-user usage for a date range. Anthropic accepts a
- * starting_at (inclusive) and ending_at (exclusive) in ISO format.
- * Paginates if necessary.
- */
-export async function fetchClaudeCodeUsage(params: {
+async function fetchOneDay(params: {
   apiKey: string
-  startingAt: string // 'YYYY-MM-DD'
-  endingAt: string // 'YYYY-MM-DD'
+  day: string // 'YYYY-MM-DD'
 }): Promise<ClaudeCodeUsageRow[]> {
   const rows: ClaudeCodeUsageRow[] = []
   let pageToken: string | null | undefined = undefined
   let pagesFetched = 0
-  const MAX_PAGES = 50 // safety cap
+  const MAX_PAGES = 50 // safety cap per day
 
   while (true) {
     const url = new URL(BASE_URL)
-    url.searchParams.set('starting_at', params.startingAt)
-    url.searchParams.set('ending_at', params.endingAt)
+    url.searchParams.set('starting_at', params.day)
     if (pageToken) url.searchParams.set('page', pageToken)
 
     const res = await fetch(url.toString(), {
@@ -103,14 +96,41 @@ export async function fetchClaudeCodeUsage(params: {
 }
 
 /**
- * Light-touch validation: hit the endpoint for today's slice and return
- * whether the key is usable. 401/403 → invalid; 200 (even empty) → good.
+ * Fetch daily per-user usage for a date range. The Anthropic endpoint
+ * returns one day per request (specified by `starting_at`), so we loop
+ * over each day from startingAt (inclusive) to endingAt (exclusive)
+ * and paginate within each day.
+ */
+export async function fetchClaudeCodeUsage(params: {
+  apiKey: string
+  startingAt: string // 'YYYY-MM-DD' inclusive
+  endingAt: string // 'YYYY-MM-DD' exclusive
+}): Promise<ClaudeCodeUsageRow[]> {
+  const rows: ClaudeCodeUsageRow[] = []
+  const start = new Date(`${params.startingAt}T00:00:00Z`)
+  const end = new Date(`${params.endingAt}T00:00:00Z`)
+  const MAX_DAYS = 90 // safety cap on range width
+
+  let daysFetched = 0
+  for (let d = new Date(start); d < end && daysFetched < MAX_DAYS; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.toISOString().slice(0, 10)
+    rows.push(...(await fetchOneDay({ apiKey: params.apiKey, day })))
+    daysFetched += 1
+  }
+
+  return rows
+}
+
+/**
+ * Light-touch validation: hit the endpoint for yesterday and return
+ * whether the key is usable. Yesterday (UTC) is used because data
+ * freshness can lag by up to an hour, so today may legitimately be
+ * empty. 401/403 → invalid; 200 (even empty) → good.
  */
 export async function validateAdminKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  const today = new Date().toISOString().slice(0, 10)
-  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10)
   try {
-    await fetchClaudeCodeUsage({ apiKey, startingAt: today, endingAt: tomorrow })
+    await fetchOneDay({ apiKey, day: yesterday })
     return { valid: true }
   } catch (err) {
     if (err instanceof AnthropicAdminApiError) {
@@ -123,7 +143,8 @@ export async function validateAdminKey(apiKey: string): Promise<{ valid: boolean
           error: 'Claude Code Analytics endpoint not available — requires Team or Enterprise plan',
         }
       }
-      return { valid: false, error: `Anthropic API returned ${err.status}` }
+      const snippet = err.body ? `: ${err.body.slice(0, 200)}` : ''
+      return { valid: false, error: `Anthropic API returned ${err.status}${snippet}` }
     }
     return { valid: false, error: (err as Error).message }
   }
