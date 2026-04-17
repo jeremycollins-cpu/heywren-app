@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSessionClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveOrganizationId } from '@/lib/team/resolve-org'
 
 function getAdminClient() {
   return createClient(
@@ -59,13 +60,8 @@ export async function GET() {
     // migration 019, so organization_id is the stable identity that can't drift
     // between the read path (this endpoint) and the write path (AI pipelines
     // writing ai_platform_usage / system_errors / etc via trigger fill-in).
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('organization_id, current_team_id')
-      .eq('id', userId)
-      .single()
-
-    const organizationId = profile?.organization_id
+    // resolveOrganizationId() self-heals if profiles.organization_id is stale.
+    const organizationId = await resolveOrganizationId(admin, userId)
     if (!organizationId) {
       return NextResponse.json({ error: 'No organization' }, { status: 400 })
     }
