@@ -27,7 +27,10 @@ const STREAK_MILESTONES = new Set([2, 4, 8, 12, 16, 24, 52])
  */
 export const calculateWeeklyScoresJob = inngest.createFunction(
   { id: 'calculate-weekly-scores' },
-  { cron: '0 6 * * 1' }, // Monday 6 AM UTC
+  [
+    { cron: '0 6 * * 1' },                           // Monday 6 AM UTC
+    { event: 'admin/job.calculate-weekly-scores' },  // admin manual trigger
+  ],
   async ({ step }) => {
     const supabase = getAdminClient()
 

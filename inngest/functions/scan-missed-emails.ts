@@ -514,9 +514,13 @@ async function scanTeamMissedEmails(
 
 // Run 30 min after each Outlook sync (6:30 AM, 10:30 AM, 2:30 PM, 6:30 PM PT)
 // so new emails are classified within hours, not the next morning.
+// Also triggerable on demand from the admin dashboard.
 export const scanMissedEmails = inngest.createFunction(
   { id: 'scan-missed-emails' },
-  { cron: 'TZ=America/Los_Angeles 30 6,10,14,18 * * *' },
+  [
+    { cron: 'TZ=America/Los_Angeles 30 6,10,14,18 * * *' },
+    { event: 'admin/job.scan-missed-emails' },
+  ],
   async ({ step }) => {
     const run = startJobRun('scan-missed-emails')
 

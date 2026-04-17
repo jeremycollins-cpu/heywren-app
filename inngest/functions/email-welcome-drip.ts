@@ -26,7 +26,10 @@ function getAdminClient() {
  */
 export const emailWelcomeDrip = inngest.createFunction(
   { id: 'email-welcome-drip' },
-  { cron: '0 * * * *' }, // Every hour
+  [
+    { cron: '0 * * * *' },                           // Every hour
+    { event: 'admin/job.email-welcome-drip' },       // admin manual trigger
+  ],
   async ({ step }) => {
     const run = startJobRun('email-welcome-drip')
     const supabase = getAdminClient()

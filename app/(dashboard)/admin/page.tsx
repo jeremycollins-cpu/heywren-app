@@ -104,7 +104,7 @@ function HealthBadge({ value, threshold, label }: { value: number; threshold: nu
 }
 
 function AdminContent() {
-  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag' | 'subscriptions' | 'ai-costs'>('overview')
+  const [view, setView] = useState<'overview' | 'team' | 'user' | 'health' | 'email-diag' | 'subscriptions' | 'ai-costs' | 'jobs'>('overview')
   const [subscriptions, setSubscriptions] = useState<any[]>([])
   const [subsRevenue, setSubsRevenue] = useState<any>(null)
   const [subsInvoices, setSubsInvoices] = useState<any[]>([])
@@ -134,6 +134,9 @@ function AdminContent() {
   const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
   const [emailDiag, setEmailDiag] = useState<any>(null)
   const [emailDiagLoading, setEmailDiagLoading] = useState(false)
+  const [jobs, setJobs] = useState<any[] | null>(null)
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [jobRunning, setJobRunning] = useState<string | null>(null)
   const [aiCosts, setAiCosts] = useState<any>(null)
   const [aiCostsLoading, setAiCostsLoading] = useState(false)
   const [aiCostsDays, setAiCostsDays] = useState(30)
@@ -319,6 +322,40 @@ function AdminContent() {
       }
     } catch { toast.error('Failed to load email diagnostics') }
     setEmailDiagLoading(false)
+  }
+
+  const loadJobs = async () => {
+    setJobsLoading(true)
+    try {
+      const res = await fetch('/api/admin/scheduled-jobs')
+      if (res.ok) {
+        const data = await res.json()
+        setJobs(data.jobs || [])
+      } else {
+        toast.error('Failed to load scheduled jobs')
+      }
+    } catch { toast.error('Failed to load scheduled jobs') }
+    setJobsLoading(false)
+  }
+
+  const runJob = async (jobId: string, label: string) => {
+    setJobRunning(jobId)
+    try {
+      const res = await fetch('/api/admin/scheduled-jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'run', jobId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(`Triggered: ${label}. Check back in ~1 min for results.`)
+        // Poll once after a short delay so the UI reflects the new run.
+        setTimeout(loadJobs, 30000)
+      } else {
+        toast.error(data.error || 'Failed to trigger job')
+      }
+    } catch { toast.error('Failed to trigger job') }
+    setJobRunning(null)
   }
 
   const loadOverview = async () => {
@@ -1278,6 +1315,131 @@ function AdminContent() {
     )
   }
 
+  // Scheduled Jobs view
+  if (view === 'jobs') {
+    const jobsByCategory = (jobs || []).reduce<Record<string, any[]>>((acc, job) => {
+      (acc[job.category] = acc[job.category] || []).push(job)
+      return acc
+    }, {})
+    const categoryLabels: Record<string, string> = {
+      email: 'Email',
+      scan: 'Scans',
+      scoring: 'Scoring',
+      sync: 'Sync',
+    }
+    const statusStyle = (status: string | null | undefined) => {
+      if (status === 'success') return 'bg-green-50 text-green-700 border-green-200'
+      if (status === 'partial') return 'bg-amber-50 text-amber-700 border-amber-200'
+      if (status === 'failed') return 'bg-red-50 text-red-700 border-red-200'
+      return 'bg-gray-50 text-gray-500 border-gray-200'
+    }
+    const fmtRelative = (iso: string | null | undefined) => {
+      if (!iso) return 'never'
+      const diffMs = Date.now() - new Date(iso).getTime()
+      const mins = Math.floor(diffMs / 60000)
+      if (mins < 1) return 'just now'
+      if (mins < 60) return `${mins}m ago`
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return `${hrs}h ago`
+      const days = Math.floor(hrs / 24)
+      return `${days}d ago`
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setView('overview')} className="text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <PageHeader
+            title="Scheduled Jobs"
+            description="Trigger Inngest cron functions on demand. Results write to job_runs and show here."
+          />
+          <div className="ml-auto">
+            <button
+              onClick={loadJobs}
+              disabled={jobsLoading}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-xs font-medium disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${jobsLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {jobsLoading && !jobs ? (
+          <div className="text-center py-12 text-gray-500">Loading...</div>
+        ) : (
+          Object.entries(jobsByCategory).map(([category, jobList]) => (
+            <div key={category} className="space-y-2">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {categoryLabels[category] || category}
+              </h3>
+              <div className="space-y-2">
+                {jobList.map(job => (
+                  <div key={job.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-semibold text-gray-900">{job.label}</h4>
+                          <code className="text-xs bg-gray-50 text-gray-600 px-1.5 py-0.5 rounded border border-gray-100">
+                            {job.id}
+                          </code>
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${statusStyle(job.lastRun?.status)}`}>
+                            {job.lastRun?.status || 'no runs yet'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{job.description}</p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {job.cron}
+                          </span>
+                          <span>Last run: {fmtRelative(job.lastRun?.startedAt)}</span>
+                          {job.lastRun?.usersConsidered !== undefined && job.lastRun?.usersConsidered !== null && (
+                            <span>{job.lastRun.usersConsidered} users considered</span>
+                          )}
+                          {job.lastRun?.outcomes && Object.keys(job.lastRun.outcomes).length > 0 && (
+                            <span className="font-mono">
+                              {Object.entries(job.lastRun.outcomes)
+                                .map(([k, v]) => `${k}:${v}`).join(' · ')}
+                            </span>
+                          )}
+                        </div>
+                        {job.lastRun?.error && (
+                          <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 break-words">
+                            {job.lastRun.error}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => runJob(job.id, job.label)}
+                        disabled={jobRunning === job.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      >
+                        {jobRunning === job.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            Triggering...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3.5 h-3.5" />
+                            Run Now
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    )
+  }
+
   // Email Diagnostics view
   if (view === 'email-diag') {
     return (
@@ -1514,6 +1676,13 @@ function AdminContent() {
             >
               <Mail className="w-4 h-4" />
               Email Diagnostics
+            </button>
+            <button
+              onClick={() => { setView('jobs'); loadJobs() }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+            >
+              <Zap className="w-4 h-4" />
+              Scheduled Jobs
             </button>
             <button
               onClick={() => { setView('health'); loadHealth() }}
