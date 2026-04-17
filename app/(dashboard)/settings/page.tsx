@@ -43,7 +43,7 @@ export default function SettingsPage() {
     blocked_senders: [] as Array<{ email?: string; domain?: string }>,
     min_urgency: 'low' as string,
     scan_window_days: 7,
-    enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction'] as string[],
+    enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'] as string[],
     auto_dismiss_days: 0,
     include_in_digest: true,
     priority_folders: [] as string[],

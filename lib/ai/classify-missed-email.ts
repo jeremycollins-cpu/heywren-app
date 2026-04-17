@@ -637,12 +637,16 @@ export async function classifyMissedEmail(
         result.urgency = boost[result.urgency] || result.urgency
       }
 
-      if (prefs && !meetsUrgencyThreshold(result.urgency, prefs.minUrgency)) {
-        return null
-      }
+      // recipient_gap is a mistake-avoidance signal (you were forgotten on an email),
+      // not a user-tunable noise category — always surface it.
+      if (result.category !== 'recipient_gap') {
+        if (prefs && !meetsUrgencyThreshold(result.urgency, prefs.minUrgency)) {
+          return null
+        }
 
-      if (prefs && !prefs.enabledCategories.includes(result.category)) {
-        return null
+        if (prefs && !prefs.enabledCategories.includes(result.category)) {
+          return null
+        }
       }
 
       _stats.needs_response++
@@ -802,8 +806,10 @@ export async function classifyMissedEmailBatch(
             classification.urgency = (boost[classification.urgency] || classification.urgency) as any
           }
 
-          if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
-          if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+          if (classification.category !== 'recipient_gap') {
+            if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
+            if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+          }
 
           classification.isVip = email.vip
           _stats.needs_response++
@@ -939,8 +945,10 @@ export async function classifyMissedEmailBatchViaBatchApi(
             const boost: Record<string, string> = { high: 'critical', medium: 'high', low: 'medium' }
             classification.urgency = (boost[classification.urgency] || classification.urgency) as any
           }
-          if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
-          if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+          if (classification.category !== 'recipient_gap') {
+            if (prefs && !meetsUrgencyThreshold(classification.urgency, prefs.minUrgency)) return
+            if (prefs && !prefs.enabledCategories.includes(classification.category)) return
+          }
           classification.isVip = email.vip
           _stats.needs_response++
           results.set(email.id, classification)

@@ -5,6 +5,7 @@ import { logAiUsage } from '@/lib/ai/persist-usage'
 import { sendProactiveAlert as sendAlert } from '@/lib/notifications/send-proactive-alert'
 import { sendEmail } from '@/lib/email/send'
 import { buildRecipientGapAlertEmail } from '@/lib/email/templates/recipient-gap-alert'
+import { startJobRun } from '@/lib/jobs/record-run'
 
 const MAX_EMAILS_PER_RUN = 200
 const TIME_BUDGET_MS = 300000 // 5 minutes
@@ -517,6 +518,8 @@ export const scanMissedEmails = inngest.createFunction(
   { id: 'scan-missed-emails' },
   { cron: 'TZ=America/Los_Angeles 30 6,10,14,18 * * *' },
   async ({ step }) => {
+    const run = startJobRun('scan-missed-emails')
+
     const integrations = await step.run('fetch-integrations', async () => {
       const supabase = getAdminClient()
 
@@ -534,7 +537,10 @@ export const scanMissedEmails = inngest.createFunction(
       return data
     })
 
+    run.meta({ integrations_found: integrations.length })
+
     if (integrations.length === 0) {
+      await run.finish()
       return { success: false, error: 'No integrations found' }
     }
 
@@ -549,15 +555,26 @@ export const scanMissedEmails = inngest.createFunction(
               integration.user_id
             )
             console.log(`Team ${integration.team_id} missed email scan:`, result)
+            if (result.success === false) {
+              run.tally('failed')
+            } else if ((result.missed || 0) > 0) {
+              run.tally('sent', result.missed)
+            } else if ((result.scanned || 0) === 0) {
+              run.tally('no_data')
+            } else {
+              run.tally('skipped')
+            }
             return result
           } catch (err) {
             console.error(`Team ${integration.team_id} scan failed:`, (err as Error).message)
+            run.tally('failed')
             return { success: false, teamId: integration.team_id, error: (err as Error).message }
           }
         })
       )
     )
 
+    await run.finish()
     return { success: true, teamsScanned: results.length, results }
   }
 )

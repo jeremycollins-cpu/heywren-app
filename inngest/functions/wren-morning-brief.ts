@@ -9,6 +9,7 @@ import { WebClient } from '@slack/web-api'
 import { sendEmail } from '@/lib/email/send'
 import { buildMorningBriefEmail } from '@/lib/email/templates/morning-brief'
 import { todayInTimezone } from '@/lib/time/user-timezone'
+import { startJobRun } from '@/lib/jobs/record-run'
 
 function getAdminClient() {
   return createClient(
@@ -21,10 +22,11 @@ export const wrenMorningBrief = inngest.createFunction(
   { id: 'wren-morning-brief', retries: 2, concurrency: { limit: 5 } },
   { cron: 'TZ=America/Los_Angeles 30 8 * * 1-5' }, // 8:30 AM PT weekdays
   async ({ step }) => {
+    const run = startJobRun('wren-morning-brief')
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
-    // Get all users with morning_brief enabled — Slack users get DM, others get email
+    // Get all users with morning_brief enabled — Slack and email are independent channels.
     const users = await step.run('fetch-users', async () => {
       const { data: integrations } = await supabase
         .from('integrations')
@@ -63,16 +65,23 @@ export const wrenMorningBrief = inngest.createFunction(
           const prefs = (p.wren_preferences || {}) as Record<string, any>
           return prefs.morning_brief !== false && p.current_team_id
         })
-        .map(p => ({
-          userId: p.id,
-          firstName: (p.display_name || 'there').split(' ')[0],
-          teamId: p.current_team_id,
-          email: p.email || null,
-          slackToken: slackTokenByTeam.get(p.current_team_id) || null,
-          slackUserId: slackUserIdByUser.get(p.id) || null,
-          tone: ((p.wren_preferences || {}) as Record<string, any>).tone || 'balanced',
-          timezone: tzMap.get(p.id) || null,
-        }))
+        .map(p => {
+          const prefs = (p.wren_preferences || {}) as Record<string, any>
+          return {
+            userId: p.id,
+            firstName: (p.display_name || 'there').split(' ')[0],
+            teamId: p.current_team_id,
+            email: p.email || null,
+            slackToken: slackTokenByTeam.get(p.current_team_id) || null,
+            slackUserId: slackUserIdByUser.get(p.id) || null,
+            tone: prefs.tone || 'balanced',
+            timezone: tzMap.get(p.id) || null,
+            // Per-channel opt-out: default both enabled so Slack-connected users also get
+            // the email briefing (fixes the mutual-exclusion bug that suppressed email sends).
+            wantsEmailBrief: prefs.morning_brief_email !== false,
+            wantsSlackBrief: prefs.morning_brief_slack !== false,
+          }
+        })
         .filter(u => u.teamId)
     })
 
@@ -155,6 +164,7 @@ export const wrenMorningBrief = inngest.createFunction(
 
           // Skip if nothing to report
           if (overdue.length === 0 && missed.length === 0 && missedChats.length === 0 && drafts.length === 0 && meetings.length === 0 && calConflicts.length === 0 && threats.length === 0 && waitingRoom.length === 0) {
+            run.tally('no_data')
             return
           }
 
@@ -170,8 +180,8 @@ export const wrenMorningBrief = inngest.createFunction(
             return age > 7
           })
 
-          // ── Slack DM (if connected) ──
-          if (user.slackToken && user.slackUserId) {
+          // ── Slack DM (if connected and opted in) ──
+          if (user.slackToken && user.slackUserId && user.wantsSlackBrief) {
             const sections: string[] = []
 
             if (calConflicts.length > 0) {
@@ -242,14 +252,17 @@ export const wrenMorningBrief = inngest.createFunction(
               if (channel?.id) {
                 await slack.chat.postMessage({ channel: channel.id, text: `${greeting} ${sections.join(' ')}`, blocks, unfurl_links: false })
                 slackSent++
+                run.tally('sent')
               }
             } catch (slackErr) {
               console.error(`[morning-brief] Slack failed for ${user.userId}:`, (slackErr as Error).message)
+              run.tally('failed')
             }
           }
 
-          // ── Email (for all users without Slack, or as supplement) ──
-          if (!user.slackToken && user.email) {
+          // ── Email (send to all opted-in users, alongside Slack — the two channels
+          // are complementary: Slack for quick glance, email for archiving/mobile) ──
+          if (user.wantsEmailBrief && user.email) {
             const emailData = buildMorningBriefEmail({
               userName: user.firstName,
               greeting,
@@ -279,18 +292,23 @@ export const wrenMorningBrief = inngest.createFunction(
                   idempotencyKey: `morning-brief-${user.userId}-${todayStr}`,
                 })
                 emailSent++
+                run.tally('sent')
               } catch (emailErr) {
                 console.error(`[morning-brief] Email failed for ${user.userId}:`, (emailErr as Error).message)
+                run.tally('failed')
               }
             }
           }
         } catch (err) {
           console.error(`[morning-brief] Failed for user ${user.userId}:`, (err as Error).message)
           errors++
+          run.tally('failed')
         }
       })
     }
 
+    run.meta({ slackSent, emailSent, errors, total: users.length })
+    await run.finish()
     return { slackSent, emailSent, errors, total: users.length }
   }
 )

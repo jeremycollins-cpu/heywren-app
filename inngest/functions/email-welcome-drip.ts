@@ -7,6 +7,7 @@ import {
   buildWelcomeDay3,
   buildWelcomeDay7,
 } from '@/lib/email/templates/welcome'
+import { startJobRun } from '@/lib/jobs/record-run'
 
 function getAdminClient() {
   return createClient(
@@ -27,6 +28,7 @@ export const emailWelcomeDrip = inngest.createFunction(
   { id: 'email-welcome-drip' },
   { cron: '0 * * * *' }, // Every hour
   async ({ step }) => {
+    const run = startJobRun('email-welcome-drip')
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
     const now = new Date()
@@ -72,8 +74,12 @@ export const emailWelcomeDrip = inngest.createFunction(
     })
 
     if (drips.length === 0) {
+      run.meta({ reason: 'no pending drips' })
+      await run.finish()
       return { success: true, emailsSent: 0, reason: 'no pending drips' }
     }
+
+    run.meta({ pending_drips: drips.length })
 
     // Fetch profiles for all drip users
     const userIds = drips.map(d => d.user_id)
@@ -91,7 +97,10 @@ export const emailWelcomeDrip = inngest.createFunction(
 
     for (const drip of drips) {
       const profile = profiles.get(drip.user_id)
-      if (!profile?.email) continue
+      if (!profile?.email) {
+        run.tally('skipped')
+        continue
+      }
 
       const signupAt = new Date(drip.signup_at)
       const hoursSinceSignup = (now.getTime() - signupAt.getTime()) / (1000 * 60 * 60)
@@ -116,6 +125,9 @@ export const emailWelcomeDrip = inngest.createFunction(
           if (result.success) {
             await supabase.from('welcome_drip_state').update({ day0_sent_at: now.toISOString() }).eq('id', drip.id)
             emailsSent++
+            run.tally('sent')
+          } else {
+            run.tally('failed')
           }
           return
         }
@@ -151,6 +163,9 @@ export const emailWelcomeDrip = inngest.createFunction(
           if (result.success) {
             await supabase.from('welcome_drip_state').update({ day1_sent_at: now.toISOString() }).eq('id', drip.id)
             emailsSent++
+            run.tally('sent')
+          } else {
+            run.tally('failed')
           }
           return
         }
@@ -187,6 +202,9 @@ export const emailWelcomeDrip = inngest.createFunction(
           if (result.success) {
             await supabase.from('welcome_drip_state').update({ day3_sent_at: now.toISOString() }).eq('id', drip.id)
             emailsSent++
+            run.tally('sent')
+          } else {
+            run.tally('failed')
           }
           return
         }
@@ -240,6 +258,9 @@ export const emailWelcomeDrip = inngest.createFunction(
               completed: true,
             }).eq('id', drip.id)
             emailsSent++
+            run.tally('sent')
+          } else {
+            run.tally('failed')
           }
           return
         }
@@ -251,6 +272,8 @@ export const emailWelcomeDrip = inngest.createFunction(
       })
     }
 
+    run.meta({ emailsSent })
+    await run.finish()
     return { success: true, emailsSent }
   }
 )
