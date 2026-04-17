@@ -81,7 +81,32 @@ export async function GET(request: NextRequest) {
       .select('id, email, display_name, avatar_url')
       .in('id', userIds)
 
-    const profileMap = new Map((profiles || []).map(p => [p.id, p]))
+    const profileMap = new Map<string, any>((profiles || []).map(p => [p.id, p as any]))
+
+    // Fallback: enrich missing profile rows from auth.users so names aren't "Unknown".
+    const needsAuthLookup = userIds.filter((id: string) => {
+      const p: any = profileMap.get(id)
+      return !p || (!p.display_name && !p.email)
+    })
+    if (needsAuthLookup.length > 0) {
+      const authResults = await Promise.all(
+        needsAuthLookup.map((id: string) =>
+          admin.auth.admin.getUserById(id).then((r: any) => r?.data?.user || null).catch(() => null)
+        )
+      )
+      for (const authUser of authResults) {
+        if (!authUser) continue
+        const existing: any = profileMap.get(authUser.id) || { id: authUser.id }
+        profileMap.set(authUser.id, {
+          ...existing,
+          email: existing.email || authUser.email || '',
+          display_name: existing.display_name
+            || authUser.user_metadata?.full_name
+            || authUser.user_metadata?.name
+            || null,
+        })
+      }
+    }
 
     const members = teamMembers.map(m => {
       const p = profileMap.get(m.user_id)
@@ -161,6 +186,33 @@ async function getOrgHierarchyMembers(
     .in('id', userIds)
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
+
+  // Fallback: any member whose profile row is missing or has no name/email
+  // (e.g. invited users who never completed signup, or legacy rows) gets
+  // enriched from auth.users so the UI never shows "Unknown".
+  const needsAuthLookup = userIds.filter((id: string) => {
+    const p: any = profileMap.get(id)
+    return !p || (!p.display_name && !p.email)
+  })
+  if (needsAuthLookup.length > 0) {
+    const authResults = await Promise.all(
+      needsAuthLookup.map((id: string) =>
+        admin.auth.admin.getUserById(id).then((r: any) => r?.data?.user || null).catch(() => null)
+      )
+    )
+    for (const authUser of authResults) {
+      if (!authUser) continue
+      const existing: any = profileMap.get(authUser.id) || { id: authUser.id }
+      profileMap.set(authUser.id, {
+        ...existing,
+        email: existing.email || authUser.email || '',
+        display_name: existing.display_name
+          || authUser.user_metadata?.full_name
+          || authUser.user_metadata?.name
+          || null,
+      })
+    }
+  }
 
   // Get integrations for all visible members
   const { data: integrations } = await admin
