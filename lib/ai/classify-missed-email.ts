@@ -334,6 +334,30 @@ const TRIAGE_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
+const BATCH_TRIAGE_TOOL: Anthropic.Messages.Tool = {
+  name: 'classify_emails_batch',
+  description: 'For each numbered email, classify whether it needs a personal response.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of email number ("1", "2", ...) to classification.',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            needs_response: { type: 'boolean' },
+          },
+          required: ['needs_response'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
+const TRIAGE_SYSTEM_PROMPT = 'For each numbered email, decide whether it contains a direct question, request, or action item directed at the recipient awaiting a response. If the recipient is specifically @mentioned or addressed by name, answer true. Answer false for: sales pitches, cold outreach from unknown companies, recruiting/staffing firms, PR/media pitches, automated notifications, newsletters, mass emails. Cold outreach often contains questions ("Would you be open to a call?") but these are unsolicited — answer false.'
+
 const EMAIL_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
   name: 'analyze_email',
   description: 'Analyze an email for response needs, urgency, classification, and sentiment.',
@@ -452,7 +476,7 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 64,
-      system: [{ type: 'text', text: 'Does this email contain a direct question, request, or action item directed at the recipient awaiting a response? If the recipient is specifically @mentioned or addressed by name, answer true. Answer false for: sales pitches, cold outreach from unknown companies, recruiting/staffing firms, PR/media pitches, automated notifications, newsletters, mass emails. Cold outreach often contains questions ("Would you be open to a call?") but these are unsolicited — answer false.', cache_control: { type: 'ephemeral' } } as any],
+      system: TRIAGE_SYSTEM_PROMPT,
       tools: [TRIAGE_TOOL],
       tool_choice: { type: 'tool', name: 'classify_email' },
       messages: [{ role: 'user', content: emailText }],
@@ -469,6 +493,56 @@ async function haikuTriage(email: EmailInput): Promise<boolean> {
     return true // fail open
   }
   return false
+}
+
+// Batched Tier-2 triage: classifies up to ~20 emails per API call.
+// The per-email triage was the dominant cost driver for missed-email
+// classification (one API call per survivor of Tier-1 filtering); batching
+// cuts that API call volume by ~20x.
+const TRIAGE_CHUNK_SIZE = 20
+const TRIAGE_BODY_TRUNCATE_CHARS = 1000
+
+async function haikuTriageBatch(emails: EmailInput[]): Promise<boolean[]> {
+  if (emails.length === 0) return []
+
+  const decisions: boolean[] = []
+  for (let start = 0; start < emails.length; start += TRIAGE_CHUNK_SIZE) {
+    const chunk = emails.slice(start, start + TRIAGE_CHUNK_SIZE)
+    const numbered = chunk.map((email, i) => {
+      const recipientCtx = email.recipientName || email.recipientEmail
+        ? `\nRecipient: ${email.recipientName || ''} ${email.recipientEmail ? `<${email.recipientEmail}>` : ''}`.trim()
+        : ''
+      return `[${i + 1}]\nFrom: ${email.fromName} <${email.fromEmail}>\nSubject: ${email.subject}${recipientCtx}\n\n${truncateForAI(email.bodyPreview, TRIAGE_BODY_TRUNCATE_CHARS)}`
+    }).join('\n\n---\n\n')
+
+    try {
+      const message = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        system: TRIAGE_SYSTEM_PROMPT,
+        tools: [BATCH_TRIAGE_TOOL],
+        tool_choice: { type: 'tool', name: 'classify_emails_batch' },
+        messages: [{ role: 'user', content: `Triage these ${chunk.length} emails:\n\n${numbered}` }],
+      })
+
+      recordTokenUsage(message.usage)
+
+      const toolBlock = message.content.find((b) => b.type === 'tool_use')
+      const results = toolBlock && toolBlock.type === 'tool_use'
+        ? (toolBlock.input as { results?: Record<string, { needs_response?: boolean }> }).results || {}
+        : {}
+
+      chunk.forEach((_, i) => {
+        decisions.push(results[String(i + 1)]?.needs_response === true)
+      })
+    } catch (error) {
+      console.error('Batched missed email Haiku triage failed:', (error as Error).message)
+      // Fail open: keep candidates so Tier-3 can still classify them.
+      chunk.forEach(() => decisions.push(true))
+    }
+  }
+
+  return decisions
 }
 
 // ============================================================
@@ -714,19 +788,18 @@ export async function classifyMissedEmailBatch(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage via tool_use (VIPs skip)
-  const triaged: typeof candidates = []
-  for (const email of candidates) {
-    if (email.vip) {
-      triaged.push(email)
-      continue
-    }
-    const needs = await haikuTriage(email)
-    if (needs) {
-      triaged.push(email)
-    } else {
-      _stats.tier2_filtered++
-    }
+  // Tier 2: Haiku triage via batched tool_use (VIPs skip)
+  const triaged: typeof candidates = candidates.filter((c) => c.vip)
+  const nonVip = candidates.filter((c) => !c.vip)
+  if (nonVip.length > 0) {
+    const decisions = await haikuTriageBatch(nonVip)
+    nonVip.forEach((email, i) => {
+      if (decisions[i]) {
+        triaged.push(email)
+      } else {
+        _stats.tier2_filtered++
+      }
+    })
   }
 
   if (triaged.length === 0) return results
@@ -859,12 +932,18 @@ export async function classifyMissedEmailBatchViaBatchApi(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage (synchronous — cheap, needed to filter before extraction)
-  const triaged: typeof candidates = []
-  for (const email of candidates) {
-    if (email.vip) { triaged.push(email); continue }
-    const needs = await haikuTriage(email)
-    if (needs) { triaged.push(email) } else { _stats.tier2_filtered++ }
+  // Tier 2: Batched Haiku triage (~20 emails per API call). VIPs skip triage.
+  const triaged: typeof candidates = candidates.filter((c) => c.vip)
+  const nonVip = candidates.filter((c) => !c.vip)
+  if (nonVip.length > 0) {
+    const decisions = await haikuTriageBatch(nonVip)
+    nonVip.forEach((email, i) => {
+      if (decisions[i]) {
+        triaged.push(email)
+      } else {
+        _stats.tier2_filtered++
+      }
+    })
   }
 
   if (triaged.length === 0) return results
