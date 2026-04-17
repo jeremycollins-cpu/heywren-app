@@ -137,43 +137,56 @@ async function syncOrg(
 
   // Build upsert payloads, split by whether we know the user_id. The two
   // partial unique indexes (user_id vs email-based) handle dedup for each.
-  let subscriptionType: string | null = null
+  let customerType: string | null = null
   const withUserId: Array<any> = []
   const withEmailOnly: Array<any> = []
 
   for (const r of rows) {
     const email = r.actor?.email_address ?? null
     const userId = email ? emailToUserId.get(email) ?? null : null
-    if (r.subscription_type) subscriptionType = r.subscription_type
+    if (r.customer_type) customerType = r.customer_type
 
-    // Aggregate per-model tokens into top-level columns (so the dashboard
-    // can read them cheaply) and keep the full breakdown in metadata.
+    // Aggregate per-model tokens and cost into top-level columns (so the
+    // dashboard can read them cheaply) and keep the full breakdown in
+    // metadata. Anthropic reports estimated_cost per model, already in
+    // USD cents.
     let inputTokens = 0
     let outputTokens = 0
     let cacheCreation = 0
     let cacheRead = 0
+    let estimatedCostCents = 0
     const modelsMetadata: Record<string, unknown>[] = []
-    for (const m of r.core_metrics?.models || []) {
+    for (const m of r.model_breakdown || []) {
       inputTokens += m.tokens?.input ?? 0
       outputTokens += m.tokens?.output ?? 0
       cacheCreation += m.tokens?.cache_creation ?? 0
       cacheRead += m.tokens?.cache_read ?? 0
+      estimatedCostCents += m.estimated_cost?.amount ?? 0
       modelsMetadata.push({
         model: m.model,
         input: m.tokens?.input ?? 0,
         output: m.tokens?.output ?? 0,
         cache_creation: m.tokens?.cache_creation ?? 0,
         cache_read: m.tokens?.cache_read ?? 0,
+        cost_cents: m.estimated_cost?.amount ?? 0,
       })
     }
 
-    const costUsd = r.core_metrics?.estimated_cost?.amount ?? 0
-    const estimatedCostCents = Math.round(costUsd * 100)
-    const sessions =
-      r.core_metrics?.num_sessions ?? r.num_sessions ?? 0
+    const sessions = r.core_metrics?.num_sessions ?? 0
 
-    const toolAccepted = r.tool_actions?.accepted ?? 0
-    const toolRejected = r.tool_actions?.rejected ?? 0
+    // tool_actions is a map keyed by tool identifier (edit_tool,
+    // multi_edit_tool, write_tool, notebook_edit_tool, …). Sum across
+    // all tools so the org-wide acceptance rate reflects total behavior.
+    let toolAccepted = 0
+    let toolRejected = 0
+    const toolBreakdown: Record<string, { accepted: number; rejected: number }> = {}
+    for (const [toolName, counts] of Object.entries(r.tool_actions || {})) {
+      const a = counts?.accepted ?? 0
+      const j = counts?.rejected ?? 0
+      toolAccepted += a
+      toolRejected += j
+      toolBreakdown[toolName] = { accepted: a, rejected: j }
+    }
     const toolTotal = toolAccepted + toolRejected
     const toolAcceptanceRate = toolTotal > 0 ? toolAccepted / toolTotal : null
 
@@ -182,7 +195,10 @@ async function syncOrg(
       user_email: email,
       organization_id: organizationId,
       team_id: userId ? userTeamMap.get(userId) ?? null : null,
-      date: r.date,
+      // Anthropic returns an RFC 3339 UTC timestamp; the DB column is
+      // DATE. Slice explicitly so timezone coercion never drifts a row
+      // into the wrong day.
+      date: r.date?.slice(0, 10),
       source: 'anthropic_admin_api' as const,
       num_sessions: sessions,
       input_tokens: inputTokens,
@@ -190,17 +206,17 @@ async function syncOrg(
       cache_creation_tokens: cacheCreation,
       cache_read_tokens: cacheRead,
       estimated_cost_cents: estimatedCostCents,
-      lines_added: r.lines_of_code?.added ?? 0,
-      lines_removed: r.lines_of_code?.removed ?? 0,
-      commits: r.commits ?? 0,
-      prs_opened: r.pull_requests ?? 0,
+      lines_added: r.core_metrics?.lines_of_code?.added ?? 0,
+      lines_removed: r.core_metrics?.lines_of_code?.removed ?? 0,
+      commits: r.core_metrics?.commits_by_claude_code ?? 0,
+      prs_opened: r.core_metrics?.pull_requests_by_claude_code ?? 0,
       tool_acceptance_rate: toolAcceptanceRate,
       metadata: {
-        subscription_type: r.subscription_type ?? null,
         customer_type: r.customer_type ?? null,
         terminal_type: r.terminal_type ?? null,
         tool_accepted: toolAccepted,
         tool_rejected: toolRejected,
+        tool_breakdown: toolBreakdown,
         models: modelsMetadata,
       },
       updated_at: new Date().toISOString(),
@@ -241,7 +257,10 @@ async function syncOrg(
       last_sync_status: 'success',
       last_sync_error: null,
       last_sync_row_count: totalUpserted,
-      subscription_type: subscriptionType,
+      // The current Anthropic response exposes customer_type ('api' |
+      // 'subscription') rather than a Team/Enterprise tier label. Store
+      // that here so the UI has something to show.
+      subscription_type: customerType,
     })
     .eq('organization_id', organizationId)
 

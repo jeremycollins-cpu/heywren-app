@@ -8,39 +8,47 @@
 const BASE_URL = 'https://api.anthropic.com/v1/organizations/usage_report/claude_code'
 
 export interface ClaudeCodeUsageRow {
+  // RFC 3339 UTC timestamp, e.g. '2025-09-01T00:00:00Z'. The DB `date`
+  // column coerces this on insert; callers wanting 'YYYY-MM-DD' should
+  // slice.
   date: string
   actor: {
-    type: 'user_actor' | string
+    type: 'user_actor' | 'api_actor' | string
     email_address?: string
+    api_key_name?: string
     user_uuid?: string
   }
+  organization_id?: string
   customer_type?: 'api' | 'subscription'
-  subscription_type?: 'team' | 'enterprise' | string
-  num_sessions?: number
-  lines_of_code?: {
-    added?: number
-    removed?: number
-  }
-  commits?: number
-  pull_requests?: number
   terminal_type?: string
-  tool_actions?: {
-    accepted?: number
-    rejected?: number
-  }
   core_metrics?: {
-    estimated_cost?: { amount?: number; currency?: string }
     num_sessions?: number
-    models?: Array<{
-      model: string
-      tokens?: {
-        input?: number
-        output?: number
-        cache_creation?: number
-        cache_read?: number
-      }
-    }>
+    lines_of_code?: {
+      added?: number
+      removed?: number
+    }
+    commits_by_claude_code?: number
+    pull_requests_by_claude_code?: number
   }
+  // Per-tool breakdown. Keys are tool identifiers (e.g. edit_tool,
+  // multi_edit_tool, write_tool, notebook_edit_tool) and values share
+  // the same accepted/rejected shape. Unknown keys are expected as
+  // Anthropic adds new tools.
+  tool_actions?: Record<string, { accepted?: number; rejected?: number }>
+  model_breakdown?: Array<{
+    model: string
+    tokens?: {
+      input?: number
+      output?: number
+      cache_creation?: number
+      cache_read?: number
+    }
+    estimated_cost?: {
+      // Amount is in cents USD per Anthropic's docs.
+      amount?: number
+      currency?: string
+    }
+  }>
 }
 
 export interface UsageReportResponse {
