@@ -39,10 +39,13 @@ export async function GET() {
     const sensitivity = (profile?.wren_preferences as any)?.sensitivity || 'balanced'
     const minConfidence = sensitivity === 'focused' ? 0.8 : sensitivity === 'comprehensive' ? 0.4 : 0.6
 
-    // Fetch pending and snoozed missed emails — scoped to THIS user only
+    // Fetch pending and snoozed missed emails — scoped to THIS user only.
+    // Join outlook_messages to pull Graph's authoritative webLink, which deep-links
+    // to the exact thread. Reconstructing a URL from message_id alone lands users
+    // on the Outlook inbox root instead of the specific message.
     const { data: missedEmails, error } = await supabase
       .from('missed_emails')
-      .select('*')
+      .select('*, outlook_messages(web_link)')
       .eq('team_id', teamId)
       .eq('user_id', user.id)
       .in('status', ['pending', 'snoozed'])
@@ -54,13 +57,16 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Add Outlook web link for each email using the Graph message_id
-    const emailsWithLinks = (missedEmails || []).map((email: any) => ({
-      ...email,
-      web_link: email.message_id
-        ? `https://outlook.office365.com/mail/inbox/id/${encodeURIComponent(email.message_id)}`
-        : null,
-    }))
+    // Prefer Graph's webLink (stable deeplink). Fall back to the deeplink/read
+    // route for legacy rows where webLink wasn't captured at sync time.
+    const emailsWithLinks = (missedEmails || []).map((email: any) => {
+      const joinedLink = email.outlook_messages?.web_link as string | null | undefined
+      const fallback = email.message_id
+        ? `https://outlook.office.com/mail/deeplink/read/${encodeURIComponent(email.message_id)}`
+        : null
+      const { outlook_messages: _om, ...rest } = email
+      return { ...rest, web_link: joinedLink || fallback }
+    })
 
     // Group emails by normalized subject line
     const threadMap = new Map<string, Array<any>>()
