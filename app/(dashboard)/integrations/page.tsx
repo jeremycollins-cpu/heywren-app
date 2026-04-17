@@ -88,10 +88,9 @@ const availableIntegrations = [
   {
     id: 'asana',
     name: 'Asana',
-    description: 'Sync tasks and projects',
+    description: 'Sync tasks and turn detected commitments into Asana tasks',
     color: '#F06A6A',
     icon: <span className="text-white font-bold text-sm">A</span>,
-    comingSoon: true,
   },
   {
     id: 'jira',
@@ -1011,6 +1010,25 @@ function IntegrationsContent() {
     window.location.href = authUrl
   }
 
+  const handleAsanaConnect = async () => {
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData?.user) {
+      toast.error('Please log in first')
+      return
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_ASANA_CLIENT_ID || ''
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/asana/connect`
+    const state = await getSignedState('dashboard')
+    if (!state) { toast.error('Failed to start OAuth flow'); return }
+
+    // Asana OAuth supports `default` (full user-scoped access). Asana also
+    // accepts no `scope` param at all, but passing `default` is explicit.
+    const authUrl = `https://app.asana.com/-/oauth_authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${encodeURIComponent(state)}&scope=default`
+    window.location.href = authUrl
+  }
+
   const handleDisconnect = async (id: string, provider?: string) => {
     try {
       // Claude Code uses its own disconnect endpoint
@@ -1063,6 +1081,8 @@ function IntegrationsContent() {
       handleGoogleMeetConnect()
     } else if (integrationId === 'github') {
       handleGitHubConnect()
+    } else if (integrationId === 'asana') {
+      handleAsanaConnect()
     }
   }
 

@@ -46,6 +46,7 @@ import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
 import { scheduleRecallBots, dispatchManualRecallBot } from '@/inngest/functions/schedule-recall-bots'
 import { healthMonitor } from '@/inngest/functions/health-monitor'
 import { syncGithubEvents, syncGithubDaily } from '@/inngest/functions/sync-github'
+import { syncAsanaTasks, syncAsanaDaily } from '@/inngest/functions/sync-asana'
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 import { generateMonthlyBriefingJob } from '@/inngest/functions/generate-monthly-briefing'
@@ -101,6 +102,9 @@ const handlers = serve({
     // GitHub
     syncGithubEvents,            // On-demand + initial connect — sync commits, PRs, reviews from GitHub
     syncGithubDaily,             // 6 AM UTC daily — refresh GitHub activity for all connected users
+    // Asana
+    syncAsanaTasks,              // On-demand + initial connect — sync tasks assigned to user across workspaces
+    syncAsanaDaily,              // 6:15 AM UTC daily — refresh Asana tasks for all connected users
     // Cost monitoring
     aiCostAlert,                 // 8 AM PT daily — alert if AI spend exceeds threshold or cache rate drops
     // Feedback loop
