@@ -46,7 +46,7 @@ export async function GET() {
         blocked_senders: [],
         min_urgency: 'low',
         scan_window_days: 7,
-        enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction'],
+        enabled_categories: ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
         auto_dismiss_days: 0,
         include_in_digest: true,
         priority_folders: [],
@@ -98,7 +98,9 @@ export async function PUT(req: Request) {
       blocked_senders: blocked_senders || [],
       min_urgency: min_urgency || 'low',
       scan_window_days: scan_window_days || 7,
-      enabled_categories: enabled_categories || ['question', 'request', 'decision', 'follow_up', 'introduction'],
+      enabled_categories: enabled_categories
+        ? (enabled_categories.includes('recipient_gap') ? enabled_categories : [...enabled_categories, 'recipient_gap'])
+        : ['question', 'request', 'decision', 'follow_up', 'introduction', 'recipient_gap'],
       auto_dismiss_days: auto_dismiss_days || 0,
       include_in_digest: include_in_digest ?? true,
       priority_folders: priority_folders || [],
