@@ -62,17 +62,37 @@ export const healthMonitor = inngest.createFunction(
     await step.run('check-stuck-messages', async () => {
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000).toISOString()
 
+      // Emails belonging to an integration that's been flagged for reauth are
+      // expected to be stuck — the user has already been notified and will only
+      // unblock by reconnecting. Counting them here just produces duplicate
+      // alerts for a problem we already surface via the reauth notification.
+      const { data: blockedIntegrations } = await supabase
+        .from('integrations')
+        .select('user_id, team_id')
+        .eq('provider', 'outlook')
+        .eq('config->>reauth_required', 'true')
+
+      const blockedUserIds = Array.from(
+        new Set((blockedIntegrations || []).map(i => i.user_id).filter(Boolean))
+      ) as string[]
+
+      let outlookQuery = supabase
+        .from('outlook_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('processed', false)
+        .lt('created_at', oneHourAgo)
+
+      if (blockedUserIds.length > 0) {
+        outlookQuery = outlookQuery.not('user_id', 'in', `(${blockedUserIds.join(',')})`)
+      }
+
       const [slackRes, outlookRes] = await Promise.all([
         supabase
           .from('slack_messages')
           .select('id', { count: 'exact', head: true })
           .eq('processed', false)
           .lt('created_at', oneHourAgo),
-        supabase
-          .from('outlook_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('processed', false)
-          .lt('created_at', oneHourAgo),
+        outlookQuery,
       ])
 
       const stuckSlack = slackRes.count || 0

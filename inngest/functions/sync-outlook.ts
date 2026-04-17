@@ -4,6 +4,7 @@ import { detectCommitmentsBatchViaBatchApi, getDetectionStats, calculatePriority
 import { insertCommitmentIfNotDuplicate, buildCommitmentMetadata } from '@/lib/ai/dedup-commitments'
 import { logAiUsage } from '@/lib/ai/persist-usage'
 import { reportError } from '@/lib/monitoring/report-error'
+import { markReauthRequired, isReauthRequired } from '@/lib/outlook/mark-reauth'
 
 // Re-export so drain-outlook-backlog's existing import still works
 export { insertCommitmentIfNotDuplicate, buildCommitmentMetadata }
@@ -119,9 +120,13 @@ async function refreshMicrosoftToken(
     // by another function, just use the existing fresh token
     const { data: fresh } = await supabase
       .from('integrations')
-      .select('access_token, config')
+      .select('access_token, config, user_id, team_id, provider')
       .eq('id', integrationId)
       .single()
+
+    // Don't bother Microsoft — user has to reconnect manually before this
+    // integration will work again.
+    if (isReauthRequired(fresh?.config)) return null
 
     if (fresh?.config?.token_expires_at) {
       const expiresAt = new Date(fresh.config.token_expires_at)
@@ -151,24 +156,27 @@ async function refreshMicrosoftToken(
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) {
       console.error('Token refresh failed:', tokenData.error)
+      if (tokenData.error === 'invalid_grant' && fresh?.user_id && fresh?.team_id) {
+        await markReauthRequired({
+          supabase,
+          integrationId,
+          provider: fresh.provider || 'outlook',
+          userId: fresh.user_id,
+          teamId: fresh.team_id,
+          oauthError: tokenData.error,
+        })
+      }
       return null
     }
 
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-
-    // Read existing config to preserve user metadata (microsoft_user_id, display_name, email)
-    const { data: current } = await supabase
-      .from('integrations')
-      .select('config')
-      .eq('id', integrationId)
-      .single()
 
     await supabase
       .from('integrations')
       .update({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token || refreshToken,
-        config: { ...(current?.config || {}), token_expires_at: expiresAt },
+        config: { ...(fresh?.config || {}), token_expires_at: expiresAt },
       })
       .eq('id', integrationId)
 
@@ -218,6 +226,14 @@ export async function syncTeamOutlook(
   let msToken = integration.access_token
   const refreshToken = integration.refresh_token || ''
   const integrationId = integration.id
+
+  // If Microsoft already told us the refresh token is dead, skip this user
+  // entirely. The user has been notified and will only be unblocked by
+  // reconnecting Outlook. Trying anyway just burns API quota and re-fires
+  // the invalid_grant error path.
+  if (isReauthRequired(integration.config)) {
+    return { success: false, error: 'reauth_required' }
+  }
 
   // Proactive token refresh
   const tokenExpiresAt = integration.config?.token_expires_at
