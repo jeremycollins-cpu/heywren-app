@@ -22,7 +22,10 @@ function getAdminClient() {
  */
 export const emailReengagement = inngest.createFunction(
   { id: 'email-reengagement' },
-  { cron: '0 11 * * *' }, // 11 AM daily
+  [
+    { cron: '0 11 * * *' },                          // 11 AM daily
+    { event: 'admin/job.email-reengagement' },       // admin manual trigger
+  ],
   async ({ step }) => {
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'

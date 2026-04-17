@@ -20,7 +20,10 @@ const STREAK_MILESTONES = new Set([4, 8, 12, 24, 52])
  */
 export const emailAchievement = inngest.createFunction(
   { id: 'email-achievement' },
-  { cron: '0 9 * * 1' }, // Monday 9 AM UTC
+  [
+    { cron: '0 9 * * 1' },                           // Monday 9 AM UTC
+    { event: 'admin/job.email-achievement' },        // admin manual trigger
+  ],
   async ({ step }) => {
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'

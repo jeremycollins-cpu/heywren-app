@@ -17,7 +17,10 @@ function getAdminClient() {
  */
 export const emailManagerBriefing = inngest.createFunction(
   { id: 'email-manager-briefing' },
-  { cron: '0 9 * * 1' }, // Monday 9 AM UTC
+  [
+    { cron: '0 9 * * 1' },                           // Monday 9 AM UTC
+    { event: 'admin/job.email-manager-briefing' },   // admin manual trigger
+  ],
   async ({ step }) => {
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'

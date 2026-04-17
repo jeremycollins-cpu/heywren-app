@@ -22,7 +22,10 @@ function getAdminClient() {
  */
 export const emailNudgeFallback = inngest.createFunction(
   { id: 'email-nudge-fallback' },
-  { cron: '0 10 * * 1-5' }, // 10 AM weekdays
+  [
+    { cron: '0 10 * * 1-5' },                        // 10 AM weekdays
+    { event: 'admin/job.email-nudge-fallback' },     // admin manual trigger
+  ],
   async ({ step }) => {
     const supabase = getAdminClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'

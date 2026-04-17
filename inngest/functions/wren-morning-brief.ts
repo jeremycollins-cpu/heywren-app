@@ -20,7 +20,10 @@ function getAdminClient() {
 
 export const wrenMorningBrief = inngest.createFunction(
   { id: 'wren-morning-brief', retries: 2, concurrency: { limit: 5 } },
-  { cron: 'TZ=America/Los_Angeles 30 8 * * 1-5' }, // 8:30 AM PT weekdays
+  [
+    { cron: 'TZ=America/Los_Angeles 30 8 * * 1-5' }, // 8:30 AM PT weekdays
+    { event: 'admin/job.wren-morning-brief' },       // admin manual trigger
+  ],
   async ({ step }) => {
     const run = startJobRun('wren-morning-brief')
     const supabase = getAdminClient()
