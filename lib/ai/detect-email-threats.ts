@@ -392,3 +392,137 @@ export async function tier2Analysis(
     return null
   }
 }
+
+// ── Tier 2 batch mode — analyzes up to 10 emails per API call ─────────────
+
+const BATCH_THREAT_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
+  name: 'analyze_threats_batch',
+  description: 'Analyze multiple numbered emails for phishing, scam, or social engineering threats.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of email number ("1", "2", ...) to threat assessment.',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            is_threat: { type: 'boolean' },
+            threat_level: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+            threat_type: { type: 'string', enum: ['phishing', 'spoofing', 'bec', 'malware_link', 'payment_fraud', 'impersonation'] },
+            confidence: { type: 'number' },
+            content_signals: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  signal: { type: 'string' },
+                  detail: { type: 'string' },
+                  weight: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+                },
+                required: ['signal', 'detail', 'weight'],
+              },
+            },
+            explanation: { type: 'string' },
+            recommended_actions: { type: 'array', items: { type: 'string' } },
+            do_not_actions: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['is_threat', 'threat_level', 'threat_type', 'confidence', 'content_signals', 'explanation', 'recommended_actions', 'do_not_actions'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
+const BATCH_THREAT_CHUNK_SIZE = 10
+
+export interface EmailForBatchThreatAnalysis {
+  email: EmailForThreatAnalysis
+  tier1Signals: ThreatSignal[]
+}
+
+/**
+ * Batched Tier-2 analysis. Accepts up to N emails per API call (chunked
+ * internally). Returns a Map keyed by messageId. Emails that fail to parse are
+ * omitted from the result.
+ *
+ * Use this for cron/scan paths where many emails need content analysis.
+ * Single-email sync paths (e.g. diagnose route) should continue using
+ * tier2Analysis for minimum latency.
+ */
+export async function tier2AnalysisBatch(
+  inputs: EmailForBatchThreatAnalysis[]
+): Promise<Map<string, ThreatAssessment>> {
+  const results = new Map<string, ThreatAssessment>()
+  if (inputs.length === 0) return results
+
+  for (let start = 0; start < inputs.length; start += BATCH_THREAT_CHUNK_SIZE) {
+    const chunk = inputs.slice(start, start + BATCH_THREAT_CHUNK_SIZE)
+
+    const numbered = chunk.map(({ email, tier1Signals }, i) => {
+      const tier1Context = tier1Signals.length > 0
+        ? `\nHeader/pattern signals:\n${tier1Signals.map(s => `- ${s.signal}: ${s.detail} (${s.weight})`).join('\n')}`
+        : ''
+      return [
+        `[${i + 1}]`,
+        `From: ${email.fromName} <${email.fromEmail}>`,
+        email.toRecipients ? `To: ${email.toRecipients}` : '',
+        `Subject: ${email.subject}`,
+        `Date: ${email.receivedAt}`,
+        email.hasAttachments ? 'Has Attachments: Yes' : '',
+        `\nBody Preview:\n${truncateForAI(email.bodyPreview, 1500)}`,
+        tier1Context,
+      ].filter(Boolean).join('\n')
+    }).join('\n\n---\n\n')
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } } as any],
+        tools: [BATCH_THREAT_ANALYSIS_TOOL],
+        tool_choice: { type: 'tool', name: 'analyze_threats_batch' },
+        messages: [{ role: 'user', content: `Analyze these ${chunk.length} emails:\n\n${numbered}` }],
+      })
+
+      recordTokenUsage(response.usage)
+
+      const toolBlock = response.content.find(b => b.type === 'tool_use')
+      if (!toolBlock || toolBlock.type !== 'tool_use') continue
+
+      const batchResults = (toolBlock.input as { results?: Record<string, {
+        is_threat: boolean
+        threat_level: string
+        threat_type: string
+        confidence: number
+        content_signals: ThreatSignal[]
+        explanation: string
+        recommended_actions: string[]
+        do_not_actions: string[]
+      }> }).results || {}
+
+      chunk.forEach(({ email, tier1Signals }, i) => {
+        const r = batchResults[String(i + 1)]
+        if (!r) return
+
+        results.set(email.messageId, {
+          isThreat: r.is_threat,
+          threatLevel: r.threat_level as ThreatAssessment['threatLevel'],
+          threatType: r.threat_type as ThreatAssessment['threatType'],
+          confidence: r.confidence,
+          signals: [...tier1Signals, ...(r.content_signals || [])],
+          explanation: r.explanation,
+          recommendedActions: r.recommended_actions || [],
+          doNotActions: r.do_not_actions || [],
+          replyToMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('reply-to')),
+          senderMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('sender')),
+        })
+      })
+    } catch (error) {
+      console.error('[detect-email-threats] Batch AI analysis failed:', (error as Error).message)
+    }
+  }
+
+  return results
+}

@@ -77,6 +77,27 @@ function makeBatchSonnetResponse(results: Record<string, DetectedCommitment[]>) 
   }
 }
 
+/**
+ * Build a mock batched Haiku triage response
+ * (tool_use with classify_messages_batch).
+ */
+function makeBatchHaikuTriageResponse(decisions: boolean[]) {
+  const results: Record<string, { has_commitment: boolean }> = {}
+  decisions.forEach((d, i) => {
+    results[String(i + 1)] = { has_commitment: d }
+  })
+  return {
+    content: [
+      {
+        type: 'tool_use',
+        id: 'toolu_test',
+        name: 'classify_messages_batch',
+        input: { results },
+      },
+    ],
+  }
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('calculatePriorityScore', () => {
@@ -352,10 +373,8 @@ describe('detectCommitmentsBatch', () => {
       { id: 'c', text: "Please review the PR and let me know your thoughts" },
     ]
 
-    // Haiku triage for message 'a' -> yes
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
-    // Haiku triage for message 'c' -> yes
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
+    // Batched Haiku triage: 'a' and 'c' pass Tier 1, triage says both need extraction.
+    mockCreate.mockResolvedValueOnce(makeBatchHaikuTriageResponse([true, true]))
     // Sonnet batch analysis via tool_use
     mockCreate.mockResolvedValueOnce(makeBatchSonnetResponse({
       '1': [
@@ -375,6 +394,8 @@ describe('detectCommitmentsBatch', () => {
     expect(results.get('a')![0].title).toBe('Send report')
     expect(results.get('b')).toEqual([])
     expect(results.get('c')).toEqual([])
+    // One batched triage call + one batched extraction call (was 3 separate calls pre-batching).
+    expect(mockCreate).toHaveBeenCalledTimes(2)
   })
 
   it('returns empty results when all candidates fail Haiku triage', async () => {
@@ -382,11 +403,11 @@ describe('detectCommitmentsBatch', () => {
       { id: '1', text: "I'll think about whether we need to schedule a meeting" },
     ]
 
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse(false))
+    mockCreate.mockResolvedValueOnce(makeBatchHaikuTriageResponse([false]))
 
     const results = await detectCommitmentsBatch(messages)
     expect(results.get('1')).toEqual([])
-    // Only Haiku call, no Sonnet
+    // Only the batched triage call, no extraction.
     expect(mockCreate).toHaveBeenCalledTimes(1)
   })
 
@@ -395,7 +416,7 @@ describe('detectCommitmentsBatch', () => {
       { id: '1', text: "I promise to deliver the project plan by next Monday" },
     ]
 
-    mockCreate.mockResolvedValueOnce(makeHaikuResponse(true))
+    mockCreate.mockResolvedValueOnce(makeBatchHaikuTriageResponse([true]))
     mockCreate.mockRejectedValueOnce(new Error('API error'))
 
     const results = await detectCommitmentsBatch(messages)

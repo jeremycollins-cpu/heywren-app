@@ -191,6 +191,28 @@ const BATCH_EXTRACTION_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
+const BATCH_TRIAGE_TOOL: Anthropic.Messages.Tool = {
+  name: 'classify_messages_batch',
+  description: 'For each numbered message, classify whether it contains a specific trackable commitment.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      results: {
+        type: 'object',
+        description: 'Map of message number ("1", "2", ...) to classification.',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            has_commitment: { type: 'boolean' },
+          },
+          required: ['has_commitment'],
+        },
+      },
+    },
+    required: ['results'],
+  },
+}
+
 // ============================================================
 // Shared system prompt (cached across calls via ephemeral)
 // ============================================================
@@ -356,6 +378,62 @@ async function haiku_triage(text: string, userContext?: UserContext): Promise<bo
     return true // fail open
   }
   return false
+}
+
+// Batched Tier-2 triage: classifies up to 20 messages per API call, replacing
+// the per-message loop used by the batch variants below.
+const TRIAGE_CHUNK_SIZE = 20
+const TRIAGE_BODY_TRUNCATE_CHARS = 1200
+
+async function haiku_triage_batch(
+  texts: string[],
+  userContext?: UserContext
+): Promise<boolean[]> {
+  if (texts.length === 0) return []
+
+  const decisions: boolean[] = []
+  for (let start = 0; start < texts.length; start += TRIAGE_CHUNK_SIZE) {
+    const chunk = texts.slice(start, start + TRIAGE_CHUNK_SIZE)
+    const numbered = chunk
+      .map((t, i) => `[${i + 1}] "${truncateForAI(t, TRIAGE_BODY_TRUNCATE_CHARS)}"`)
+      .join('\n\n')
+
+    try {
+      const systemBlocks: any[] = [{
+        type: 'text',
+        text: userContext ? TRIAGE_SYSTEM_PROMPT_USER : TRIAGE_SYSTEM_PROMPT_GENERIC,
+      }]
+      if (userContext) {
+        systemBlocks.push({ type: 'text', text: `Target user: ${userContext.userName}` })
+      }
+
+      const message = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        system: systemBlocks,
+        tools: [BATCH_TRIAGE_TOOL],
+        tool_choice: { type: 'tool', name: 'classify_messages_batch' },
+        messages: [{ role: 'user', content: `Triage these ${chunk.length} messages:\n\n${numbered}` }],
+      })
+
+      recordTokenUsage(message.usage)
+
+      const toolBlock = message.content.find((b) => b.type === 'tool_use')
+      const results = toolBlock && toolBlock.type === 'tool_use'
+        ? (toolBlock.input as { results?: Record<string, { has_commitment?: boolean }> }).results || {}
+        : {}
+
+      chunk.forEach((_, i) => {
+        decisions.push(results[String(i + 1)]?.has_commitment === true)
+      })
+    } catch (error) {
+      console.error('Batched Haiku triage failed:', (error as Error).message)
+      // Fail open: keep candidates so Tier-3 can still process them.
+      chunk.forEach(() => decisions.push(true))
+    }
+  }
+
+  return decisions
 }
 
 // ============================================================
@@ -533,17 +611,9 @@ export async function detectCommitmentsBatch(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage -- parallel
-  const triageResults = await Promise.all(
-    candidates.map(async (msg) => {
-      const hasCommitment = await haiku_triage(msg.text, userContext)
-      return { msg, hasCommitment }
-    })
-  )
-
-  const triaged = triageResults
-    .filter((r) => r.hasCommitment)
-    .map((r) => r.msg)
+  // Tier 2: Batched Haiku triage (~20 messages per API call)
+  const decisions = await haiku_triage_batch(candidates.map((m) => m.text), userContext)
+  const triaged = candidates.filter((_, i) => decisions[i])
   _stats.tier2_filtered += candidates.length - triaged.length
 
   if (triaged.length === 0) return results
@@ -627,15 +697,9 @@ export async function detectCommitmentsBatchViaBatchApi(
 
   if (candidates.length === 0) return results
 
-  // Tier 2: Haiku triage (synchronous — cheap)
-  const triageResults = await Promise.all(
-    candidates.map(async (msg) => {
-      const hasCommitment = await haiku_triage(truncateForAI(msg.text, 6000), userContext)
-      return { msg, hasCommitment }
-    })
-  )
-
-  const triaged = triageResults.filter((r) => r.hasCommitment).map((r) => r.msg)
+  // Tier 2: Batched Haiku triage (~20 messages per API call)
+  const decisions = await haiku_triage_batch(candidates.map((m) => m.text), userContext)
+  const triaged = candidates.filter((_, i) => decisions[i])
   _stats.tier2_filtered += candidates.length - triaged.length
 
   if (triaged.length === 0) return results
