@@ -11,7 +11,7 @@ import { featureForRoute, hasAccess, PLAN_DISPLAY, type PlanKey, type Displayabl
 import {
   X, BarChart3, CheckCircle2, Zap, Settings, Users, Brain,
   Calendar, FileText, Edit, Briefcase, Hand, Trophy, CreditCard, Lightbulb, HelpCircle, MailWarning, MailX,
-  Lock, RefreshCw, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
+  Lock, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
   AtSign, Inbox, Bell, Sparkles, Activity,
@@ -307,7 +307,6 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
       links: [
         { href: '/playbooks', label: 'Playbooks', icon: FileText, tourId: 'nav-playbooks', badge: 0, badgeColor: '' },
         { href: '/integrations', label: 'Integrations', icon: Zap, tourId: 'nav-integrations', badge: 0, badgeColor: '' },
-        { href: '/sync', label: 'Data Sync', icon: RefreshCw, tourId: 'nav-sync', badge: 0, badgeColor: '' },
       ],
     },
     {
