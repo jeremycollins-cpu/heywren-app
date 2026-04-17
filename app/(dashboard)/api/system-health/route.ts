@@ -165,7 +165,17 @@ export async function GET() {
     )
 
     // ── Data flow signals (not tied to a single AI module) ──
-    const [latestCommitmentRes, latestEmailRes, backlogRes, integrationsRes, recentErrorsRes] = await Promise.all([
+    const [
+      latestCommitmentRes,
+      latestEmailRes,
+      backlogRes,
+      integrationsRes,
+      recentErrorsRes,
+      emailCountRes,
+      calendarCountRes,
+      commitmentStatsRes,
+      profileRes,
+    ] = await Promise.all([
       admin
         .from('commitments')
         .select('created_at')
@@ -188,7 +198,7 @@ export async function GET() {
         .lt('created_at', new Date(now - 3600000).toISOString()),
       admin
         .from('integrations')
-        .select('id, provider, config, refresh_token')
+        .select('id, provider, config, refresh_token, created_at, updated_at')
         .eq('user_id', userId),
       admin
         .from('system_errors')
@@ -197,7 +207,39 @@ export async function GET() {
         .gte('created_at', dayAgo)
         .order('created_at', { ascending: false })
         .limit(10),
+      admin
+        .from('outlook_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId),
+      admin
+        .from('outlook_calendar_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId),
+      admin
+        .from('commitments')
+        .select('status, created_at')
+        .eq('organization_id', organizationId)
+        .or(`creator_id.eq.${userId},assignee_id.eq.${userId}`)
+        .neq('status', 'pending_review')
+        .limit(5000),
+      admin
+        .from('profiles')
+        .select('slack_user_id')
+        .eq('id', userId)
+        .single(),
     ])
+
+    // Slack message count — only queryable when we have the user's Slack ID.
+    const slackUserId = profileRes.data?.slack_user_id || null
+    let slackCount = 0
+    if (slackUserId) {
+      const { count } = await admin
+        .from('slack_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('user_id', slackUserId)
+      slackCount = count || 0
+    }
 
     const latestCommitmentAt = latestCommitmentRes.data?.[0]?.created_at || null
     const latestEmailAt = latestEmailRes.data?.[0]?.received_at || null
@@ -214,12 +256,35 @@ export async function GET() {
       const canRefresh = !!i.refresh_token
       return {
         provider: i.provider,
+        connectedAt: i.created_at || null,
+        lastSyncAt: i.updated_at || null,
         expiresAt: expiresAt || null,
         expired,
         canRefresh,
         status: expired ? (canRefresh ? 'refreshing' : 'reconnect_required') : 'connected',
       }
     })
+
+    // ── Commitment coverage ──
+    const allCommitments = commitmentStatsRes.data || []
+    const weekAgoMs = now - 7 * DAY_MS
+    const openStatuses = new Set(['open', 'overdue', 'likely_complete'])
+    const completedStatuses = new Set(['completed'])
+    const excludedStatuses = new Set(['dismissed', 'dropped'])
+    let openCount = 0
+    let completedCount = 0
+    let thisWeekCount = 0
+    let accountable = 0
+    for (const c of allCommitments) {
+      if (excludedStatuses.has(c.status)) continue
+      accountable++
+      if (openStatuses.has(c.status)) openCount++
+      if (completedStatuses.has(c.status)) completedCount++
+      if (new Date(c.created_at).getTime() > weekAgoMs) thisWeekCount++
+    }
+    const followThroughRate = accountable > 0
+      ? Math.round((completedCount / accountable) * 100)
+      : null
 
     return NextResponse.json({
       dataFlow: {
@@ -228,6 +293,19 @@ export async function GET() {
         lastEmailAt: latestEmailAt,
         emailAgeHours,
         stuckEmailBacklog: backlogRes.count || 0,
+      },
+      dataVolume: {
+        emails: emailCountRes.count || 0,
+        slackMessages: slackCount,
+        slackLinked: !!slackUserId,
+        calendarEvents: calendarCountRes.count || 0,
+      },
+      coverage: {
+        total: allCommitments.length,
+        open: openCount,
+        completed: completedCount,
+        thisWeek: thisWeekCount,
+        followThroughRate,
       },
       pipelines: pipelineResults,
       integrations,
