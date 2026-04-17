@@ -8,8 +8,9 @@ import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
 import {
   tier1Analysis,
-  tier2Analysis,
+  tier2AnalysisBatch,
   type EmailForThreatAnalysis,
+  type ThreatSignal,
   type ThreatAssessment,
 } from '@/lib/ai/detect-email-threats'
 import { logAiUsage } from '@/lib/ai/persist-usage'
@@ -105,6 +106,21 @@ export const scanEmailThreats = inngest.createFunction(
         const existingIds = new Set((existingAlerts || []).map(a => a.outlook_message_id))
         const newEmails = emails.filter(e => !existingIds.has(e.message_id))
 
+        // Phase 1: Fetch headers + Tier 1 per email, collect Tier 2 candidates.
+        type Tier2Candidate = {
+          email: typeof newEmails[number]
+          emailInput: EmailForThreatAnalysis
+          tier1Signals: ThreatSignal[]
+          tier1Extras: {
+            spfResult: string
+            dkimResult: string
+            dmarcResult: string
+            replyToMismatch: boolean
+            senderMismatch: boolean
+          }
+        }
+        const tier2Candidates: Tier2Candidate[] = []
+
         for (const email of newEmails) {
           if (Date.now() - startTime > TIME_BUDGET_MS) break
 
@@ -154,20 +170,42 @@ export const scanEmailThreats = inngest.createFunction(
           // trust that the email is clean without authentication checks.
           if (tier1.skipTier2 && headersLoaded) continue
 
-          // ── Tier 2: AI content analysis ──
-          const assessment = await tier2Analysis(emailInput, tier1.signals)
+          tier2Candidates.push({
+            email,
+            emailInput,
+            tier1Signals: tier1.signals,
+            tier1Extras: {
+              spfResult: tier1.spfResult,
+              dkimResult: tier1.dkimResult,
+              dmarcResult: tier1.dmarcResult,
+              replyToMismatch: tier1.replyToMismatch,
+              senderMismatch: tier1.senderMismatch,
+            },
+          })
+        }
+
+        // Phase 2: Batched Tier 2 AI content analysis (~10 emails per API call).
+        const batchAssessments = tier2Candidates.length > 0
+          ? await tier2AnalysisBatch(
+              tier2Candidates.map(c => ({ email: c.emailInput, tier1Signals: c.tier1Signals }))
+            )
+          : new Map<string, ThreatAssessment>()
+
+        for (const candidate of tier2Candidates) {
+          const assessment = batchAssessments.get(candidate.emailInput.messageId)
           if (!assessment) continue
 
           // Apply tier 1 header results
-          assessment.spfResult = tier1.spfResult
-          assessment.dkimResult = tier1.dkimResult
-          assessment.dmarcResult = tier1.dmarcResult
-          assessment.replyToMismatch = tier1.replyToMismatch
-          assessment.senderMismatch = tier1.senderMismatch
+          assessment.spfResult = candidate.tier1Extras.spfResult
+          assessment.dkimResult = candidate.tier1Extras.dkimResult
+          assessment.dmarcResult = candidate.tier1Extras.dmarcResult
+          assessment.replyToMismatch = candidate.tier1Extras.replyToMismatch
+          assessment.senderMismatch = candidate.tier1Extras.senderMismatch
 
           // Only create alert if above confidence threshold AND flagged as threat
           if (!assessment.isThreat || assessment.confidence < MIN_CONFIDENCE_TO_ALERT) continue
 
+          const { email } = candidate
           const { error } = await supabase
             .from('email_threat_alerts')
             .upsert(
