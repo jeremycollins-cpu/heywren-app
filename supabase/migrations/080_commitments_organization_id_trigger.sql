@@ -13,8 +13,20 @@
 --
 -- Fix mirrors migrations 075/076: attach the existing
 -- set_organization_id_from_team() trigger and backfill any null rows. Idempotent.
---
--- set_organization_id_from_team() is defined in migration 075.
+
+-- Ensure the helper function exists. It is defined in migration 075, but we
+-- re-declare it here with CREATE OR REPLACE so this migration is self-contained
+-- for environments that may have skipped 075.
+CREATE OR REPLACE FUNCTION set_organization_id_from_team()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.organization_id IS NULL AND NEW.team_id IS NOT NULL THEN
+    SELECT organization_id INTO NEW.organization_id
+    FROM teams WHERE id = NEW.team_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Backfill any commitments inserted after 061 that still lack organization_id.
 UPDATE commitments
