@@ -4,6 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { reportError } from '@/lib/monitoring/report-error'
+import { markReauthRequired, isReauthRequired } from '@/lib/outlook/mark-reauth'
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
@@ -27,6 +28,17 @@ async function refreshToken(
   integrationId: string,
   refreshTokenValue: string
 ): Promise<string | null> {
+  // Short-circuit if we've already detected a dead refresh token for this
+  // integration. Avoids hammering the Microsoft token endpoint and re-logging
+  // the same error every sync cycle until the user reconnects.
+  const { data: pre } = await supabase
+    .from('integrations')
+    .select('config, user_id, team_id, provider')
+    .eq('id', integrationId)
+    .single()
+
+  if (isReauthRequired(pre?.config)) return null
+
   const tokenRes = await fetch(
     'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     {
@@ -45,25 +57,43 @@ async function refreshToken(
   const data = await tokenRes.json()
   if (!data.access_token) {
     console.error('[graph-client] Token refresh failed:', data.error)
-    await reportError({ source: 'graph-client', message: `Token refresh failed: ${data.error}`, severity: 'critical', errorKey: 'token_refresh_failed', details: { error: data.error } })
+    // invalid_grant is terminal — the refresh token has been revoked/expired
+    // beyond the sliding window and no retry will ever succeed. Flip the
+    // reauth flag so subsequent calls short-circuit and notify the user once.
+    if (data.error === 'invalid_grant' && pre?.user_id && pre?.team_id) {
+      await markReauthRequired({
+        supabase,
+        integrationId,
+        provider: pre.provider || 'outlook',
+        userId: pre.user_id,
+        teamId: pre.team_id,
+        oauthError: data.error,
+      })
+    } else {
+      // Transient failures (network, 5xx, rate limits) — keep the critical log
+      // so ops notices if they spike, but dedup by integration so we don't
+      // paper the dashboard with duplicates within one outage window.
+      await reportError({
+        source: 'graph-client',
+        message: `Token refresh failed: ${data.error}`,
+        severity: 'critical',
+        userId: pre?.user_id || null,
+        teamId: pre?.team_id || null,
+        errorKey: `token_refresh_failed:${integrationId}`,
+        details: { error: data.error, integrationId },
+      })
+    }
     return null
   }
 
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString()
-
-  // Read existing config to preserve user metadata (microsoft_user_id, display_name, email)
-  const { data: current } = await supabase
-    .from('integrations')
-    .select('config')
-    .eq('id', integrationId)
-    .single()
 
   await supabase
     .from('integrations')
     .update({
       access_token: data.access_token,
       refresh_token: data.refresh_token || refreshTokenValue,
-      config: { ...(current?.config || {}), token_expires_at: expiresAt },
+      config: { ...(pre?.config || {}), token_expires_at: expiresAt },
     })
     .eq('id', integrationId)
 
