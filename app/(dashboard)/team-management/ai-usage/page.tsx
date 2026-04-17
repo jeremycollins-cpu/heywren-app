@@ -331,14 +331,13 @@ function AnthropicAdminCard() {
                 <Key size={12} />
                 Connect
               </button>
-              <a
-                href="https://console.anthropic.com/settings/admin-keys"
+              <Link
+                href="/docs/admin-api-key"
                 target="_blank"
-                rel="noopener noreferrer"
                 className="text-xs text-indigo-600 dark:text-indigo-400 underline"
               >
                 Where do I find my key?
-              </a>
+              </Link>
             </div>
           ) : (
             <div className="mt-3 space-y-2">
