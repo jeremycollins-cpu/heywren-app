@@ -491,6 +491,7 @@ export async function syncTeamOutlook(
               is_read: email.isRead ?? true,
               folder_id: email.parentFolderId || null,
               folder_name: folderName,
+              web_link: email.webLink || null,
             })
             .select()
             .single()
