@@ -557,11 +557,10 @@ export default function BriefingsPage() {
               <>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No calendar events synced yet</h3>
                 <p className="text-gray-500 dark:text-gray-400 max-w-md mb-6">
-                  Your Outlook account is connected, but calendar events haven&apos;t been synced yet.
-                  Go to the Sync page and run an Outlook sync to pull in your upcoming meetings.
+                  Your Outlook account is connected, but calendar events haven&apos;t been synced yet. Events are pulled in automatically — they should appear within a few minutes.
                 </p>
-                <a href="/sync" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                  Sync Calendar
+                <a href="/integrations" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                  Review Integration
                 </a>
               </>
             ) : (
