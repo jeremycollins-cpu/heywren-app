@@ -16,9 +16,13 @@ export interface EmailForThreatAnalysis {
   fromName: string
   subject: string
   bodyPreview: string
+  bodyHtml?: string
   receivedAt: string
   toRecipients?: string
   ccRecipients?: string
+  // The signed-in user's own mailbox address, used to catch self-spoofing even
+  // when `toRecipients` is stored as display names rather than email addresses.
+  accountEmail?: string
   // Header data (fetched separately from Graph API)
   headers?: Array<{ name: string; value: string }>
   replyTo?: string
@@ -69,12 +73,18 @@ const KNOWN_SCAM_PATTERNS = [
   /past\s+due\s+reminder/i,
   /has\s+sent\s+you\s+a\s+document/i,
   /shared\s+a\s+document\s+with\s+you/i,
-  /review\s+and\s+sign\s+document/i,
+  /review\s+(?:and|&(?:amp;)?)\s+sign\s+document/i,
   /e[-\s]?sign(ature)?\s+(required|requested|pending)/i,
+  /required\s+your\s+signature\s+on\s+the\s+completed\s+document/i,
+  /please\s+find\s+(?:and\s+complete|attached)\s+.{0,80}(agreement|document|contract|financial)/i,
+  /action\s+required:.{0,120}(agreement|signature|document|contract|financial)/i,
 ]
 
-// Long opaque tracking IDs appended to phishing subjects ("Ref~ID#: dc8e8098a0ea6afbdce28b0bb05ea952")
-const SUSPICIOUS_REF_ID_PATTERN = /ref[~\s#:]*id[#:\s]*[a-f0-9]{16,}/i
+// Long opaque tracking IDs appended to phishing subjects. Matches both
+// "Ref~ID#: dc8e..." and the bare "ID:d4e1b9eca70cdf513ce2f196ab4d29df"
+// variant. Legitimate reference IDs are typically short or use UUID dashes,
+// so a run of 20+ contiguous hex characters is a strong phishing indicator.
+const SUSPICIOUS_REF_ID_PATTERN = /(?:ref[~\s#:]*id[#:\s]*|\bid[:#\s]+)[a-f0-9]{20,}/i
 
 const PRESSURE_PATTERNS = [
   /act\s+(now|immediately|fast|quickly)/i,
@@ -113,6 +123,7 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   replyToMismatch: boolean
   senderMismatch: boolean
   skipTier2: boolean
+  autoAlert: Tier1AutoAlert | null
 } {
   const signals: ThreatSignal[] = []
   let spfResult = 'none'
@@ -147,22 +158,35 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     }
   }
 
-  // ── Sender spoofing: From address matches a recipient (user sending to themselves) ──
-  // Legitimate self-sent emails are rare and typically don't include phishing indicators.
-  // Spoofers set the From to the victim's own address to bypass "trusted contact" heuristics.
+  // ── Sender spoofing: From address matches the user's own mailbox ──
+  // Real self-sent emails are rare and never ask you to sign/click/verify —
+  // spoofers set the From to the victim's own address to bypass "trusted
+  // contact" heuristics and evade naive filters.
+  //
+  // We check BOTH:
+  //   (a) the user's signed-in mailbox address (most reliable — toRecipients
+  //       is stored as display names by sync-outlook, so it doesn't match
+  //       email-address comparisons), and
+  //   (b) any to/cc recipient that happens to look like an email address
+  //       (so non-Outlook paths and older cached rows still work).
   if (email.fromEmail) {
     const fromLower = email.fromEmail.toLowerCase().trim()
-    const recipientEmails = [email.toRecipients, email.ccRecipients]
-      .filter(Boolean)
-      .join(';')
-      .split(/[;,]/)
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean)
-    if (recipientEmails.includes(fromLower)) {
+    const selfAddresses = new Set<string>()
+    if (email.accountEmail) {
+      selfAddresses.add(email.accountEmail.toLowerCase().trim())
+    }
+    for (const raw of [email.toRecipients, email.ccRecipients]) {
+      if (!raw) continue
+      for (const part of raw.split(/[;,]/)) {
+        const cleaned = part.trim().toLowerCase()
+        if (cleaned && cleaned.includes('@')) selfAddresses.add(cleaned)
+      }
+    }
+    if (selfAddresses.has(fromLower)) {
       signals.push({
         signal: 'sender_spoofing_self',
-        detail: `Email appears to come from your own address (${email.fromEmail}). This is a common spoofing tactic — real self-sent emails rarely ask you to sign or click links.`,
-        weight: 'high',
+        detail: `Email appears to come from your own address (${email.fromEmail}), but it isn't actually in your Sent folder — someone is impersonating you. Real self-sent emails don't ask you to sign documents, click links, or enter codes.`,
+        weight: 'critical',
       })
     }
   }
@@ -232,10 +256,237 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     }
   }
 
+  // ── Link analysis (when full HTML body is available) ──
+  // Catches the "click this clearly-phishing link" tell the user called out:
+  // raw-IP URLs, display-text-vs-href mismatches, and brand impersonation
+  // where the email mentions DocuSign/Microsoft/etc. but links elsewhere.
+  if (email.bodyHtml) {
+    signals.push(...analyzeLinksInBody(email.bodyHtml, fullText))
+  }
+
   // If no signals at all, skip tier 2 (email looks clean)
   const skipTier2 = signals.length === 0
 
-  return { signals, spfResult, dkimResult, dmarcResult, replyToMismatch, senderMismatch, skipTier2 }
+  // Rule-based auto-alert for dead-certain combos — bypasses Tier 2 AI and
+  // the 0.75 confidence threshold so obvious phishing always lands in the
+  // dashboard even when Haiku gets cold feet.
+  const autoAlert = computeTier1AutoAlert(signals)
+
+  return { signals, spfResult, dkimResult, dmarcResult, replyToMismatch, senderMismatch, skipTier2, autoAlert }
+}
+
+// ── Link analysis ────────────────────────────────────────────────────────
+
+const KNOWN_BRANDS: Record<string, string[]> = {
+  docusign: ['docusign.com', 'docusign.net'],
+  microsoft: ['microsoft.com', 'outlook.com', 'office.com', 'live.com', 'microsoftonline.com', 'sharepoint.com', 'office365.com'],
+  google: ['google.com', 'gmail.com', 'googlemail.com'],
+  paypal: ['paypal.com'],
+  adobe: ['adobe.com', 'adobesign.com'],
+  dropbox: ['dropbox.com'],
+  amazon: ['amazon.com', 'amazon.co.uk'],
+  apple: ['apple.com', 'icloud.com', 'me.com'],
+  netflix: ['netflix.com'],
+  chase: ['chase.com'],
+  wellsfargo: ['wellsfargo.com'],
+  bankofamerica: ['bankofamerica.com', 'bofa.com'],
+}
+
+const URL_SHORTENERS = new Set([
+  'bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly', 'is.gd',
+  'buff.ly', 'adf.ly', 'bit.do', 'cutt.ly', 'rebrand.ly', 'short.link',
+  'tiny.cc', 't.ly', 'shorturl.at',
+])
+
+function isOfficialDomain(hostname: string, legitDomains: string[]): boolean {
+  const lower = hostname.toLowerCase()
+  return legitDomains.some(d => lower === d || lower.endsWith('.' + d))
+}
+
+export function analyzeLinksInBody(bodyHtml: string, bodyContext: string): ThreatSignal[] {
+  const signals: ThreatSignal[] = []
+  if (!bodyHtml) return signals
+
+  const ctx = bodyContext.toLowerCase()
+  const links: { href: string; displayText: string; hostname: string }[] = []
+
+  const anchorRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+  while ((match = anchorRegex.exec(bodyHtml)) !== null) {
+    const href = match[1].trim()
+    if (!/^https?:\/\//i.test(href)) continue
+    const displayText = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    try {
+      const url = new URL(href)
+      links.push({ href, displayText, hostname: url.hostname.toLowerCase() })
+    } catch {
+      // Malformed href, skip
+    }
+  }
+
+  if (links.length === 0) return signals
+
+  // Raw IP-address URLs are essentially always phishing
+  const ipLink = links.find(l => /^\d{1,3}(\.\d{1,3}){3}$/.test(l.hostname))
+  if (ipLink) {
+    signals.push({
+      signal: 'ip_based_url',
+      detail: `Link goes to a raw IP address (${ipLink.hostname}) instead of a domain — legitimate senders never do this`,
+      weight: 'critical',
+    })
+  }
+
+  // URL shorteners hide the real destination
+  const shortened = links.find(l => URL_SHORTENERS.has(l.hostname))
+  if (shortened) {
+    signals.push({
+      signal: 'url_shortener',
+      detail: `Link uses URL shortener "${shortened.hostname}" which hides the real destination`,
+      weight: 'medium',
+    })
+  }
+
+  // Brand impersonation: body mentions a well-known brand but links go off-brand
+  for (const [brand, legitDomains] of Object.entries(KNOWN_BRANDS)) {
+    if (!ctx.includes(brand)) continue
+    const suspicious = links.find(l => {
+      if (isOfficialDomain(l.hostname, legitDomains)) return false
+      const lowerDisplay = l.displayText.toLowerCase()
+      const lowerHost = l.hostname.toLowerCase()
+      return lowerDisplay.includes(brand) || lowerHost.includes(brand)
+    })
+    if (suspicious) {
+      signals.push({
+        signal: 'brand_impersonation_link',
+        detail: `Email references ${brand} but a link goes to "${suspicious.hostname}" — not an official ${brand} domain`,
+        weight: 'critical',
+      })
+      break
+    }
+  }
+
+  // Display-text-vs-href mismatch (classic phishing tactic).
+  // Matches domains like "docusign.com" or "app.docusign.com" in display text
+  // and compares against the actual href hostname.
+  for (const link of links) {
+    const displayMatches = link.displayText.match(
+      /\b([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi
+    )
+    if (!displayMatches) continue
+    for (const candidate of displayMatches) {
+      const displayDomain = candidate.toLowerCase()
+      // Skip things that aren't really domains (e.g. "readme.md" in copy text)
+      if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif)$/i.test(displayDomain)) continue
+      const actual = link.hostname
+      if (displayDomain === actual) continue
+      if (actual.endsWith('.' + displayDomain)) continue
+      if (displayDomain.endsWith('.' + actual)) continue
+      signals.push({
+        signal: 'link_domain_mismatch',
+        detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
+        weight: 'critical',
+      })
+      return signals
+    }
+  }
+
+  return signals
+}
+
+// ── Rule-based auto-alert ────────────────────────────────────────────────
+// For combos so dead-certain we shouldn't depend on the AI returning
+// >= 0.75 confidence. Returns a pre-built assessment ready to persist.
+
+export interface Tier1AutoAlert {
+  level: 'critical' | 'high'
+  type: ThreatAssessment['threatType']
+  explanation: string
+  recommendedActions: string[]
+  doNotActions: string[]
+  confidence: number
+}
+
+function computeTier1AutoAlert(signals: ThreatSignal[]): Tier1AutoAlert | null {
+  const names = new Set(signals.map(s => s.signal))
+
+  const selfSpoof = names.has('sender_spoofing_self')
+  const linkMismatch = names.has('link_domain_mismatch')
+  const brandImpersonation = names.has('brand_impersonation_link')
+  const ipUrl = names.has('ip_based_url')
+  const dmarcFail = names.has('dmarc_fail')
+  const credentialRequest = names.has('credential_request')
+  const scamPattern = names.has('scam_pattern')
+  const suspiciousRefId = names.has('suspicious_ref_id')
+
+  const baseDoNot = [
+    'Do not click any links in this email',
+    'Do not open any attachments',
+    'Do not reply with personal or financial information',
+  ]
+  const baseRecommended = [
+    'Report the email as phishing in Outlook (right-click → Report)',
+    'Delete the email after reporting',
+    'If it references a real person or service, verify through a channel you already trust (a known phone number, in person, or a bookmarked site)',
+  ]
+
+  // 1. Self-spoof: From claims to be the user's own mailbox. Real self-sent
+  //    emails never ask you to sign/click/enter codes.
+  if (selfSpoof) {
+    return {
+      level: 'critical',
+      type: 'spoofing',
+      explanation:
+        "This email claims to come from your own address, but you didn't actually send it — someone is impersonating you. This is a classic sender-spoofing attack used to trick you into clicking a link or signing a fake document.",
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.97,
+    }
+  }
+
+  // 2. Link where the displayed domain doesn't match the real destination.
+  if (linkMismatch || brandImpersonation) {
+    return {
+      level: 'critical',
+      type: 'phishing',
+      explanation:
+        "A link in this email doesn't go where it claims to. The displayed text and the actual URL point to different domains — a classic phishing tactic to disguise a malicious destination.",
+      doNotActions: baseDoNot,
+      recommendedActions: [
+        'Report as phishing and delete',
+        'If you expected the linked service, navigate to it directly via a browser bookmark — never through this email',
+        ...baseRecommended.slice(2),
+      ],
+      confidence: 0.95,
+    }
+  }
+
+  // 3. Raw IP address URL — legitimate businesses never send these.
+  if (ipUrl) {
+    return {
+      level: 'critical',
+      type: 'malware_link',
+      explanation:
+        'This email contains a link to a raw IP address instead of a real domain. Legitimate businesses never send links this way — it is almost certainly malicious.',
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.95,
+    }
+  }
+
+  // 4. DMARC fail + any phishing indicator = high-confidence spoof.
+  if (dmarcFail && (credentialRequest || scamPattern || suspiciousRefId)) {
+    return {
+      level: 'critical',
+      type: 'phishing',
+      explanation:
+        "This email failed DMARC authentication, meaning the sender's domain explicitly says it did not authorize this message. Combined with the phishing language we detected, this is almost certainly a spoofed phishing attempt.",
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.92,
+    }
+  }
+
+  return null
 }
 
 // ── Tier 2: AI Content Analysis ──────────────────────────────────────────
@@ -295,38 +546,223 @@ const THREAT_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
-const SYSTEM_PROMPT = `You are an email security analyst. Analyze emails for phishing, scam, spoofing, and social engineering threats.
+// The prompt is deliberately sized above Haiku 4.5's 4096-token cache floor
+// so the system + tool prefix is eligible for prompt caching. The tradeoff
+// is worth it: first call pays the ~1.25x cache-write premium, every
+// subsequent call in the 5-minute window pays ~0.1x read cost for the prefix.
+// A scan that makes 25+ API calls in 4 minutes sees the cached prefix ~24
+// times — a major net saving versus sending a short prompt uncached every
+// call. Detailed examples also measurably improve Haiku accuracy.
+const SYSTEM_PROMPT = `You are an email security analyst. Your job is to analyze emails that have already tripped a free pre-filter and decide whether each is a real phishing, scam, spoofing, impersonation, or social-engineering threat.
 
-CRITICAL RULES:
-- Be CONSERVATIVE. False positives destroy user trust. Only flag emails as threats when you are genuinely confident (>= 0.75).
-- Legitimate marketing emails, newsletters, and automated notifications are NOT threats, even if they have urgent language.
-- Emails from known services (Google, Microsoft, Slack, etc.) with standard notification language are NOT threats.
-- Business emails with normal requests from colleagues are NOT threats, even if they mention payments or deadlines.
+You receive emails that a rule-based Tier 1 has already flagged with at least one signal. Most suspicious emails never reach you — so emails you see are already selected. But plenty of benign marketing, service notifications, and legitimate business emails trip the pre-filter too. Your job is to separate real threats from noisy-but-legitimate mail.
 
-WHAT IS A THREAT:
-- Credential phishing: fake login pages, "verify your account" from spoofed senders
-- Payment fraud: fake invoices, "urgent wire transfer" from spoofed executives
-- Impersonation: pretending to be a known contact but from a different email address
-- Malware: suspicious attachment requests, "download this file" from unknown senders
-- Business Email Compromise: fake CEO/CFO requests for money or sensitive data
+# CORE RULES
 
-EXPLANATION GUIDELINES:
-- Write for a non-technical person. No jargon.
-- Be specific: "This email claims to be from your bank but was sent from a different domain" not "Sender authentication failed"
-- Reference actual content from the email to show what's suspicious
-- Include what legitimate version of this email would look like
+1. Be CONSERVATIVE. False positives destroy user trust. Only return is_threat=true when your confidence is >= 0.75.
+2. When Tier 1 has flagged one of the rule-based certainties listed below, trust it and return a high-confidence threat verdict. Those signals are deterministic — do not second-guess them.
+3. For everything else, weigh the signals in context and err on the side of NOT flagging when the email is plausibly legitimate.
+4. Your explanation must be concrete and reference actual content from the email — not jargon.
 
-RECOMMENDED ACTIONS should be specific:
-- "Delete this email without clicking any links"
-- "Contact [person/company] directly using a phone number you already have"
-- "Forward to your IT security team at [their typical address]"
-- "Report as phishing in Outlook (right-click → Report)"
+# TIER 1 SIGNAL GLOSSARY
 
-DO NOT ACTIONS should be clear warnings:
+You will see zero or more of these under "HEADER SIGNALS ALREADY DETECTED". Use them to ground your analysis — don't repeat them as content signals, add new observations from the email body.
+
+Authentication signals:
+- dmarc_fail (critical): The sender's own domain's DMARC policy rejected this message. Near-certain spoof.
+- dkim_fail / spf_fail (high): Email authentication mechanism failed. Very suspicious but occasionally fires on misconfigured-but-legit senders.
+- no_auth_results (medium): No SPF/DKIM/DMARC at all. Legit senders almost always publish at least one.
+
+Sender signals:
+- sender_spoofing_self (critical): The From address is the RECIPIENT'S OWN mailbox, but the recipient didn't actually send the email. Real self-sent emails never ask you to sign or click anything. This alone is sufficient for a critical verdict.
+- reply_to_mismatch (high): Replies would go to a different domain than the sender's — classic phishing redirect.
+- sender_mismatch (high): Technical sender and displayed sender don't agree.
+
+Content signals:
+- scam_pattern (high): Subject or body matches a known scam phrase (e.g. "verify your account", "agreement signature required").
+- suspicious_ref_id (medium): Subject contains a long opaque hex ID (16+ characters) — phishing campaigns use these to look official.
+- pressure_language (medium): Multiple urgency phrases ("act now", "within 24 hours", "failure to respond").
+- credential_request (critical): Email appears to request sensitive info (password, SSN, bank details, gift cards).
+
+Link signals (extracted from full HTML body):
+- link_domain_mismatch (critical): A link's display text shows one domain but the href goes somewhere else. Textbook phishing.
+- brand_impersonation_link (critical): Body mentions a known brand (DocuSign, Microsoft, PayPal, etc.) but the link goes to an off-brand domain.
+- ip_based_url (critical): A link goes to a raw IP address instead of a domain name. Essentially always malicious.
+- url_shortener (medium): Link uses bit.ly / tinyurl / etc. to hide the real destination.
+
+# RULE-BASED CERTAINTIES
+
+If ANY of these are present in Tier 1 signals, return is_threat=true with confidence >= 0.90 and threat_level=critical:
+- sender_spoofing_self (any other signal present, or alone)
+- link_domain_mismatch
+- brand_impersonation_link
+- ip_based_url
+- dmarc_fail combined with ANY of {scam_pattern, credential_request, suspicious_ref_id, pressure_language}
+
+These are deterministic markers — legitimate email simply does not produce them.
+
+# WHAT IS A THREAT
+
+- Credential phishing: fake login pages, "verify your account" from spoofed senders, requests to re-enter passwords or MFA codes
+- Payment fraud: fake invoices, "urgent wire transfer" from spoofed executives, ACH change requests out of the blue
+- Business Email Compromise: CEO/CFO impersonation asking for gift cards, money, or sensitive data
+- Impersonation: pretending to be a known contact but from a different / look-alike email address
+- Malware / malicious links: suspicious attachment requests, "download this file" from unknown senders, links to fake document portals
+- Sextortion and extortion: threats to release info unless paid in crypto
+
+# WHAT IS NOT A THREAT
+
+Even with Tier 1 signals, these are typically legitimate:
+- Well-formed marketing emails and newsletters, even with urgent language ("Last day for 20% off")
+- Automated service notifications from known providers: Slack, Microsoft, Google, GitHub, Zoom, AWS, Stripe, Salesforce — from their real domains
+- Calendar invites and meeting updates
+- Order confirmations, shipping updates, and receipts
+- Internal company emails with normal deadlines or payment mentions ("invoice attached for approval")
+- Real DocuSign / Adobe Sign emails from docusign.com, docusign.net, adobesign.com
+- Real LinkedIn, Indeed, Glassdoor notifications
+- IT department security awareness emails ABOUT phishing (they talk about phishing but aren't phishing themselves)
+
+If the Tier 1 signal is weak (e.g. only pressure_language, or only suspicious_ref_id from a recognizable transactional sender), the email is probably legitimate — return is_threat=false and confidence low.
+
+# EXPLANATION GUIDELINES
+
+- Write 2-3 sentences for a non-technical reader.
+- Be specific: "This email claims to come from DocuSign but links to a domain that isn't DocuSign's" — NOT "sender authentication failed".
+- Name the exact tactic: spoofed From, fake document portal, credential harvest, payment redirect.
+- Contrast: what would a legitimate version of this email look like, and how does this one differ?
+
+# RECOMMENDED ACTIONS (what the user SHOULD do)
+
+Be concrete and useful:
+- "Report as phishing in Outlook (right-click the email → Report → Phishing)"
+- "Delete the email after reporting"
+- "If you need to verify the document, go to docusign.com directly in your browser and sign in — never through this email"
+- "Contact the sender through a phone number you already have, not a number listed in the email"
+- "Notify your IT security team if your company has one"
+
+# DO NOT ACTIONS (clear safety warnings)
+
 - "Do not click any links in this email"
 - "Do not open any attachments"
-- "Do not reply with personal information"
-- "Do not call any phone numbers listed in this email"`
+- "Do not reply with personal information, passwords, or account details"
+- "Do not call any phone numbers listed in this email"
+- "Do not scan any QR codes in the email"
+- "Do not sign any documents linked from this email"
+
+# WORKED EXAMPLES
+
+## Example 1 — CRITICAL: self-spoofing DocuSign phishing
+
+INPUT:
+From: Jeremy Collins <jeremy.collins@acme.com>
+To: jeremy.collins@acme.com
+Subject: Action Required: Please Find And Complete Q1 Financials & Agreement Documentation ID:d4e1b9eca70cdf513ce2f196ab4d29df
+Body: Routeware Required Your Signature On The Completed Document. All parties have completed Complete with Docusign: Q1 NDA.pdf. Click Access Documents and enter the security code.
+
+HEADER SIGNALS ALREADY DETECTED:
+- dmarc_fail (critical)
+- sender_spoofing_self (critical)
+- scam_pattern (high)
+- suspicious_ref_id (medium)
+
+CORRECT ASSESSMENT:
+- is_threat: true
+- threat_level: critical
+- threat_type: spoofing
+- confidence: 0.97
+- content_signals: social engineering ("safe senders list" language, fake document-share framing)
+- explanation: "This email is forged to look like it came from your own address, but your domain's security settings confirm you didn't send it — an attacker is impersonating you to make a fake DocuSign request look trustworthy. The opaque 32-character ID in the subject and the 'Action Required' urgency are designed to rush you into clicking the link. Real self-sent emails never ask you to sign documents."
+- do_not_actions: [Do not click any links..., Do not open any attachments..., Do not enter the security code..., Do not sign any documents from this email]
+- recommended_actions: [Report as phishing in Outlook..., Delete after reporting, If you need to sign a real Routeware document, go to docusign.com directly in your browser]
+
+## Example 2 — NOT A THREAT: real DocuSign notification
+
+INPUT:
+From: DocuSign NA3 System <dse_NA3@docusign.net>
+To: alice@company.com
+Subject: Please DocuSign: NDA_v3.pdf
+Body: John Smith sent you a new DocuSign document to review and sign. REVIEW DOCUMENT. (link goes to na3.docusign.net/Signing/...)
+
+HEADER SIGNALS ALREADY DETECTED:
+- scam_pattern (high): Matches "review and sign document"
+
+CORRECT ASSESSMENT:
+- is_threat: false
+- threat_level: low
+- threat_type: phishing
+- confidence: 0.15
+- explanation: "This looks like a legitimate DocuSign notification. The sender is an official DocuSign domain (docusign.net), the signing link goes to an official DocuSign subdomain, and there are no authentication failures or off-brand redirects. The 'review and sign document' phrase tripped the pre-filter but this is standard DocuSign language."
+- recommended_actions: [If you weren't expecting a document from John Smith, contact him through a channel you already trust before signing]
+- do_not_actions: [] (empty — this is not a threat)
+
+## Example 3 — CRITICAL: brand-impersonation phishing
+
+INPUT:
+From: "Microsoft Account Team" <security-alert@ms-verify-account.co>
+To: bob@company.com
+Subject: Unusual sign-in activity detected on your account
+Body: We noticed unusual sign-in activity. To keep your account safe, verify your identity now. (link display: "verify.microsoft.com", actual href: "http://ms-verify-account.co/login?id=...")
+
+HEADER SIGNALS ALREADY DETECTED:
+- spf_fail (high)
+- scam_pattern (high): Matches "unusual sign-in activity"
+- link_domain_mismatch (critical): shows "verify.microsoft.com" but goes to "ms-verify-account.co"
+- brand_impersonation_link (critical): mentions Microsoft, links to non-Microsoft domain
+
+CORRECT ASSESSMENT:
+- is_threat: true
+- threat_level: critical
+- threat_type: phishing
+- confidence: 0.98
+- explanation: "This email is pretending to be Microsoft but it's not — the sender's domain is 'ms-verify-account.co', not microsoft.com, and the 'verify' button displays a Microsoft URL while actually linking to the fake domain. This is a credential-harvesting attack. If you click and enter your password, the attackers will capture it."
+- do_not_actions: [Do not click any links, Do not enter your Microsoft password anywhere from this email]
+- recommended_actions: [Report as phishing and delete, Go to account.microsoft.com directly in your browser to check for any real security alerts]
+
+## Example 4 — NOT A THREAT: legit marketing email with urgency
+
+INPUT:
+From: Stripe <hello@stripe.com>
+To: alice@company.com
+Subject: Action required: Update your tax information by March 31
+Body: To continue receiving payouts, please update your tax forms before March 31. Review now.
+
+HEADER SIGNALS ALREADY DETECTED:
+- scam_pattern (high): Matches "Action Required" / "update payment method" style
+- pressure_language (medium): "Action required", "before March 31"
+
+CORRECT ASSESSMENT:
+- is_threat: false
+- threat_level: low
+- threat_type: phishing
+- confidence: 0.20
+- explanation: "This appears to be a legitimate Stripe compliance notification. The sender domain is stripe.com (verified), there are no authentication failures, and the request to update tax forms is a standard annual Stripe workflow. The urgent tone tripped the pre-filter but is appropriate for a regulatory deadline."
+- recommended_actions: [If you have a Stripe account and want to verify, go to dashboard.stripe.com directly (don't use the email link) to check for the tax form request]
+
+## Example 5 — HIGH: CEO wire-fraud BEC
+
+INPUT:
+From: "Sarah Chen, CEO" <sarah.chen.ceo@gmail.com>
+To: finance@company.com
+Subject: Urgent: wire transfer needed today
+Body: Hi, I'm in a meeting and need you to wire $45,000 to a vendor immediately. Can you handle this ASAP? I'll send the wire details next. Do not call — I'm in back-to-back meetings.
+
+HEADER SIGNALS ALREADY DETECTED:
+- sender_mismatch (high): Displayed "Sarah Chen, CEO" doesn't match acme.com
+- scam_pattern (high): Matches "wire transfer"
+- pressure_language (medium): "urgent", "immediately", "ASAP", "back-to-back"
+
+CORRECT ASSESSMENT:
+- is_threat: true
+- threat_level: high
+- threat_type: bec
+- confidence: 0.88
+- explanation: "This is a classic Business Email Compromise attempt. The sender claims to be your CEO but is emailing from a personal gmail.com account — real CEOs use their company email for wire-transfer instructions. The urgency and 'don't call me' instructions are designed to prevent you from verifying through a trusted channel."
+- do_not_actions: [Do not initiate the wire, Do not respond with any banking details, Do not send anything without verifying in person or by phone]
+- recommended_actions: [Contact Sarah through a phone number you already have (not one listed in this email) to verify, Loop in your finance lead and IT security team, Report as phishing once verified]
+
+---
+
+When in doubt between two threat levels, pick the lower one. When in doubt between threat and not-threat, pick not-threat unless a rule-based certainty applies.`
 
 export async function tier2Analysis(
   email: EmailForThreatAnalysis,
@@ -435,7 +871,18 @@ const BATCH_THREAT_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
-const BATCH_THREAT_CHUNK_SIZE = 10
+// Each email in a batch shares the 4096-token output budget. At 10 emails
+// per batch the per-email budget (~410 tokens) was too tight — Haiku either
+// truncated mid-assessment or returned low-confidence verdicts for
+// complex phishing that the single-email path (tier2Analysis, 800 tokens)
+// correctly flagged. Five emails per batch gives each email ~800 tokens of
+// output headroom, matching the single-email path.
+const BATCH_THREAT_CHUNK_SIZE = 5
+
+// Emails with this many Tier 1 signals get routed to single-email analysis
+// instead of the batched path — they're the ones most likely to be real
+// threats and deserve the richer per-email token budget / attention.
+const HIGH_SIGNAL_SINGLE_SHOT_THRESHOLD = 2
 
 export interface EmailForBatchThreatAnalysis {
   email: EmailForThreatAnalysis
@@ -444,12 +891,16 @@ export interface EmailForBatchThreatAnalysis {
 
 /**
  * Batched Tier-2 analysis. Accepts up to N emails per API call (chunked
- * internally). Returns a Map keyed by messageId. Emails that fail to parse are
- * omitted from the result.
+ * internally). Returns a Map keyed by messageId.
+ *
+ * Routes high-signal emails (>= 2 Tier 1 signals) to single-email
+ * tier2Analysis for the richer token budget and attention; batches the rest
+ * for cost efficiency. Also retries single-shot when the batch silently
+ * drops an email (truncated output, no tool_use block for that index).
  *
  * Use this for cron/scan paths where many emails need content analysis.
  * Single-email sync paths (e.g. diagnose route) should continue using
- * tier2Analysis for minimum latency.
+ * tier2Analysis directly for minimum latency.
  */
 export async function tier2AnalysisBatch(
   inputs: EmailForBatchThreatAnalysis[]
@@ -457,8 +908,24 @@ export async function tier2AnalysisBatch(
   const results = new Map<string, ThreatAssessment>()
   if (inputs.length === 0) return results
 
-  for (let start = 0; start < inputs.length; start += BATCH_THREAT_CHUNK_SIZE) {
-    const chunk = inputs.slice(start, start + BATCH_THREAT_CHUNK_SIZE)
+  // Route high-signal emails to single-shot for reliable rich output.
+  const highSignal: EmailForBatchThreatAnalysis[] = []
+  const batchable: EmailForBatchThreatAnalysis[] = []
+  for (const input of inputs) {
+    if (input.tier1Signals.length >= HIGH_SIGNAL_SINGLE_SHOT_THRESHOLD) {
+      highSignal.push(input)
+    } else {
+      batchable.push(input)
+    }
+  }
+
+  for (const { email, tier1Signals } of highSignal) {
+    const assessment = await tier2Analysis(email, tier1Signals)
+    if (assessment) results.set(email.messageId, assessment)
+  }
+
+  for (let start = 0; start < batchable.length; start += BATCH_THREAT_CHUNK_SIZE) {
+    const chunk = batchable.slice(start, start + BATCH_THREAT_CHUNK_SIZE)
 
     const numbered = chunk.map(({ email, tier1Signals }, i) => {
       const tier1Context = tier1Signals.length > 0
@@ -471,7 +938,7 @@ export async function tier2AnalysisBatch(
         `Subject: ${email.subject}`,
         `Date: ${email.receivedAt}`,
         email.hasAttachments ? 'Has Attachments: Yes' : '',
-        `\nBody Preview:\n${truncateForAI(email.bodyPreview, 1500)}`,
+        `\nBody Preview:\n${truncateForAI(email.bodyPreview, 1000)}`,
         tier1Context,
       ].filter(Boolean).join('\n')
     }).join('\n\n---\n\n')
@@ -502,9 +969,15 @@ export async function tier2AnalysisBatch(
         do_not_actions: string[]
       }> }).results || {}
 
+      const droppedByBatch: EmailForBatchThreatAnalysis[] = []
       chunk.forEach(({ email, tier1Signals }, i) => {
         const r = batchResults[String(i + 1)]
-        if (!r) return
+        if (!r) {
+          // Batch output truncated or Haiku skipped this index. Retry
+          // single-shot so we don't silently lose an alert.
+          droppedByBatch.push({ email, tier1Signals })
+          return
+        }
 
         results.set(email.messageId, {
           isThreat: r.is_threat,
@@ -519,8 +992,24 @@ export async function tier2AnalysisBatch(
           senderMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('sender')),
         })
       })
+
+      if (droppedByBatch.length > 0) {
+        console.warn(
+          `[detect-email-threats] Batch dropped ${droppedByBatch.length}/${chunk.length} emails; retrying single-shot`
+        )
+        for (const { email, tier1Signals } of droppedByBatch) {
+          const assessment = await tier2Analysis(email, tier1Signals)
+          if (assessment) results.set(email.messageId, assessment)
+        }
+      }
     } catch (error) {
       console.error('[detect-email-threats] Batch AI analysis failed:', (error as Error).message)
+      // Fall back to single-shot so the whole chunk isn't lost on a single
+      // transient API failure (network blip, rate-limit, 5xx).
+      for (const { email, tier1Signals } of chunk) {
+        const assessment = await tier2Analysis(email, tier1Signals)
+        if (assessment) results.set(email.messageId, assessment)
+      }
     }
   }
 

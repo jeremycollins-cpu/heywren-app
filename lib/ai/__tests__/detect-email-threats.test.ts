@@ -130,6 +130,40 @@ describe('tier1Analysis — e-signature / document-share phishing', () => {
     const email = makeEmail({ subject: 'Invoice #12345' })
     expect(tier1Analysis(email).signals.map(s => s.signal)).not.toContain('suspicious_ref_id')
   })
+
+  // Regression: the "ID:<32hex>" variant that landed without a "Ref" prefix
+  // was bypassing suspicious_ref_id and skipping Tier 2 entirely.
+  it('catches bare "ID:<hex>" tracking IDs without a Ref prefix', () => {
+    const email = makeEmail({
+      subject: 'Action Required: Please Find And Complete Q1 Financials ID:d4e1b9eca70cdf513ce2f196ab4d29df',
+    })
+    const signals = tier1Analysis(email).signals.map(s => s.signal)
+    expect(signals).toContain('suspicious_ref_id')
+    expect(tier1Analysis(email).skipTier2).toBe(false)
+  })
+
+  it('catches "Action Required" + financial/document/agreement combos', () => {
+    const email = makeEmail({
+      subject: 'Action Required: Please Find And Complete Routeware Attached Q1 Financials & Agreement Documentation',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
+
+  it('catches "Required Your Signature On The Completed Document"', () => {
+    const email = makeEmail({
+      subject: 'Please sign',
+      bodyPreview: 'Routeware Required Your Signature On The Completed Document. All parties have completed.',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
+
+  it('catches "Review & Sign Document" even with ampersand', () => {
+    const email = makeEmail({
+      subject: 'Document ready',
+      bodyPreview: 'REVIEW & SIGN DOCUMENT to complete the process.',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
 })
 
 describe('tier1Analysis — authentication header checks', () => {
@@ -168,6 +202,98 @@ describe('tier1Analysis — authentication header checks', () => {
     const email = makeEmail({})
     const signals = tier1Analysis(email).signals.map(s => s.signal)
     expect(signals).not.toContain('no_auth_results')
+  })
+})
+
+describe('tier1Analysis — accountEmail self-spoof detection', () => {
+  // sync-outlook stores to_recipients as display NAMES, not email addresses,
+  // so the old recipient-based check silently failed for most users. The fix
+  // passes the signed-in mailbox address directly as accountEmail.
+  it('flags self-spoof when accountEmail matches From but to_recipients is a display name', () => {
+    const email = makeEmail({
+      fromEmail: 'jeremy.collins@routeware.com',
+      accountEmail: 'jeremy.collins@routeware.com',
+      toRecipients: 'Jeremy Collins', // display name, not email — the real bug
+      subject: 'Action Required: Please Sign',
+      bodyPreview: 'Review and sign document',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('sender_spoofing_self')
+  })
+
+  it('auto-alerts at critical when self-spoof is detected', () => {
+    const email = makeEmail({
+      fromEmail: 'jeremy.collins@routeware.com',
+      accountEmail: 'jeremy.collins@routeware.com',
+      toRecipients: 'Jeremy Collins',
+      subject: 'Note to self',
+      bodyPreview: 'Please review attached',
+    })
+    const result = tier1Analysis(email)
+    expect(result.autoAlert).not.toBeNull()
+    expect(result.autoAlert?.level).toBe('critical')
+    expect(result.autoAlert?.type).toBe('spoofing')
+  })
+
+  it('does not flag self-spoof when accountEmail differs from From', () => {
+    const email = makeEmail({
+      fromEmail: 'someone@elsewhere.com',
+      accountEmail: 'jeremy.collins@routeware.com',
+      toRecipients: 'Jeremy Collins',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('sender_spoofing_self')
+  })
+})
+
+describe('tier1Analysis — link analysis', () => {
+  it('flags a display-vs-href domain mismatch as critical', () => {
+    const email = makeEmail({
+      subject: 'Sign this',
+      bodyHtml: '<a href="https://evil-attacker.example.xyz/login">https://docusign.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+    expect(result.autoAlert?.level).toBe('critical')
+  })
+
+  it('flags brand impersonation (body mentions DocuSign, link is elsewhere)', () => {
+    const email = makeEmail({
+      subject: 'Please sign',
+      bodyPreview: 'Docusign has sent you a document',
+      bodyHtml: '<a href="https://docusign.fake-site.ru/review">Review Document</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('brand_impersonation_link')
+  })
+
+  it('flags raw IP URLs as critical', () => {
+    const email = makeEmail({
+      bodyHtml: '<a href="http://192.168.4.7/signin">Click here</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('ip_based_url')
+    expect(result.autoAlert?.level).toBe('critical')
+  })
+
+  it('flags URL shorteners with medium weight (no auto-alert alone)', () => {
+    const email = makeEmail({
+      bodyHtml: '<a href="https://bit.ly/abc123">click here</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('url_shortener')
+  })
+
+  it('does NOT flag a link that goes to an official brand domain', () => {
+    const email = makeEmail({
+      subject: 'DocuSign notification',
+      bodyPreview: 'Docusign has sent you a document',
+      bodyHtml: '<a href="https://app.docusign.com/documents/abc">Review Document</a>',
+    })
+    const result = tier1Analysis(email)
+    const names = result.signals.map(s => s.signal)
+    expect(names).not.toContain('brand_impersonation_link')
+    expect(names).not.toContain('link_domain_mismatch')
   })
 })
 
