@@ -261,7 +261,12 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   // raw-IP URLs, display-text-vs-href mismatches, and brand impersonation
   // where the email mentions DocuSign/Microsoft/etc. but links elsewhere.
   if (email.bodyHtml) {
-    signals.push(...analyzeLinksInBody(email.bodyHtml, fullText))
+    signals.push(...analyzeLinksInBody({
+      bodyHtml: email.bodyHtml,
+      bodyContext: fullText,
+      fromEmail: email.fromEmail,
+      fromName: email.fromName,
+    }))
   }
 
   // If no signals at all, skip tier 2 (email looks clean)
@@ -303,22 +308,133 @@ function isOfficialDomain(hostname: string, legitDomains: string[]): boolean {
   return legitDomains.some(d => lower === d || lower.endsWith('.' + d))
 }
 
-export function analyzeLinksInBody(bodyHtml: string, bodyContext: string): ThreatSignal[] {
-  const signals: ThreatSignal[] = []
-  if (!bodyHtml) return signals
+// Email-security-gateway link rewriters. Corporate mail providers (Microsoft
+// Defender, Proofpoint, Mimecast, Barracuda, Google) replace every <a href>
+// in incoming mail with a scanning-proxy URL that encodes the original.
+//
+// Without unwrapping these, the display-vs-href mismatch check flags every
+// legitimate email as phishing because the display text is the original
+// domain ("pendo.io") while the href is always the gateway host
+// (*.safelinks.protection.outlook.com). This is the #1 source of false
+// positives once Defender/Safe Links is enabled.
+interface LinkWrapper {
+  hostPattern: RegExp
+  extract: (url: URL) => string | null
+}
 
-  const ctx = bodyContext.toLowerCase()
-  const links: { href: string; displayText: string; hostname: string }[] = []
+const LINK_WRAPPERS: LinkWrapper[] = [
+  {
+    // Microsoft Defender Safe Links — the rewriter every Outlook 365 tenant has on by default
+    hostPattern: /(^|\.)safelinks\.protection\.outlook\.com$/i,
+    extract: (url) => {
+      const target = url.searchParams.get('url')
+      if (!target) return null
+      try { return decodeURIComponent(target) } catch { return null }
+    },
+  },
+  {
+    // Proofpoint URL Defense v2: /v2/url?u=ENCODED
+    hostPattern: /(^|\.)urldefense\.proofpoint\.com$/i,
+    extract: (url) => {
+      const target = url.searchParams.get('u')
+      if (!target) return null
+      try {
+        return decodeURIComponent(target.replace(/_/g, '/').replace(/-/g, '%'))
+      } catch { return null }
+    },
+  },
+  {
+    // Proofpoint URL Defense v3: urldefense.com/v3/__ORIGINAL__;TOKEN!...
+    hostPattern: /(^|\.)urldefense\.com$/i,
+    extract: (url) => {
+      const m = url.pathname.match(/\/v3\/__(.+?)__;/)
+      return m ? m[1] : null
+    },
+  },
+  {
+    // Google URL redirector
+    hostPattern: /^(www\.)?google\.com$/i,
+    extract: (url) => {
+      if (url.pathname !== '/url') return null
+      const target = url.searchParams.get('q') || url.searchParams.get('url')
+      if (!target) return null
+      try { return decodeURIComponent(target) } catch { return null }
+    },
+  },
+  {
+    // Barracuda LinkProtect
+    hostPattern: /(^|\.)linkprotect\.cudasvc\.com$/i,
+    extract: (url) => {
+      const target = url.searchParams.get('a')
+      if (!target) return null
+      try { return decodeURIComponent(target) } catch { return null }
+    },
+  },
+  {
+    // Mimecast — the /s/TOKEN scheme doesn't embed the original URL, so we
+    // can't unwrap it. Match the host so callers can at least identify it
+    // and suppress mismatch checks; extract returns null to signal that.
+    hostPattern: /(^|\.)protect-[a-z]+\.mimecast\.com$/i,
+    extract: () => null,
+  },
+]
+
+/** Return the real destination URL after stripping any recognized gateway wrapper. */
+function unwrapProtectedUrl(href: string): { original: string; wrapperDetected: boolean; wrapperUnextractable: boolean } {
+  try {
+    const url = new URL(href)
+    for (const wrapper of LINK_WRAPPERS) {
+      if (wrapper.hostPattern.test(url.hostname)) {
+        const target = wrapper.extract(url)
+        if (target) return { original: target, wrapperDetected: true, wrapperUnextractable: false }
+        // Recognized wrapper but can't get the original (Mimecast, malformed) —
+        // the hostname comparison against display text will be meaningless.
+        return { original: href, wrapperDetected: true, wrapperUnextractable: true }
+      }
+    }
+  } catch {
+    // Malformed URL — let caller decide
+  }
+  return { original: href, wrapperDetected: false, wrapperUnextractable: false }
+}
+
+interface LinkAnalysisContext {
+  bodyHtml: string
+  bodyContext: string
+  fromEmail: string
+  fromName: string
+}
+
+export function analyzeLinksInBody(
+  bodyHtmlOrCtx: string | LinkAnalysisContext,
+  bodyContext?: string
+): ThreatSignal[] {
+  // Backward-compat: accept the old (bodyHtml, bodyContext) call shape.
+  const ctx: LinkAnalysisContext = typeof bodyHtmlOrCtx === 'string'
+    ? { bodyHtml: bodyHtmlOrCtx, bodyContext: bodyContext || '', fromEmail: '', fromName: '' }
+    : bodyHtmlOrCtx
+
+  const signals: ThreatSignal[] = []
+  if (!ctx.bodyHtml) return signals
+
+  const textContext = ctx.bodyContext.toLowerCase()
+  const links: { href: string; displayText: string; hostname: string; wrapperUnextractable: boolean }[] = []
 
   const anchorRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
   let match: RegExpExecArray | null
-  while ((match = anchorRegex.exec(bodyHtml)) !== null) {
-    const href = match[1].trim()
-    if (!/^https?:\/\//i.test(href)) continue
+  while ((match = anchorRegex.exec(ctx.bodyHtml)) !== null) {
+    const rawHref = match[1].trim()
+    if (!/^https?:\/\//i.test(rawHref)) continue
     const displayText = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    const { original, wrapperUnextractable } = unwrapProtectedUrl(rawHref)
     try {
-      const url = new URL(href)
-      links.push({ href, displayText, hostname: url.hostname.toLowerCase() })
+      const url = new URL(original)
+      links.push({
+        href: rawHref,
+        displayText,
+        hostname: url.hostname.toLowerCase(),
+        wrapperUnextractable,
+      })
     } catch {
       // Malformed href, skip
     }
@@ -346,10 +462,21 @@ export function analyzeLinksInBody(bodyHtml: string, bodyContext: string): Threa
     })
   }
 
-  // Brand impersonation: body mentions a well-known brand but links go off-brand
+  // Brand impersonation: only fire when the SENDER claims to be the brand
+  // (via from_email domain or from_name) but isn't on an official domain.
+  // A legitimate newsletter talking ABOUT Microsoft Copilot isn't impersonation
+  // unless the sender's identity claims to be Microsoft.
+  const fromDomain = ctx.fromEmail.split('@')[1]?.toLowerCase() || ''
+  const fromNameLower = ctx.fromName.toLowerCase()
   for (const [brand, legitDomains] of Object.entries(KNOWN_BRANDS)) {
-    if (!ctx.includes(brand)) continue
+    if (!textContext.includes(brand)) continue
+    const senderClaimsBrand =
+      (fromDomain && fromDomain.includes(brand)) ||
+      fromNameLower.includes(brand)
+    if (!senderClaimsBrand) continue
+    if (fromDomain && isOfficialDomain(fromDomain, legitDomains)) continue
     const suspicious = links.find(l => {
+      if (l.wrapperUnextractable) return false
       if (isOfficialDomain(l.hostname, legitDomains)) return false
       const lowerDisplay = l.displayText.toLowerCase()
       const lowerHost = l.hostname.toLowerCase()
@@ -358,33 +485,38 @@ export function analyzeLinksInBody(bodyHtml: string, bodyContext: string): Threa
     if (suspicious) {
       signals.push({
         signal: 'brand_impersonation_link',
-        detail: `Email references ${brand} but a link goes to "${suspicious.hostname}" — not an official ${brand} domain`,
+        detail: `Email claims to be from ${brand} (sender: ${ctx.fromEmail}) but a link goes to "${suspicious.hostname}" — not an official ${brand} domain`,
         weight: 'critical',
       })
       break
     }
   }
 
-  // Display-text-vs-href mismatch (classic phishing tactic).
-  // Matches domains like "docusign.com" or "app.docusign.com" in display text
-  // and compares against the actual href hostname.
+  // Display-text-vs-href mismatch (classic phishing tactic). Downgraded from
+  // 'critical' to 'high' and no longer auto-alerts on its own — it still
+  // false-positives on newsletters whose unsubscribe link display happens to
+  // contain a domain from the sender's email signature. Requires the AI
+  // Tier 2 pass or a companion signal to escalate.
   for (const link of links) {
+    if (link.wrapperUnextractable) continue
     const displayMatches = link.displayText.match(
       /\b([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi
     )
     if (!displayMatches) continue
     for (const candidate of displayMatches) {
       const displayDomain = candidate.toLowerCase()
-      // Skip things that aren't really domains (e.g. "readme.md" in copy text)
-      if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif)$/i.test(displayDomain)) continue
+      if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif|html?)$/i.test(displayDomain)) continue
       const actual = link.hostname
       if (displayDomain === actual) continue
       if (actual.endsWith('.' + displayDomain)) continue
       if (displayDomain.endsWith('.' + actual)) continue
+      // Also skip when the "display domain" is just the sender's own domain
+      // appearing in their signature line at the bottom of every email.
+      if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
       signals.push({
         signal: 'link_domain_mismatch',
         detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
-        weight: 'critical',
+        weight: 'high',
       })
       return signals
     }
@@ -443,13 +575,15 @@ function computeTier1AutoAlert(signals: ThreatSignal[]): Tier1AutoAlert | null {
     }
   }
 
-  // 2. Link where the displayed domain doesn't match the real destination.
-  if (linkMismatch || brandImpersonation) {
+  // 2. Brand impersonation — sender CLAIMS to be a known brand but links
+  //    go elsewhere. Auto-alerts on its own because the sender-identity
+  //    tightening in analyzeLinksInBody makes this rule strict enough.
+  if (brandImpersonation) {
     return {
       level: 'critical',
       type: 'phishing',
       explanation:
-        "A link in this email doesn't go where it claims to. The displayed text and the actual URL point to different domains — a classic phishing tactic to disguise a malicious destination.",
+        "This email claims to be from a well-known brand but its link goes to a domain that isn't theirs — a classic phishing tactic to disguise a malicious destination.",
       doNotActions: baseDoNot,
       recommendedActions: [
         'Report as phishing and delete',
@@ -457,6 +591,27 @@ function computeTier1AutoAlert(signals: ThreatSignal[]): Tier1AutoAlert | null {
         ...baseRecommended.slice(2),
       ],
       confidence: 0.95,
+    }
+  }
+
+  // 3. Link-domain-mismatch no longer auto-alerts alone — it's too noisy on
+  //    marketing emails where unsubscribe-link display text contains a domain
+  //    from the sender's signature. It still fires as a Tier 1 signal and
+  //    feeds into the Tier 2 AI verdict; only auto-escalate when it's
+  //    combined with another real phishing indicator.
+  if (linkMismatch && (scamPattern || credentialRequest || suspiciousRefId || dmarcFail)) {
+    return {
+      level: 'critical',
+      type: 'phishing',
+      explanation:
+        "A link in this email doesn't go where it claims to, and the email contains additional phishing indicators — a classic tactic to disguise a malicious destination.",
+      doNotActions: baseDoNot,
+      recommendedActions: [
+        'Report as phishing and delete',
+        'If you expected the linked service, navigate to it directly via a browser bookmark — never through this email',
+        ...baseRecommended.slice(2),
+      ],
+      confidence: 0.92,
     }
   }
 
