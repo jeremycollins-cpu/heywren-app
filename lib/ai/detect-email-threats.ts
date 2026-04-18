@@ -69,12 +69,18 @@ const KNOWN_SCAM_PATTERNS = [
   /past\s+due\s+reminder/i,
   /has\s+sent\s+you\s+a\s+document/i,
   /shared\s+a\s+document\s+with\s+you/i,
-  /review\s+and\s+sign\s+document/i,
+  /review\s+(?:and|&(?:amp;)?)\s+sign\s+document/i,
   /e[-\s]?sign(ature)?\s+(required|requested|pending)/i,
+  /required\s+your\s+signature\s+on\s+the\s+completed\s+document/i,
+  /please\s+find\s+(?:and\s+complete|attached)\s+.{0,80}(agreement|document|contract|financial)/i,
+  /action\s+required:.{0,120}(agreement|signature|document|contract|financial)/i,
 ]
 
-// Long opaque tracking IDs appended to phishing subjects ("Ref~ID#: dc8e8098a0ea6afbdce28b0bb05ea952")
-const SUSPICIOUS_REF_ID_PATTERN = /ref[~\s#:]*id[#:\s]*[a-f0-9]{16,}/i
+// Long opaque tracking IDs appended to phishing subjects. Matches both
+// "Ref~ID#: dc8e..." and the bare "ID:d4e1b9eca70cdf513ce2f196ab4d29df"
+// variant. Legitimate reference IDs are typically short or use UUID dashes,
+// so a run of 20+ contiguous hex characters is a strong phishing indicator.
+const SUSPICIOUS_REF_ID_PATTERN = /(?:ref[~\s#:]*id[#:\s]*|\bid[:#\s]+)[a-f0-9]{20,}/i
 
 const PRESSURE_PATTERNS = [
   /act\s+(now|immediately|fast|quickly)/i,

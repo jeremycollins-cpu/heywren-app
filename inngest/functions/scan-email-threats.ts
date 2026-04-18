@@ -16,6 +16,9 @@ import {
 import { logAiUsage } from '@/lib/ai/persist-usage'
 import { graphFetch as graphFetchWithRefresh, getOutlookIntegration } from '@/lib/outlook/graph-client'
 import { sendProactiveAlert } from '@/lib/notifications/send-proactive-alert'
+import { buildSecurityThreatAlertEmail } from '@/lib/email/templates/security-threat-alert'
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.heywren.ai'
 
 function getAdminClient() {
   return createClient(
@@ -74,6 +77,15 @@ export const scanEmailThreats = inngest.createFunction(
         const lookbackDate = new Date(Date.now() - daysBack * 86400000).toISOString()
         let userScanned = 0
         let userThreats = 0
+
+        // Fetch user's first name once so we can personalize threat emails
+        // without a profile lookup per detected threat.
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', integration.user_id)
+          .single()
+        const firstName = profile?.full_name?.split(' ')[0] || 'there'
 
         // Build token refresh context for Graph API calls
         const ctx = {
@@ -238,9 +250,26 @@ export const scanEmailThreats = inngest.createFunction(
             totalThreats++
             userThreats++
 
-            // Proactive alert for high/critical threats
+            // Proactive alert for high/critical threats — in-app + Slack + email.
+            // Email is critical here: users need to know about the threat even
+            // when they're away from the app, specifically so they don't click
+            // links or open attachments.
             if (assessment.threatLevel === 'critical' || assessment.threatLevel === 'high') {
               try {
+                const { subject: emailSubject, html: emailHtml } = buildSecurityThreatAlertEmail({
+                  userName: firstName,
+                  threatLevel: assessment.threatLevel,
+                  threatType: assessment.threatType,
+                  fromName: email.from_name || '',
+                  fromEmail: email.from_email,
+                  emailSubject: email.subject || '(no subject)',
+                  explanation: assessment.explanation,
+                  doNotActions: assessment.doNotActions,
+                  recommendedActions: assessment.recommendedActions,
+                  reviewUrl: `${APP_URL}/security-alerts`,
+                  unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
+                })
+
                 await sendProactiveAlert({
                   teamId: integration.team_id,
                   userId: integration.user_id,
@@ -248,11 +277,14 @@ export const scanEmailThreats = inngest.createFunction(
                   title: `${assessment.threatLevel === 'critical' ? 'CRITICAL' : 'High'} security threat: "${email.subject}"`,
                   body: assessment.explanation || `Suspicious email from ${email.from_email} detected as ${assessment.threatType}`,
                   link: '/security-alerts',
-                  slackText: `*:rotating_light: ${assessment.threatLevel.toUpperCase()} security threat detected*\n>*From:* ${email.from_name || email.from_email}\n>*Subject:* ${email.subject}\n>\n>${assessment.explanation || 'Review this email in Security Alerts before interacting.'}`,
+                  slackText: `*:rotating_light: ${assessment.threatLevel.toUpperCase()} security threat detected*\n>*From:* ${email.from_name || email.from_email}\n>*Subject:* ${email.subject}\n>\n>${assessment.explanation || 'Review this email in Security Alerts before interacting.'}\n>\n>:warning: Do not click any links or open attachments in the flagged email.`,
+                  emailSubject,
+                  emailHtml,
+                  emailType: 'security_threat_alert',
                   idempotencyKey: `threat-${integration.user_id}-${email.message_id}`,
                 })
               } catch {
-                // Alert is best-effort
+                // Alert is best-effort — DB row is already written above.
               }
             }
           }

@@ -130,6 +130,40 @@ describe('tier1Analysis — e-signature / document-share phishing', () => {
     const email = makeEmail({ subject: 'Invoice #12345' })
     expect(tier1Analysis(email).signals.map(s => s.signal)).not.toContain('suspicious_ref_id')
   })
+
+  // Regression: the "ID:<32hex>" variant that landed without a "Ref" prefix
+  // was bypassing suspicious_ref_id and skipping Tier 2 entirely.
+  it('catches bare "ID:<hex>" tracking IDs without a Ref prefix', () => {
+    const email = makeEmail({
+      subject: 'Action Required: Please Find And Complete Q1 Financials ID:d4e1b9eca70cdf513ce2f196ab4d29df',
+    })
+    const signals = tier1Analysis(email).signals.map(s => s.signal)
+    expect(signals).toContain('suspicious_ref_id')
+    expect(tier1Analysis(email).skipTier2).toBe(false)
+  })
+
+  it('catches "Action Required" + financial/document/agreement combos', () => {
+    const email = makeEmail({
+      subject: 'Action Required: Please Find And Complete Routeware Attached Q1 Financials & Agreement Documentation',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
+
+  it('catches "Required Your Signature On The Completed Document"', () => {
+    const email = makeEmail({
+      subject: 'Please sign',
+      bodyPreview: 'Routeware Required Your Signature On The Completed Document. All parties have completed.',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
+
+  it('catches "Review & Sign Document" even with ampersand', () => {
+    const email = makeEmail({
+      subject: 'Document ready',
+      bodyPreview: 'REVIEW & SIGN DOCUMENT to complete the process.',
+    })
+    expect(tier1Analysis(email).signals.map(s => s.signal)).toContain('scam_pattern')
+  })
 })
 
 describe('tier1Analysis — authentication header checks', () => {
