@@ -247,9 +247,20 @@ describe('tier1Analysis — accountEmail self-spoof detection', () => {
 })
 
 describe('tier1Analysis — link analysis', () => {
-  it('flags a display-vs-href domain mismatch as critical', () => {
+  it('flags a display-vs-href domain mismatch as high (no longer auto-critical alone)', () => {
     const email = makeEmail({
       subject: 'Sign this',
+      bodyHtml: '<a href="https://evil-attacker.example.xyz/login">https://docusign.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+    // Alone, this is no longer enough to auto-alert — too noisy on newsletters
+    expect(result.autoAlert).toBeNull()
+  })
+
+  it('auto-alerts critical when display/href mismatch combines with a scam pattern', () => {
+    const email = makeEmail({
+      subject: 'Agreement Signature Required Today',
       bodyHtml: '<a href="https://evil-attacker.example.xyz/login">https://docusign.com</a>',
     })
     const result = tier1Analysis(email)
@@ -257,14 +268,32 @@ describe('tier1Analysis — link analysis', () => {
     expect(result.autoAlert?.level).toBe('critical')
   })
 
-  it('flags brand impersonation (body mentions DocuSign, link is elsewhere)', () => {
-    const email = makeEmail({
+  it('flags brand impersonation only when sender claims to be the brand', () => {
+    // Sender claims to be DocuSign but is on a fake domain
+    const impersonating = makeEmail({
+      fromEmail: 'no-reply@docusign-secure-docs.ru',
+      fromName: 'DocuSign',
       subject: 'Please sign',
       bodyPreview: 'Docusign has sent you a document',
-      bodyHtml: '<a href="https://docusign.fake-site.ru/review">Review Document</a>',
+      bodyHtml: '<a href="https://docusign-secure-docs.ru/review">Review Document</a>',
+    })
+    const impResult = tier1Analysis(impersonating)
+    expect(impResult.signals.map(s => s.signal)).toContain('brand_impersonation_link')
+  })
+
+  it('does NOT flag brand impersonation when a legit newsletter only talks about a brand', () => {
+    // Devessence sending a newsletter that mentions AI productivity tools —
+    // sender doesn't claim to be any of the known brands. Previously this
+    // false-positived; now it should stay clean.
+    const email = makeEmail({
+      fromEmail: 's.walker@devessence.com',
+      fromName: 'Sarah Walker',
+      subject: 'Real AI Productivity Gains',
+      bodyPreview: 'See how Microsoft Copilot and Google Gemini compare in real-world workflows.',
+      bodyHtml: '<a href="https://track.devessence.com/cta?id=42">Read the full comparison</a>',
     })
     const result = tier1Analysis(email)
-    expect(result.signals.map(s => s.signal)).toContain('brand_impersonation_link')
+    expect(result.signals.map(s => s.signal)).not.toContain('brand_impersonation_link')
   })
 
   it('flags raw IP URLs as critical', () => {
@@ -282,6 +311,32 @@ describe('tier1Analysis — link analysis', () => {
     })
     const result = tier1Analysis(email)
     expect(result.signals.map(s => s.signal)).toContain('url_shortener')
+  })
+
+  it('unwraps Microsoft Defender Safe Links before checking display/href mismatch', () => {
+    // Real-world shape: Outlook rewrites https://pendo.io/blog/x to
+    // https://gbr01.safelinks.protection.outlook.com/?url=<encoded>&data=...
+    // Display text is the original "pendo.io". Without unwrapping, every
+    // single email in a Defender-protected mailbox trips link_domain_mismatch.
+    const encoded = encodeURIComponent('https://pendo.io/blog/whatever')
+    const email = makeEmail({
+      fromEmail: 'pendo@pendo.io',
+      bodyHtml: `<a href="https://gbr01.safelinks.protection.outlook.com/?url=${encoded}&data=x">pendo.io</a>`,
+    })
+    const result = tier1Analysis(email)
+    const names = result.signals.map(s => s.signal)
+    expect(names).not.toContain('link_domain_mismatch')
+  })
+
+  it('unwraps Safe Links and still catches a real mismatch hiding behind the wrapper', () => {
+    // Attacker hides an evil URL behind Safe Links; display text claims docusign.com
+    const encoded = encodeURIComponent('https://evil-attacker.example.xyz/steal')
+    const email = makeEmail({
+      subject: 'Agreement Signature Required',
+      bodyHtml: `<a href="https://gbr01.safelinks.protection.outlook.com/?url=${encoded}&data=x">https://docusign.com</a>`,
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
   })
 
   it('does NOT flag a link that goes to an official brand domain', () => {
