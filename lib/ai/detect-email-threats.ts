@@ -686,7 +686,18 @@ const BATCH_THREAT_ANALYSIS_TOOL: Anthropic.Messages.Tool = {
   },
 }
 
-const BATCH_THREAT_CHUNK_SIZE = 10
+// Each email in a batch shares the 4096-token output budget. At 10 emails
+// per batch the per-email budget (~410 tokens) was too tight — Haiku either
+// truncated mid-assessment or returned low-confidence verdicts for
+// complex phishing that the single-email path (tier2Analysis, 800 tokens)
+// correctly flagged. Five emails per batch gives each email ~800 tokens of
+// output headroom, matching the single-email path.
+const BATCH_THREAT_CHUNK_SIZE = 5
+
+// Emails with this many Tier 1 signals get routed to single-email analysis
+// instead of the batched path — they're the ones most likely to be real
+// threats and deserve the richer per-email token budget / attention.
+const HIGH_SIGNAL_SINGLE_SHOT_THRESHOLD = 2
 
 export interface EmailForBatchThreatAnalysis {
   email: EmailForThreatAnalysis
@@ -695,12 +706,16 @@ export interface EmailForBatchThreatAnalysis {
 
 /**
  * Batched Tier-2 analysis. Accepts up to N emails per API call (chunked
- * internally). Returns a Map keyed by messageId. Emails that fail to parse are
- * omitted from the result.
+ * internally). Returns a Map keyed by messageId.
+ *
+ * Routes high-signal emails (>= 2 Tier 1 signals) to single-email
+ * tier2Analysis for the richer token budget and attention; batches the rest
+ * for cost efficiency. Also retries single-shot when the batch silently
+ * drops an email (truncated output, no tool_use block for that index).
  *
  * Use this for cron/scan paths where many emails need content analysis.
  * Single-email sync paths (e.g. diagnose route) should continue using
- * tier2Analysis for minimum latency.
+ * tier2Analysis directly for minimum latency.
  */
 export async function tier2AnalysisBatch(
   inputs: EmailForBatchThreatAnalysis[]
@@ -708,8 +723,24 @@ export async function tier2AnalysisBatch(
   const results = new Map<string, ThreatAssessment>()
   if (inputs.length === 0) return results
 
-  for (let start = 0; start < inputs.length; start += BATCH_THREAT_CHUNK_SIZE) {
-    const chunk = inputs.slice(start, start + BATCH_THREAT_CHUNK_SIZE)
+  // Route high-signal emails to single-shot for reliable rich output.
+  const highSignal: EmailForBatchThreatAnalysis[] = []
+  const batchable: EmailForBatchThreatAnalysis[] = []
+  for (const input of inputs) {
+    if (input.tier1Signals.length >= HIGH_SIGNAL_SINGLE_SHOT_THRESHOLD) {
+      highSignal.push(input)
+    } else {
+      batchable.push(input)
+    }
+  }
+
+  for (const { email, tier1Signals } of highSignal) {
+    const assessment = await tier2Analysis(email, tier1Signals)
+    if (assessment) results.set(email.messageId, assessment)
+  }
+
+  for (let start = 0; start < batchable.length; start += BATCH_THREAT_CHUNK_SIZE) {
+    const chunk = batchable.slice(start, start + BATCH_THREAT_CHUNK_SIZE)
 
     const numbered = chunk.map(({ email, tier1Signals }, i) => {
       const tier1Context = tier1Signals.length > 0
@@ -753,9 +784,15 @@ export async function tier2AnalysisBatch(
         do_not_actions: string[]
       }> }).results || {}
 
+      const droppedByBatch: EmailForBatchThreatAnalysis[] = []
       chunk.forEach(({ email, tier1Signals }, i) => {
         const r = batchResults[String(i + 1)]
-        if (!r) return
+        if (!r) {
+          // Batch output truncated or Haiku skipped this index. Retry
+          // single-shot so we don't silently lose an alert.
+          droppedByBatch.push({ email, tier1Signals })
+          return
+        }
 
         results.set(email.messageId, {
           isThreat: r.is_threat,
@@ -770,8 +807,24 @@ export async function tier2AnalysisBatch(
           senderMismatch: tier1Signals.some(s => s.signal.toLowerCase().includes('sender')),
         })
       })
+
+      if (droppedByBatch.length > 0) {
+        console.warn(
+          `[detect-email-threats] Batch dropped ${droppedByBatch.length}/${chunk.length} emails; retrying single-shot`
+        )
+        for (const { email, tier1Signals } of droppedByBatch) {
+          const assessment = await tier2Analysis(email, tier1Signals)
+          if (assessment) results.set(email.messageId, assessment)
+        }
+      }
     } catch (error) {
       console.error('[detect-email-threats] Batch AI analysis failed:', (error as Error).message)
+      // Fall back to single-shot so the whole chunk isn't lost on a single
+      // transient API failure (network blip, rate-limit, 5xx).
+      for (const { email, tier1Signals } of chunk) {
+        const assessment = await tier2Analysis(email, tier1Signals)
+        if (assessment) results.set(email.messageId, assessment)
+      }
     }
   }
 
