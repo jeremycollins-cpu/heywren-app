@@ -16,9 +16,13 @@ export interface EmailForThreatAnalysis {
   fromName: string
   subject: string
   bodyPreview: string
+  bodyHtml?: string
   receivedAt: string
   toRecipients?: string
   ccRecipients?: string
+  // The signed-in user's own mailbox address, used to catch self-spoofing even
+  // when `toRecipients` is stored as display names rather than email addresses.
+  accountEmail?: string
   // Header data (fetched separately from Graph API)
   headers?: Array<{ name: string; value: string }>
   replyTo?: string
@@ -119,6 +123,7 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   replyToMismatch: boolean
   senderMismatch: boolean
   skipTier2: boolean
+  autoAlert: Tier1AutoAlert | null
 } {
   const signals: ThreatSignal[] = []
   let spfResult = 'none'
@@ -153,22 +158,35 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     }
   }
 
-  // ── Sender spoofing: From address matches a recipient (user sending to themselves) ──
-  // Legitimate self-sent emails are rare and typically don't include phishing indicators.
-  // Spoofers set the From to the victim's own address to bypass "trusted contact" heuristics.
+  // ── Sender spoofing: From address matches the user's own mailbox ──
+  // Real self-sent emails are rare and never ask you to sign/click/verify —
+  // spoofers set the From to the victim's own address to bypass "trusted
+  // contact" heuristics and evade naive filters.
+  //
+  // We check BOTH:
+  //   (a) the user's signed-in mailbox address (most reliable — toRecipients
+  //       is stored as display names by sync-outlook, so it doesn't match
+  //       email-address comparisons), and
+  //   (b) any to/cc recipient that happens to look like an email address
+  //       (so non-Outlook paths and older cached rows still work).
   if (email.fromEmail) {
     const fromLower = email.fromEmail.toLowerCase().trim()
-    const recipientEmails = [email.toRecipients, email.ccRecipients]
-      .filter(Boolean)
-      .join(';')
-      .split(/[;,]/)
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean)
-    if (recipientEmails.includes(fromLower)) {
+    const selfAddresses = new Set<string>()
+    if (email.accountEmail) {
+      selfAddresses.add(email.accountEmail.toLowerCase().trim())
+    }
+    for (const raw of [email.toRecipients, email.ccRecipients]) {
+      if (!raw) continue
+      for (const part of raw.split(/[;,]/)) {
+        const cleaned = part.trim().toLowerCase()
+        if (cleaned && cleaned.includes('@')) selfAddresses.add(cleaned)
+      }
+    }
+    if (selfAddresses.has(fromLower)) {
       signals.push({
         signal: 'sender_spoofing_self',
-        detail: `Email appears to come from your own address (${email.fromEmail}). This is a common spoofing tactic — real self-sent emails rarely ask you to sign or click links.`,
-        weight: 'high',
+        detail: `Email appears to come from your own address (${email.fromEmail}), but it isn't actually in your Sent folder — someone is impersonating you. Real self-sent emails don't ask you to sign documents, click links, or enter codes.`,
+        weight: 'critical',
       })
     }
   }
@@ -238,10 +256,237 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     }
   }
 
+  // ── Link analysis (when full HTML body is available) ──
+  // Catches the "click this clearly-phishing link" tell the user called out:
+  // raw-IP URLs, display-text-vs-href mismatches, and brand impersonation
+  // where the email mentions DocuSign/Microsoft/etc. but links elsewhere.
+  if (email.bodyHtml) {
+    signals.push(...analyzeLinksInBody(email.bodyHtml, fullText))
+  }
+
   // If no signals at all, skip tier 2 (email looks clean)
   const skipTier2 = signals.length === 0
 
-  return { signals, spfResult, dkimResult, dmarcResult, replyToMismatch, senderMismatch, skipTier2 }
+  // Rule-based auto-alert for dead-certain combos — bypasses Tier 2 AI and
+  // the 0.75 confidence threshold so obvious phishing always lands in the
+  // dashboard even when Haiku gets cold feet.
+  const autoAlert = computeTier1AutoAlert(signals)
+
+  return { signals, spfResult, dkimResult, dmarcResult, replyToMismatch, senderMismatch, skipTier2, autoAlert }
+}
+
+// ── Link analysis ────────────────────────────────────────────────────────
+
+const KNOWN_BRANDS: Record<string, string[]> = {
+  docusign: ['docusign.com', 'docusign.net'],
+  microsoft: ['microsoft.com', 'outlook.com', 'office.com', 'live.com', 'microsoftonline.com', 'sharepoint.com', 'office365.com'],
+  google: ['google.com', 'gmail.com', 'googlemail.com'],
+  paypal: ['paypal.com'],
+  adobe: ['adobe.com', 'adobesign.com'],
+  dropbox: ['dropbox.com'],
+  amazon: ['amazon.com', 'amazon.co.uk'],
+  apple: ['apple.com', 'icloud.com', 'me.com'],
+  netflix: ['netflix.com'],
+  chase: ['chase.com'],
+  wellsfargo: ['wellsfargo.com'],
+  bankofamerica: ['bankofamerica.com', 'bofa.com'],
+}
+
+const URL_SHORTENERS = new Set([
+  'bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly', 'is.gd',
+  'buff.ly', 'adf.ly', 'bit.do', 'cutt.ly', 'rebrand.ly', 'short.link',
+  'tiny.cc', 't.ly', 'shorturl.at',
+])
+
+function isOfficialDomain(hostname: string, legitDomains: string[]): boolean {
+  const lower = hostname.toLowerCase()
+  return legitDomains.some(d => lower === d || lower.endsWith('.' + d))
+}
+
+export function analyzeLinksInBody(bodyHtml: string, bodyContext: string): ThreatSignal[] {
+  const signals: ThreatSignal[] = []
+  if (!bodyHtml) return signals
+
+  const ctx = bodyContext.toLowerCase()
+  const links: { href: string; displayText: string; hostname: string }[] = []
+
+  const anchorRegex = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+  while ((match = anchorRegex.exec(bodyHtml)) !== null) {
+    const href = match[1].trim()
+    if (!/^https?:\/\//i.test(href)) continue
+    const displayText = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    try {
+      const url = new URL(href)
+      links.push({ href, displayText, hostname: url.hostname.toLowerCase() })
+    } catch {
+      // Malformed href, skip
+    }
+  }
+
+  if (links.length === 0) return signals
+
+  // Raw IP-address URLs are essentially always phishing
+  const ipLink = links.find(l => /^\d{1,3}(\.\d{1,3}){3}$/.test(l.hostname))
+  if (ipLink) {
+    signals.push({
+      signal: 'ip_based_url',
+      detail: `Link goes to a raw IP address (${ipLink.hostname}) instead of a domain — legitimate senders never do this`,
+      weight: 'critical',
+    })
+  }
+
+  // URL shorteners hide the real destination
+  const shortened = links.find(l => URL_SHORTENERS.has(l.hostname))
+  if (shortened) {
+    signals.push({
+      signal: 'url_shortener',
+      detail: `Link uses URL shortener "${shortened.hostname}" which hides the real destination`,
+      weight: 'medium',
+    })
+  }
+
+  // Brand impersonation: body mentions a well-known brand but links go off-brand
+  for (const [brand, legitDomains] of Object.entries(KNOWN_BRANDS)) {
+    if (!ctx.includes(brand)) continue
+    const suspicious = links.find(l => {
+      if (isOfficialDomain(l.hostname, legitDomains)) return false
+      const lowerDisplay = l.displayText.toLowerCase()
+      const lowerHost = l.hostname.toLowerCase()
+      return lowerDisplay.includes(brand) || lowerHost.includes(brand)
+    })
+    if (suspicious) {
+      signals.push({
+        signal: 'brand_impersonation_link',
+        detail: `Email references ${brand} but a link goes to "${suspicious.hostname}" — not an official ${brand} domain`,
+        weight: 'critical',
+      })
+      break
+    }
+  }
+
+  // Display-text-vs-href mismatch (classic phishing tactic).
+  // Matches domains like "docusign.com" or "app.docusign.com" in display text
+  // and compares against the actual href hostname.
+  for (const link of links) {
+    const displayMatches = link.displayText.match(
+      /\b([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi
+    )
+    if (!displayMatches) continue
+    for (const candidate of displayMatches) {
+      const displayDomain = candidate.toLowerCase()
+      // Skip things that aren't really domains (e.g. "readme.md" in copy text)
+      if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif)$/i.test(displayDomain)) continue
+      const actual = link.hostname
+      if (displayDomain === actual) continue
+      if (actual.endsWith('.' + displayDomain)) continue
+      if (displayDomain.endsWith('.' + actual)) continue
+      signals.push({
+        signal: 'link_domain_mismatch',
+        detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
+        weight: 'critical',
+      })
+      return signals
+    }
+  }
+
+  return signals
+}
+
+// ── Rule-based auto-alert ────────────────────────────────────────────────
+// For combos so dead-certain we shouldn't depend on the AI returning
+// >= 0.75 confidence. Returns a pre-built assessment ready to persist.
+
+export interface Tier1AutoAlert {
+  level: 'critical' | 'high'
+  type: ThreatAssessment['threatType']
+  explanation: string
+  recommendedActions: string[]
+  doNotActions: string[]
+  confidence: number
+}
+
+function computeTier1AutoAlert(signals: ThreatSignal[]): Tier1AutoAlert | null {
+  const names = new Set(signals.map(s => s.signal))
+
+  const selfSpoof = names.has('sender_spoofing_self')
+  const linkMismatch = names.has('link_domain_mismatch')
+  const brandImpersonation = names.has('brand_impersonation_link')
+  const ipUrl = names.has('ip_based_url')
+  const dmarcFail = names.has('dmarc_fail')
+  const credentialRequest = names.has('credential_request')
+  const scamPattern = names.has('scam_pattern')
+  const suspiciousRefId = names.has('suspicious_ref_id')
+
+  const baseDoNot = [
+    'Do not click any links in this email',
+    'Do not open any attachments',
+    'Do not reply with personal or financial information',
+  ]
+  const baseRecommended = [
+    'Report the email as phishing in Outlook (right-click → Report)',
+    'Delete the email after reporting',
+    'If it references a real person or service, verify through a channel you already trust (a known phone number, in person, or a bookmarked site)',
+  ]
+
+  // 1. Self-spoof: From claims to be the user's own mailbox. Real self-sent
+  //    emails never ask you to sign/click/enter codes.
+  if (selfSpoof) {
+    return {
+      level: 'critical',
+      type: 'spoofing',
+      explanation:
+        "This email claims to come from your own address, but you didn't actually send it — someone is impersonating you. This is a classic sender-spoofing attack used to trick you into clicking a link or signing a fake document.",
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.97,
+    }
+  }
+
+  // 2. Link where the displayed domain doesn't match the real destination.
+  if (linkMismatch || brandImpersonation) {
+    return {
+      level: 'critical',
+      type: 'phishing',
+      explanation:
+        "A link in this email doesn't go where it claims to. The displayed text and the actual URL point to different domains — a classic phishing tactic to disguise a malicious destination.",
+      doNotActions: baseDoNot,
+      recommendedActions: [
+        'Report as phishing and delete',
+        'If you expected the linked service, navigate to it directly via a browser bookmark — never through this email',
+        ...baseRecommended.slice(2),
+      ],
+      confidence: 0.95,
+    }
+  }
+
+  // 3. Raw IP address URL — legitimate businesses never send these.
+  if (ipUrl) {
+    return {
+      level: 'critical',
+      type: 'malware_link',
+      explanation:
+        'This email contains a link to a raw IP address instead of a real domain. Legitimate businesses never send links this way — it is almost certainly malicious.',
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.95,
+    }
+  }
+
+  // 4. DMARC fail + any phishing indicator = high-confidence spoof.
+  if (dmarcFail && (credentialRequest || scamPattern || suspiciousRefId)) {
+    return {
+      level: 'critical',
+      type: 'phishing',
+      explanation:
+        "This email failed DMARC authentication, meaning the sender's domain explicitly says it did not authorize this message. Combined with the phishing language we detected, this is almost certainly a spoofed phishing attempt.",
+      doNotActions: baseDoNot,
+      recommendedActions: baseRecommended,
+      confidence: 0.92,
+    }
+  }
+
+  return null
 }
 
 // ── Tier 2: AI Content Analysis ──────────────────────────────────────────

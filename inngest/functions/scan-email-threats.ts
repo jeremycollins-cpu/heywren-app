@@ -40,6 +40,109 @@ async function fetchFromGraph(
   return graphFetchWithRefresh(url, { token }, ctx)
 }
 
+type CachedEmailRow = {
+  message_id: string
+  from_name: string | null
+  from_email: string
+  subject: string | null
+  body_preview: string | null
+  received_at: string
+  to_recipients: string | null
+  cc_recipients: string | null
+}
+
+type IntegrationRow = {
+  id: string
+  team_id: string
+  user_id: string
+  access_token: string
+  refresh_token: string
+}
+
+/**
+ * Upsert a threat alert row. Returns true if the write succeeded.
+ * Shared by the Tier 1 auto-alert path and the Tier 2 AI path.
+ */
+async function writeThreatAlert(
+  supabase: ReturnType<typeof getAdminClient>,
+  integration: IntegrationRow,
+  email: CachedEmailRow,
+  assessment: ThreatAssessment
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('email_threat_alerts')
+    .upsert(
+      {
+        team_id: integration.team_id,
+        user_id: integration.user_id,
+        outlook_message_id: email.message_id,
+        from_name: email.from_name,
+        from_email: email.from_email,
+        subject: email.subject,
+        received_at: email.received_at,
+        threat_level: assessment.threatLevel,
+        threat_type: assessment.threatType,
+        confidence: assessment.confidence,
+        signals: assessment.signals,
+        spf_result: assessment.spfResult,
+        dkim_result: assessment.dkimResult,
+        dmarc_result: assessment.dmarcResult,
+        reply_to_mismatch: assessment.replyToMismatch,
+        sender_mismatch: assessment.senderMismatch,
+        explanation: assessment.explanation,
+        recommended_actions: assessment.recommendedActions,
+        do_not_actions: assessment.doNotActions,
+        status: 'unreviewed',
+      },
+      { onConflict: 'team_id,user_id,outlook_message_id' }
+    )
+  return !error
+}
+
+/**
+ * Fire the proactive alert (in-app + Slack + email) for high/critical threats.
+ * Best-effort: the DB row is already written before this runs.
+ */
+async function sendThreatProactiveAlert(
+  integration: IntegrationRow,
+  email: CachedEmailRow,
+  assessment: ThreatAssessment,
+  firstName: string
+): Promise<void> {
+  if (assessment.threatLevel !== 'critical' && assessment.threatLevel !== 'high') return
+  try {
+    const { subject: emailSubject, html: emailHtml } = buildSecurityThreatAlertEmail({
+      userName: firstName,
+      threatLevel: assessment.threatLevel,
+      threatType: assessment.threatType,
+      fromName: email.from_name || '',
+      fromEmail: email.from_email,
+      emailSubject: email.subject || '(no subject)',
+      explanation: assessment.explanation,
+      doNotActions: assessment.doNotActions,
+      recommendedActions: assessment.recommendedActions,
+      reviewUrl: `${APP_URL}/security-alerts`,
+      unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
+    })
+
+    await sendProactiveAlert({
+      teamId: integration.team_id,
+      userId: integration.user_id,
+      notificationType: 'security_alert',
+      title: `${assessment.threatLevel === 'critical' ? 'CRITICAL' : 'High'} security threat: "${email.subject}"`,
+      body: assessment.explanation || `Suspicious email from ${email.from_email} detected as ${assessment.threatType}`,
+      link: '/security-alerts',
+      slackText: `*:rotating_light: ${assessment.threatLevel.toUpperCase()} security threat detected*\n>*From:* ${email.from_name || email.from_email}\n>*Subject:* ${email.subject}\n>\n>${assessment.explanation || 'Review this email in Security Alerts before interacting.'}\n>\n>:warning: Do not click any links or open attachments in the flagged email.`,
+      emailSubject,
+      emailHtml,
+      emailType: 'security_threat_alert',
+      idempotencyKey: `threat-${integration.user_id}-${email.message_id}`,
+    })
+  } catch {
+    // Best-effort — DB row already written.
+  }
+}
+
 export const scanEmailThreats = inngest.createFunction(
   { id: 'scan-email-threats', retries: 2, concurrency: { limit: 3 } },
   [
@@ -95,6 +198,26 @@ export const scanEmailThreats = inngest.createFunction(
         }
         let currentToken = integration.access_token
 
+        // Resolve the signed-in mailbox's own address. Needed to catch
+        // sender-spoofing-self reliably — our cached to_recipients stores
+        // display names, not email addresses, so the raw-email comparison in
+        // tier1Analysis only works when we pass it this value directly.
+        let accountEmail: string | undefined
+        try {
+          const { data: meData, token: meToken } = await fetchFromGraph(
+            'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName',
+            currentToken,
+            ctx
+          )
+          currentToken = meToken
+          if (meData && !meData.error) {
+            accountEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase() || undefined
+          }
+        } catch {
+          // Non-fatal — we'll still run without it, we just lose the self-spoof
+          // safety net for users whose to_recipients is stored as display names.
+        }
+
         // Fetch recent emails from our cached table
         const { data: emails } = await supabase
           .from('outlook_messages')
@@ -145,13 +268,16 @@ export const scanEmailThreats = inngest.createFunction(
             receivedAt: email.received_at,
             toRecipients: email.to_recipients,
             ccRecipients: email.cc_recipients,
+            accountEmail,
           }
 
-          // Fetch headers from Graph API (with automatic token refresh on 401)
+          // Fetch headers + full HTML body from Graph API. We ask for `body`
+          // so link analysis can inspect <a href> pairs (display-vs-href
+          // mismatches, brand-impersonation domains, raw-IP URLs).
           let headersLoaded = false
           try {
             const { data: headerData, token: newToken } = await fetchFromGraph(
-              `https://graph.microsoft.com/v1.0/me/messages/${email.message_id}?$select=internetMessageHeaders,replyTo,sender,hasAttachments`,
+              `https://graph.microsoft.com/v1.0/me/messages/${email.message_id}?$select=internetMessageHeaders,replyTo,sender,hasAttachments,body`,
               currentToken,
               ctx
             )
@@ -167,6 +293,9 @@ export const scanEmailThreats = inngest.createFunction(
               if (headerData.sender?.emailAddress?.address) {
                 emailInput.sender = headerData.sender.emailAddress.address
               }
+              if (headerData.body?.contentType === 'html' && headerData.body?.content) {
+                emailInput.bodyHtml = headerData.body.content
+              }
             }
           } catch {
             // Continue without headers
@@ -176,6 +305,37 @@ export const scanEmailThreats = inngest.createFunction(
           const tier1 = tier1Analysis(emailInput)
           totalScanned++
           userScanned++
+
+          // Rule-based auto-alert path: certain signal combos (self-spoof,
+          // link-domain-mismatch, brand impersonation, raw-IP URLs, dmarc-fail
+          // + phishing language) are near-certain phishing and shouldn't rely
+          // on the AI returning >= 0.75 confidence. Write the alert now and
+          // skip Tier 2 for this email entirely.
+          if (tier1.autoAlert) {
+            const auto = tier1.autoAlert
+            const assessment: ThreatAssessment = {
+              isThreat: true,
+              threatLevel: auto.level,
+              threatType: auto.type,
+              confidence: auto.confidence,
+              signals: tier1.signals,
+              explanation: auto.explanation,
+              recommendedActions: auto.recommendedActions,
+              doNotActions: auto.doNotActions,
+              spfResult: tier1.spfResult,
+              dkimResult: tier1.dkimResult,
+              dmarcResult: tier1.dmarcResult,
+              replyToMismatch: tier1.replyToMismatch,
+              senderMismatch: tier1.senderMismatch,
+            }
+            const written = await writeThreatAlert(supabase, integration, email, assessment)
+            if (written) {
+              totalThreats++
+              userThreats++
+              await sendThreatProactiveAlert(integration, email, assessment, firstName)
+            }
+            continue
+          }
 
           // If tier 1 found nothing AND we had full header data, skip tier 2.
           // But if headers failed to load, run tier 2 anyway since we can't
@@ -218,75 +378,11 @@ export const scanEmailThreats = inngest.createFunction(
           if (!assessment.isThreat || assessment.confidence < MIN_CONFIDENCE_TO_ALERT) continue
 
           const { email } = candidate
-          const { error } = await supabase
-            .from('email_threat_alerts')
-            .upsert(
-              {
-                team_id: integration.team_id,
-                user_id: integration.user_id,
-                outlook_message_id: email.message_id,
-                from_name: email.from_name,
-                from_email: email.from_email,
-                subject: email.subject,
-                received_at: email.received_at,
-                threat_level: assessment.threatLevel,
-                threat_type: assessment.threatType,
-                confidence: assessment.confidence,
-                signals: assessment.signals,
-                spf_result: assessment.spfResult,
-                dkim_result: assessment.dkimResult,
-                dmarc_result: assessment.dmarcResult,
-                reply_to_mismatch: assessment.replyToMismatch,
-                sender_mismatch: assessment.senderMismatch,
-                explanation: assessment.explanation,
-                recommended_actions: assessment.recommendedActions,
-                do_not_actions: assessment.doNotActions,
-                status: 'unreviewed',
-              },
-              { onConflict: 'team_id,user_id,outlook_message_id' }
-            )
-
-          if (!error) {
+          const written = await writeThreatAlert(supabase, integration, email, assessment)
+          if (written) {
             totalThreats++
             userThreats++
-
-            // Proactive alert for high/critical threats — in-app + Slack + email.
-            // Email is critical here: users need to know about the threat even
-            // when they're away from the app, specifically so they don't click
-            // links or open attachments.
-            if (assessment.threatLevel === 'critical' || assessment.threatLevel === 'high') {
-              try {
-                const { subject: emailSubject, html: emailHtml } = buildSecurityThreatAlertEmail({
-                  userName: firstName,
-                  threatLevel: assessment.threatLevel,
-                  threatType: assessment.threatType,
-                  fromName: email.from_name || '',
-                  fromEmail: email.from_email,
-                  emailSubject: email.subject || '(no subject)',
-                  explanation: assessment.explanation,
-                  doNotActions: assessment.doNotActions,
-                  recommendedActions: assessment.recommendedActions,
-                  reviewUrl: `${APP_URL}/security-alerts`,
-                  unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
-                })
-
-                await sendProactiveAlert({
-                  teamId: integration.team_id,
-                  userId: integration.user_id,
-                  notificationType: 'security_alert',
-                  title: `${assessment.threatLevel === 'critical' ? 'CRITICAL' : 'High'} security threat: "${email.subject}"`,
-                  body: assessment.explanation || `Suspicious email from ${email.from_email} detected as ${assessment.threatType}`,
-                  link: '/security-alerts',
-                  slackText: `*:rotating_light: ${assessment.threatLevel.toUpperCase()} security threat detected*\n>*From:* ${email.from_name || email.from_email}\n>*Subject:* ${email.subject}\n>\n>${assessment.explanation || 'Review this email in Security Alerts before interacting.'}\n>\n>:warning: Do not click any links or open attachments in the flagged email.`,
-                  emailSubject,
-                  emailHtml,
-                  emailType: 'security_threat_alert',
-                  idempotencyKey: `threat-${integration.user_id}-${email.message_id}`,
-                })
-              } catch {
-                // Alert is best-effort — DB row is already written above.
-              }
-            }
+            await sendThreatProactiveAlert(integration, email, assessment, firstName)
           }
         }
 
