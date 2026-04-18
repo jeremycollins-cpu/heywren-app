@@ -40,6 +40,7 @@ import { generateMeetingFollowups } from '@/inngest/functions/generate-meeting-f
 import { wrenMorningBrief } from '@/inngest/functions/wren-morning-brief'
 import { scanCalendarConflicts } from '@/inngest/functions/scan-calendar-conflicts'
 import { scanEmailThreats } from '@/inngest/functions/scan-email-threats'
+import { onDemandSecurityScan } from '@/inngest/functions/on-demand-security-scan'
 import { processBccEmail } from '@/inngest/functions/process-bcc-email'
 import { pollWrenMailbox } from '@/inngest/functions/poll-wren-mailbox'
 import { scanStaleEmails } from '@/inngest/functions/scan-stale-emails'
@@ -93,6 +94,7 @@ const handlers = serve({
     wrenMorningBrief,            // 8:30 AM PT weekdays — personalized morning briefing via Slack DM
     scanCalendarConflicts,       // 7 AM PT weekdays — detect calendar conflicts against user boundaries
     scanEmailThreats,            // 7:30 AM PT daily — scan emails for phishing, scam, and impersonation
+    onDemandSecurityScan,        // On-demand — "Scan Now" button: sync Outlook, then run threat scan
     processBccEmail,             // On-demand — process emails BCC'd to wren@heywren.ai
     pollWrenMailbox,             // Every 5 min — poll wren@heywren.ai IMAP mailbox for BCC'd emails
     scanStaleEmails,             // 11 AM + 3 PM PT weekdays — detect read-but-not-acted-on emails

@@ -113,8 +113,12 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Fires a sync-then-scan chain instead of scanning the stale cache
+    // directly. See inngest/functions/on-demand-security-scan.ts — it pulls
+    // fresh emails from Outlook before running threat detection so a phish
+    // that arrived after the last scheduled sync still gets caught.
     await inngest.send({
-      name: 'security/scan-threats',
+      name: 'security/scan-now',
       data: { userId: userData.user.id, daysBack: 7 },
     })
 
