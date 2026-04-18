@@ -218,13 +218,19 @@ export const scanEmailThreats = inngest.createFunction(
           // safety net for users whose to_recipients is stored as display names.
         }
 
-        // Fetch recent emails from our cached table
+        // Fetch recent emails from our cached table, excluding folders that
+        // are user-originated or already-dispositioned. Scanning Sent Items
+        // in particular is a bug — every sent mail has From=accountEmail,
+        // which trivially triggers sender_spoofing_self and produces a flood
+        // of false-positive "spoofing" alerts on the user's own outgoing
+        // replies and shared-document notifications.
         const { data: emails } = await supabase
           .from('outlook_messages')
-          .select('message_id, from_name, from_email, subject, body_preview, received_at, to_recipients, cc_recipients')
+          .select('message_id, from_name, from_email, subject, body_preview, received_at, to_recipients, cc_recipients, folder_name')
           .eq('team_id', integration.team_id)
           .eq('user_id', integration.user_id)
           .gte('received_at', lookbackDate)
+          .not('folder_name', 'in', '("Sent Items","Drafts","Outbox","Deleted Items")')
           .order('received_at', { ascending: false })
           .limit(MAX_EMAILS_PER_USER)
 
