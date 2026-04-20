@@ -132,6 +132,9 @@ function AdminContent() {
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set())
   const [celebrationRate, setCelebrationRate] = useState<number>(30)
   const [celebrationRateSaving, setCelebrationRateSaving] = useState(false)
+  const [orgAlertSettings, setOrgAlertSettings] = useState<{ id: string; name: string; disableSlackAlerts: boolean }[]>([])
+  const [orgAlertsLoading, setOrgAlertsLoading] = useState(false)
+  const [orgAlertSavingId, setOrgAlertSavingId] = useState<string | null>(null)
   const [emailDiag, setEmailDiag] = useState<any>(null)
   const [emailDiagLoading, setEmailDiagLoading] = useState(false)
   const [jobs, setJobs] = useState<any[] | null>(null)
@@ -141,7 +144,7 @@ function AdminContent() {
   const [aiCostsLoading, setAiCostsLoading] = useState(false)
   const [aiCostsDays, setAiCostsDays] = useState(30)
 
-  useEffect(() => { loadOverview(); loadCelebrationRate() }, [])
+  useEffect(() => { loadOverview(); loadCelebrationRate(); loadOrgAlertSettings() }, [])
 
   const loadSubscriptions = async () => {
     setSubsLoading(true)
@@ -294,6 +297,49 @@ function AdminContent() {
         if (!isNaN(parsed)) setCelebrationRate(Math.round(parsed * 100))
       }
     } catch { /* use default */ }
+  }
+
+  const loadOrgAlertSettings = async () => {
+    setOrgAlertsLoading(true)
+    try {
+      const res = await fetch('/api/admin/org-settings')
+      if (res.ok) {
+        const data = await res.json()
+        setOrgAlertSettings(data.organizations || [])
+      }
+    } catch { /* ignore */ }
+    setOrgAlertsLoading(false)
+  }
+
+  const toggleOrgSlackAlerts = async (orgId: string, disable: boolean) => {
+    setOrgAlertSavingId(orgId)
+    // Optimistic update
+    setOrgAlertSettings(prev =>
+      prev.map(o => (o.id === orgId ? { ...o, disableSlackAlerts: disable } : o))
+    )
+    try {
+      const res = await fetch('/api/admin/org-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: orgId, disableSlackAlerts: disable }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.error || 'Failed to update')
+        // Revert
+        setOrgAlertSettings(prev =>
+          prev.map(o => (o.id === orgId ? { ...o, disableSlackAlerts: !disable } : o))
+        )
+      } else {
+        toast.success(disable ? 'Slack alerts disabled' : 'Slack alerts enabled')
+      }
+    } catch (err) {
+      toast.error('Network error')
+      setOrgAlertSettings(prev =>
+        prev.map(o => (o.id === orgId ? { ...o, disableSlackAlerts: !disable } : o))
+      )
+    }
+    setOrgAlertSavingId(null)
   }
 
   const saveCelebrationRate = async (pct: number) => {
@@ -1723,6 +1769,70 @@ function AdminContent() {
           <p className="text-xs text-gray-400 mt-2">
             Percentage chance the wren flies across the screen when a user completes a task. Set to 0 to disable, 100 to always show.
           </p>
+        </div>
+
+        {/* Org Slack Alerts kill switch */}
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-indigo-600" />
+                Org Slack Alerts
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Toggle off to silence the daily digest and all celebration posts (badges, streaks, leaderboard, challenges) for an org.
+              </p>
+            </div>
+            <button
+              onClick={loadOrgAlertSettings}
+              className="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1"
+              title="Reload"
+            >
+              <RefreshCw className={`w-3 h-3 ${orgAlertsLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+          {orgAlertsLoading && orgAlertSettings.length === 0 ? (
+            <div className="text-sm text-gray-400">Loading...</div>
+          ) : orgAlertSettings.length === 0 ? (
+            <div className="text-sm text-gray-400">No organizations found.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+              {orgAlertSettings.map(org => {
+                const enabled = !org.disableSlackAlerts
+                const saving = orgAlertSavingId === org.id
+                return (
+                  <li key={org.id} className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <span className="text-sm text-gray-900 truncate">{org.name}</span>
+                      {!enabled && (
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">
+                          Silenced
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => toggleOrgSlackAlerts(org.id, enabled)}
+                      disabled={saving}
+                      role="switch"
+                      aria-checked={enabled}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
+                        enabled ? 'bg-indigo-600' : 'bg-gray-300'
+                      } ${saving ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+                      title={enabled ? 'Alerts on — click to silence' : 'Alerts silenced — click to enable'}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                          enabled ? 'translate-x-[18px]' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
 
         {/* Search */}
