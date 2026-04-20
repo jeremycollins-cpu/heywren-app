@@ -435,10 +435,15 @@ IMPLICIT SIGNALS (upgrade even without deadline words):
 - Multi-recipient email but question is directed at the Recipient specifically -> high+
 
 MISSING RECIPIENT DETECTION (category: recipient_gap):
-- If the email body mentions someone by name AND directs a question or request at them, BUT that person is NOT in the To or CC recipients — flag it as category "recipient_gap" with high urgency.
-- Example: Sender writes "Can Janaki and Christine review this?" but Janaki and Christine are not on the To/CC line. The question will go unanswered because they never received the email.
-- Compare names mentioned in the body against the To/CC recipients provided. If a name is mentioned with a question/request but missing from recipients, set needsResponse=true, category="recipient_gap", and explain who was mentioned but not included.
-- The questionSummary should note who is missing, e.g. "Sharath asked Janaki and Christine a question but they are not on this email"
+- Flag recipient_gap ONLY when: (a) the CURRENT email body (not quoted/reply history) addresses someone by name with a direct question or request, AND (b) that person is clearly NOT on the To or CC line.
+- Analyze ONLY the top/current message. IGNORE any quoted history, including lines starting with "On <date> <person> wrote:", ">", "-----Original Message-----", "From: ... Sent: ... To: ...", or "_____" dividers. A question that appears inside quoted history was already delivered to its original recipients — do NOT treat it as a missing-recipient gap in the current reply.
+- The To/Cc fields may contain display NAMES ("Jared Roberts"), EMAIL ADDRESSES ("jared.roberts@routeware.com"), or BOTH. When checking if a mentioned person is on the thread, match liberally: first name alone (e.g., "Jared") counts as present if the To/Cc line contains "Jared Roberts" OR an email like "jared.*@..." / "*.roberts@..." / "jroberts@...". Surname-only mentions also match against matching full-name or email-local-part entries.
+- If there is ANY plausible match between the mentioned name and a To/Cc entry (by first name, last name, or email local-part), the person is on the thread — do NOT flag.
+- Only flag when the person is unambiguously absent. When in doubt, do not flag. False positives (flagging someone who is actually on the thread) are worse than missed detections.
+- Example that SHOULD flag: A new email from Alex to just Bob says "Can Janaki and Christine review this proposal?" and neither Janaki nor Christine appears in To/Cc in any form (no name, no email).
+- Example that should NOT flag: The current message is a reply to Bob asking about a call, and the quoted history below contains "Jared, I'm curious what the timeline is?" — that question is in the quoted thread, not the current message.
+- Example that should NOT flag: Body mentions "Jared" and Cc contains "jared.roberts@routeware.com" (or "Jared Roberts") — he IS on the thread.
+- When you do flag, set needsResponse=true, category="recipient_gap", and in questionSummary name exactly who was addressed but not included, e.g. "Sharath asked Janaki and Christine a question but neither is on the To/Cc line."
 
 expectedResponseTime: meeting/feedback/vendor -> same_day/next_day; "this week" -> this_week; open-ended -> no_rush
 
