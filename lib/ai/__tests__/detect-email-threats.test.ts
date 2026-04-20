@@ -350,6 +350,33 @@ describe('tier1Analysis — link analysis', () => {
     expect(names).not.toContain('brand_impersonation_link')
     expect(names).not.toContain('link_domain_mismatch')
   })
+
+  it('does NOT flag marketing click-trackers that redirect via the sender\'s own domain', () => {
+    // Real pattern — cold outreach from a financial firm. Display text shows
+    // LinkedIn (their referenced social), but the href routes through their
+    // own tracking subdomain for analytics before redirecting. Every legit
+    // Marketo / HubSpot / Mailchimp / SendGrid email looks like this.
+    const email = makeEmail({
+      fromEmail: 'steve.lepatner@monarchgrovewealth.org',
+      fromName: 'Steve LePatner',
+      subject: 'Reconnecting From LinkedIn',
+      bodyHtml: '<a href="https://email.monarchgrovewealth.org/click?id=abc">www.linkedin.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('still flags mismatch when the href host is NOT the sender\'s own domain', () => {
+    // Control: make sure the click-tracker exemption doesn't accidentally
+    // silence real phishing where the href goes to an attacker-controlled
+    // third-party domain.
+    const email = makeEmail({
+      fromEmail: 'steve.lepatner@monarchgrovewealth.org',
+      bodyHtml: '<a href="https://evil-attacker.xyz/steal">www.linkedin.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+  })
 })
 
 describe('tier1Analysis — clean emails', () => {
