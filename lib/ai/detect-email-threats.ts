@@ -513,6 +513,15 @@ export function analyzeLinksInBody(
       // Also skip when the "display domain" is just the sender's own domain
       // appearing in their signature line at the bottom of every email.
       if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
+      // Skip when the actual href goes to the sender's OWN domain (or a
+      // subdomain). This is how marketing-email click tracking works —
+      // every legit Marketo / HubSpot / Mailchimp / SendGrid email routes
+      // clicks through a tracking subdomain (e.g. email.acme.com) before
+      // redirecting to the real destination. The display text shows the
+      // target ("linkedin.com"), the href points to the sender's own
+      // tracker subdomain. Without this exemption, every marketing email
+      // in every inbox trips link_domain_mismatch.
+      if (fromDomain && (actual === fromDomain || actual.endsWith('.' + fromDomain))) continue
       signals.push({
         signal: 'link_domain_mismatch',
         detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
