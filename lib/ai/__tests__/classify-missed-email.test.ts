@@ -410,3 +410,84 @@ describe('Tier 1 pre-filter: cold outreach / sales detection', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('recipient_gap prompt guardrails', () => {
+  // These tests guard against false-positive "missing recipient" alerts.
+  // Real incident: an email from Arqam to Jeet (with Jared on Cc) was flagged
+  // because the quoted reply history contained "Jared, I'm curious..." and the
+  // LLM treated that quoted question as if it were in the current message.
+
+  /** Find the Sonnet/Tier-3 analyze_email call among mock invocations. */
+  function findAnalyzeCall() {
+    return mockCreate.mock.calls.find(([args]: any[]) => {
+      const choice = args?.tool_choice
+      return choice?.name === 'analyze_email' || choice?.name === 'analyze_emails_batch'
+    })?.[0]
+  }
+
+  it('system prompt instructs the model to ignore quoted reply history', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse({ category: 'request', needsResponse: true }))
+
+    await classifyMissedEmail(
+      makeEmail({
+        bodyPreview: 'Can we set up a call next week to discuss the API beta?',
+      }),
+    )
+
+    const analyzeCall = findAnalyzeCall()
+    expect(analyzeCall).toBeDefined()
+    const systemText = (analyzeCall.system as Array<{ text: string }>).map(b => b.text).join('\n')
+    expect(systemText).toMatch(/quoted.*history|On <date>.*wrote|Original Message/i)
+    expect(systemText).toMatch(/current message|top\/current message|current email/i)
+  })
+
+  it('system prompt instructs the model to match first names to email addresses in To/Cc', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse({ category: 'request', needsResponse: true }))
+
+    await classifyMissedEmail(
+      makeEmail({
+        bodyPreview: 'Can we set up a call next week?',
+      }),
+    )
+
+    const analyzeCall = findAnalyzeCall()
+    expect(analyzeCall).toBeDefined()
+    const systemText = (analyzeCall.system as Array<{ text: string }>).map(b => b.text).join('\n')
+    // The prompt must teach first-name / email-local-part matching so
+    // "Jared" in the body is recognized as "jared.roberts@routeware.com" in Cc.
+    expect(systemText).toMatch(/first name|local[- ]part|surname|email address/i)
+    expect(systemText).toMatch(/when in doubt.*(?:do not flag|not flag)|false positive/i)
+  })
+
+  it('passes Cc recipients through to the Sonnet user message verbatim', async () => {
+    mockCreate
+      .mockResolvedValueOnce(makeTriageResponse(true))
+      .mockResolvedValueOnce(makeAnalysisResponse({ category: 'request', needsResponse: true }))
+
+    const email = makeEmail({
+      fromEmail: 'arqam.ahmed@gomotive.com',
+      fromName: 'Arqam Ahmed',
+      subject: 'Re: Api Key',
+      toRecipients: 'Jeet Chitgopker',
+      ccRecipients: 'Jared Roberts, Matt Curtis, Fred Harris, Ryan Alexander, Camille Robb, Hammad Qadir',
+      bodyPreview:
+        "Hi Matt, Hope you are doing well. We have almost completed our AI Vision APIs. We will initiate a beta program for select partners to test these APIs. I would like to set up a call with your team to discuss next steps. Can we set up a call next week?\n\nOn Tue, Apr 14, 2026 at 10:36 AM Jeet Chitgopker wrote:\nJared, I'm curious what the timeline looks like for your integration development with Motive?",
+    })
+
+    await classifyMissedEmail(email)
+
+    const analyzeCall = findAnalyzeCall()
+    expect(analyzeCall).toBeDefined()
+    const userMessage = analyzeCall.messages[0].content as string
+    // Cc line must be present so the model can see Jared is on the thread.
+    expect(userMessage).toContain('Jared Roberts')
+    expect(userMessage).toMatch(/Cc:.*Jared Roberts/)
+    // The quoted history is still present in the body preview; the guardrail
+    // is applied at the prompt level, not by stripping the body.
+    expect(userMessage).toContain('On Tue, Apr 14, 2026')
+  })
+})
