@@ -42,7 +42,7 @@ export const calculateWeeklyScoresJob = inngest.createFunction(
     const orgs = await step.run('fetch-organizations', async () => {
       const { data } = await supabase
         .from('organizations')
-        .select('id, name')
+        .select('id, name, disable_slack_alerts')
       return data || []
     })
 
@@ -84,6 +84,15 @@ export const calculateWeeklyScoresJob = inngest.createFunction(
       totalAchievementsAwarded += newAchievements.length
 
       // -- Post celebration notifications to Slack --------------------------
+      // Short-circuit the whole celebrations step when the org has opted out.
+      // The celebrate*() helpers also re-check per call as a defense in depth.
+      if (org.disable_slack_alerts === true) {
+        if (newAchievements.length > 0) {
+          console.log(`[weekly-scores] ${org.name}: ${newAchievements.length} achievements awarded`)
+        }
+        continue
+      }
+
       await step.run(`celebrations-${org.id}`, async () => {
         // Resolve user names and team IDs for celebration posts
         const userIds = [...new Set([
