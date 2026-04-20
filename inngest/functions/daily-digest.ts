@@ -27,7 +27,21 @@ export const dailyDigest = inngest.createFunction(
 
       if (!allTeams || allTeams.length === 0) return []
 
-      const teamIds = allTeams.map(t => t.id)
+      // Skip teams in orgs that have disabled Slack alerts org-wide.
+      const orgIds = [...new Set(allTeams.map(t => t.organization_id))]
+      const { data: orgs } = await supabase
+        .from('organizations')
+        .select('id, disable_slack_alerts')
+        .in('id', orgIds)
+
+      const disabledOrgIds = new Set(
+        (orgs || []).filter(o => o.disable_slack_alerts === true).map(o => o.id)
+      )
+      const enabledTeams = allTeams.filter(t => !disabledOrgIds.has(t.organization_id))
+
+      if (enabledTeams.length === 0) return []
+
+      const teamIds = enabledTeams.map(t => t.id)
 
       const { data: integrations } = await supabase
         .from('integrations')
@@ -41,7 +55,7 @@ export const dailyDigest = inngest.createFunction(
         if (!integrationMap.has(i.team_id)) integrationMap.set(i.team_id, i)
       }
 
-      return allTeams
+      return enabledTeams
         .filter(t => integrationMap.has(t.id))
         .map(t => ({
           ...t,
