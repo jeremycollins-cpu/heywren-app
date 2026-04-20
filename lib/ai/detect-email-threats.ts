@@ -192,10 +192,18 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   }
 
   // ── Reply-to mismatch ──
+  // Skip when the two domains are both part of the same corporate family
+  // (e.g. Optum/UnitedHealthcare, LinkedIn/Microsoft) — that's legitimate
+  // parent-company infrastructure, not a phishing redirect.
   if (email.replyTo && email.fromEmail) {
     const replyToDomain = email.replyTo.split('@')[1]?.toLowerCase()
     const fromDomain = email.fromEmail.split('@')[1]?.toLowerCase()
-    if (replyToDomain && fromDomain && replyToDomain !== fromDomain) {
+    if (
+      replyToDomain &&
+      fromDomain &&
+      replyToDomain !== fromDomain &&
+      !areSameCorporateFamily(replyToDomain, fromDomain)
+    ) {
       replyToMismatch = true
       signals.push({
         signal: 'reply_to_mismatch',
@@ -206,13 +214,21 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   }
 
   // ── Sender vs From mismatch ──
+  // Same corporate-family exemption applies: a sending-infrastructure domain
+  // within the same corporate family (e.g. mail.microsoft.com vs outlook.com)
+  // is legitimate.
   if (email.sender && email.fromEmail) {
     const senderLower = email.sender.toLowerCase()
     const fromLower = email.fromEmail.toLowerCase()
     if (senderLower !== fromLower) {
       const senderDomain = senderLower.split('@')[1]
       const fromDomain = fromLower.split('@')[1]
-      if (senderDomain !== fromDomain) {
+      if (
+        senderDomain &&
+        fromDomain &&
+        senderDomain !== fromDomain &&
+        !areSameCorporateFamily(senderDomain, fromDomain)
+      ) {
         senderMismatch = true
         signals.push({
           signal: 'sender_mismatch',
@@ -278,6 +294,99 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   const autoAlert = computeTier1AutoAlert(signals)
 
   return { signals, spfResult, dkimResult, dmarcResult, replyToMismatch, senderMismatch, skipTier2, autoAlert }
+}
+
+// ── Corporate families ───────────────────────────────────────────────────
+// Groups of domains that belong to the same parent company. A mismatch
+// between two domains in the same group (e.g. Optum replying via UHC, or
+// a LinkedIn link inside a Microsoft email) is legitimate corporate
+// infrastructure, not a phishing tell. Suppresses reply_to_mismatch,
+// sender_mismatch, and link_domain_mismatch in those cases.
+//
+// Keep this list conservative — only include well-known parent/subsidiary
+// and major-acquisition relationships. Don't add a pair unless you're sure
+// it's really the same corporate owner.
+const CORPORATE_FAMILIES: Record<string, string[]> = {
+  unitedhealth: [
+    // Optum is owned by UnitedHealth Group. UHC is also UHG. Optum Bank and
+    // OptumRx are Optum divisions.
+    'optum.com', 'optumbank.com', 'optumrx.com', 'optumhealth.com',
+    'optuminsight.com', 'optumcare.com',
+    'uhc.com', 'uhg.com', 'unitedhealthcare.com', 'unitedhealthgroup.com',
+  ],
+  microsoft: [
+    'microsoft.com', 'outlook.com', 'office.com', 'office365.com',
+    'live.com', 'hotmail.com', 'microsoftonline.com', 'sharepoint.com',
+    'msn.com', 'xbox.com',
+    'linkedin.com', 'licdn.com',               // LinkedIn — Microsoft
+    'github.com', 'githubusercontent.com',     // GitHub — Microsoft
+    'skype.com',                                // Skype — Microsoft
+  ],
+  google: [
+    'google.com', 'gmail.com', 'googlemail.com', 'googleusercontent.com',
+    'youtube.com', 'youtu.be',
+    'android.com', 'chrome.com',
+    'nest.com', 'fitbit.com',
+  ],
+  meta: [
+    'facebook.com', 'fb.com', 'fbcdn.net',
+    'instagram.com', 'cdninstagram.com',
+    'whatsapp.com', 'wa.me',
+    'meta.com',
+  ],
+  amazon: [
+    'amazon.com', 'amazon.co.uk', 'amazon.ca', 'amazon.de',
+    'aws.amazon.com', 'amazonaws.com',
+    'audible.com',
+    'twitch.tv',
+    'wholefoodsmarket.com',
+    'ring.com',
+  ],
+  apple: [
+    'apple.com', 'icloud.com', 'me.com', 'mac.com',
+    'beats.co', 'beatsbydre.com',
+  ],
+  salesforce: [
+    'salesforce.com', 'force.com', 'salesforceliveagent.com',
+    'slack.com', 'slackhq.com', 'slack-edge.com',     // Slack — Salesforce
+    'tableau.com',                                      // Tableau — Salesforce
+    'mulesoft.com',                                     // MuleSoft — Salesforce
+    'pardot.com',                                       // Pardot/Marketing Cloud — Salesforce
+  ],
+  adobe: [
+    'adobe.com', 'adobesign.com', 'adobelogin.com',
+    'marketo.com', 'mktoweb.com', 'marketo.net',       // Marketo — Adobe
+  ],
+  alphabet: [
+    // Alphabet holding includes Google (covered separately) plus Waymo, etc.
+    'waymo.com', 'deepmind.com', 'verily.com',
+  ],
+  paypal: [
+    'paypal.com', 'paypalobjects.com',
+    'venmo.com',                                        // Venmo — PayPal
+    'braintreepayments.com',                            // Braintree — PayPal
+  ],
+  stripe: [
+    'stripe.com', 'stripe.network',
+  ],
+}
+
+/** Return the corporate-family identifier for a hostname, or null if unknown. */
+function getCorporateFamily(hostname: string): string | null {
+  const h = hostname.toLowerCase()
+  for (const [family, domains] of Object.entries(CORPORATE_FAMILIES)) {
+    for (const d of domains) {
+      if (h === d || h.endsWith('.' + d)) return family
+    }
+  }
+  return null
+}
+
+/** True when both hostnames belong to the same corporate family. */
+function areSameCorporateFamily(a: string, b: string): boolean {
+  const familyA = getCorporateFamily(a)
+  if (!familyA) return false
+  return familyA === getCorporateFamily(b)
 }
 
 // ── Link analysis ────────────────────────────────────────────────────────
@@ -513,6 +622,10 @@ export function analyzeLinksInBody(
       // Also skip when the "display domain" is just the sender's own domain
       // appearing in their signature line at the bottom of every email.
       if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
+      // Skip when both domains belong to the same corporate family —
+      // e.g. optumbank.com display text linking to data.information.optum.com
+      // is legitimate since Optum Bank and Optum are the same parent (UHG).
+      if (areSameCorporateFamily(displayDomain, actual)) continue
       signals.push({
         signal: 'link_domain_mismatch',
         detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,

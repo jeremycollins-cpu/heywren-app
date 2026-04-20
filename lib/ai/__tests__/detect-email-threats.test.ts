@@ -352,6 +352,60 @@ describe('tier1Analysis — link analysis', () => {
   })
 })
 
+describe('tier1Analysis — corporate-family suppression', () => {
+  // Regression: Optum HSA statement emails were tripping both
+  // reply_to_mismatch and link_domain_mismatch because replies go to
+  // CustomerCare@uhc.com and links go to data.information.optum.com. Optum
+  // and UnitedHealthcare are the same parent company (UHG), so neither is
+  // actually phishing.
+
+  it('suppresses reply_to_mismatch when sender and reply-to are in the same corporate family', () => {
+    const email = makeEmail({
+      fromEmail: 'OptumFinancial@information.optum.com',
+      replyTo: 'CustomerCare@uhc.com',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('reply_to_mismatch')
+    expect(result.replyToMismatch).toBe(false)
+  })
+
+  it('still flags reply_to_mismatch when domains are in different families', () => {
+    const email = makeEmail({
+      fromEmail: 'noreply@docusign.com',
+      replyTo: 'attacker@malicious-domain.ru',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('reply_to_mismatch')
+  })
+
+  it('suppresses link_domain_mismatch when display and href are in the same corporate family', () => {
+    const email = makeEmail({
+      fromEmail: 'OptumFinancial@information.optum.com',
+      bodyHtml: '<a href="https://data.information.optum.com/login">optumbank.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('suppresses link mismatch for Microsoft/LinkedIn cross-links (same family)', () => {
+    const email = makeEmail({
+      fromEmail: 'notifications@linkedin.com',
+      bodyHtml: '<a href="https://microsoft.com/copilot">linkedin.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('still flags real link_domain_mismatch across unrelated domains', () => {
+    const email = makeEmail({
+      fromEmail: 'noreply@legitcompany.com',
+      bodyHtml: '<a href="https://evil-attacker.xyz/steal">https://microsoft.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+  })
+})
+
 describe('tier1Analysis — clean emails', () => {
   it('produces zero signals for a normal 1:1 email and lets Tier 2 be skipped', () => {
     const email = makeEmail({
