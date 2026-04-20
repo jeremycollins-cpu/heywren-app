@@ -35,6 +35,23 @@ async function getSlackIntegration(teamId: string): Promise<SlackIntegration | n
 }
 
 /**
+ * Returns true if the team's organization has the org-wide Slack alerts
+ * kill switch enabled. Defensive: any lookup failure is treated as "not
+ * disabled" so a transient DB issue doesn't accidentally silence alerts.
+ */
+async function areSlackAlertsDisabled(teamId: string): Promise<boolean> {
+  const supabase = getAdminClient()
+  const { data } = await supabase
+    .from('teams')
+    .select('organizations!inner(disable_slack_alerts)')
+    .eq('id', teamId)
+    .maybeSingle()
+
+  const org = (data as any)?.organizations
+  return org?.disable_slack_alerts === true
+}
+
+/**
  * Resolves the best channel for celebration posts.
  * Priority: config.celebrations_channel > first channel the bot is in.
  */
@@ -93,6 +110,7 @@ export async function celebrateAchievement(
   data: { userName: string; achievementName: string; tier: string }
 ): Promise<void> {
   try {
+    if (await areSlackAlertsDisabled(teamId)) return
     const integration = await getSlackIntegration(teamId)
     if (!integration) return
 
@@ -147,6 +165,7 @@ export async function celebrateStreak(
   data: { userName: string; streakWeeks: number }
 ): Promise<void> {
   try {
+    if (await areSlackAlertsDisabled(teamId)) return
     const integration = await getSlackIntegration(teamId)
     if (!integration) return
 
@@ -196,6 +215,7 @@ export async function celebrateLeaderboardChange(
   data: { userName: string; newRank: number; previousRank: number }
 ): Promise<void> {
   try {
+    if (await areSlackAlertsDisabled(teamId)) return
     const integration = await getSlackIntegration(teamId)
     if (!integration) return
 
@@ -251,6 +271,7 @@ export async function celebrateChallengeCompleted(
   data: { challengeTitle: string }
 ): Promise<void> {
   try {
+    if (await areSlackAlertsDisabled(teamId)) return
     const integration = await getSlackIntegration(teamId)
     if (!integration) return
 
