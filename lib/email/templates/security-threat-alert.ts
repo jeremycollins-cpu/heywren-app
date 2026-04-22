@@ -110,7 +110,7 @@ export function buildSecurityThreatAlertEmail(
 ${warningBanner(data.threatLevel)}
 ${wrenGreeting(
   data.userName,
-  `Wren flagged a <strong>${severityWord.toLowerCase()} ${escHtml(typeLabel)}</strong> in your inbox. Please read this before you return to your email.`
+  `Wren flagged a ${severityWord.toLowerCase()} ${typeLabel} in your inbox. Please read this before you return to your email.`
 )}
 ${suspectEmailCard(data.fromName, data.fromEmail, data.emailSubject)}
 ${paragraph(data.explanation || 'This email shows multiple signals consistent with a phishing attempt.')}

@@ -99,6 +99,19 @@ async function writeThreatAlert(
   return !error
 }
 
+// Only send the separate warning email (as opposed to the in-app alert and
+// Slack DM) when we're highly confident — a rule-based Tier 1 auto-alert
+// or a Tier 2 AI verdict >= 0.90. The 0.75–0.89 AI band covers plausible-
+// but-not-certain threats that belong in the dashboard but shouldn't blast
+// the user's inbox out-of-band; every high-band FP produces a real inbox
+// email a user has to triage.
+const MIN_CONFIDENCE_FOR_EMAIL = 0.90
+
+function shouldEmailWarning(assessment: ThreatAssessment): boolean {
+  if (assessment.threatLevel !== 'critical' && assessment.threatLevel !== 'high') return false
+  return assessment.confidence >= MIN_CONFIDENCE_FOR_EMAIL
+}
+
 /**
  * Fire the proactive alert (in-app + Slack + email) for high/critical threats.
  * Best-effort: the DB row is already written before this runs.
@@ -111,19 +124,27 @@ async function sendThreatProactiveAlert(
 ): Promise<void> {
   if (assessment.threatLevel !== 'critical' && assessment.threatLevel !== 'high') return
   try {
-    const { subject: emailSubject, html: emailHtml } = buildSecurityThreatAlertEmail({
-      userName: firstName,
-      threatLevel: assessment.threatLevel,
-      threatType: assessment.threatType,
-      fromName: email.from_name || '',
-      fromEmail: email.from_email,
-      emailSubject: email.subject || '(no subject)',
-      explanation: assessment.explanation,
-      doNotActions: assessment.doNotActions,
-      recommendedActions: assessment.recommendedActions,
-      reviewUrl: `${APP_URL}/security-alerts`,
-      unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
-    })
+    // Always fire the in-app notification + Slack DM. Email is gated on
+    // higher confidence so lower-band AI verdicts don't flood the inbox.
+    let emailSubject: string | undefined
+    let emailHtml: string | undefined
+    if (shouldEmailWarning(assessment)) {
+      const built = buildSecurityThreatAlertEmail({
+        userName: firstName,
+        threatLevel: assessment.threatLevel,
+        threatType: assessment.threatType,
+        fromName: email.from_name || '',
+        fromEmail: email.from_email,
+        emailSubject: email.subject || '(no subject)',
+        explanation: assessment.explanation,
+        doNotActions: assessment.doNotActions,
+        recommendedActions: assessment.recommendedActions,
+        reviewUrl: `${APP_URL}/security-alerts`,
+        unsubscribeUrl: `${APP_URL}/settings?tab=notifications`,
+      })
+      emailSubject = built.subject
+      emailHtml = built.html
+    }
 
     await sendProactiveAlert({
       teamId: integration.team_id,

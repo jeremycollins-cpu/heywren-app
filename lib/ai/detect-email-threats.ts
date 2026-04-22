@@ -159,16 +159,20 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
   }
 
   // ── Sender spoofing: From address matches the user's own mailbox ──
-  // Real self-sent emails are rare and never ask you to sign/click/verify —
-  // spoofers set the From to the victim's own address to bypass "trusted
-  // contact" heuristics and evade naive filters.
+  // A real self-spoofing attack FAILS DMARC — attackers can't pass DMARC on
+  // a domain they don't control. When the user's own email software sends
+  // on their behalf, DMARC aligns and passes.
   //
-  // We check BOTH:
-  //   (a) the user's signed-in mailbox address (most reliable — toRecipients
-  //       is stored as display names by sync-outlook, so it doesn't match
-  //       email-address comparisons), and
-  //   (b) any to/cc recipient that happens to look like an email address
-  //       (so non-Outlook paths and older cached rows still work).
+  // So: only fire this signal when From looks like the user's mailbox AND
+  // DMARC didn't explicitly pass. If DMARC passed, the message really came
+  // from the user's own domain and is legitimate self-sent mail (typically
+  // a reply in a conversation thread that ended up in the user's scanned
+  // cache via some sync path), not a spoof.
+  //
+  // We check BOTH (a) the user's signed-in mailbox address and (b) any
+  // to/cc recipient that happens to be an email address, so self-spoof
+  // catches both the common Graph-account case and the older to-recipients
+  // case where recipients were cached as addresses.
   if (email.fromEmail) {
     const fromLower = email.fromEmail.toLowerCase().trim()
     const selfAddresses = new Set<string>()
@@ -182,10 +186,14 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
         if (cleaned && cleaned.includes('@')) selfAddresses.add(cleaned)
       }
     }
-    if (selfAddresses.has(fromLower)) {
+    // dmarcResult is populated by the header-checks block above. An explicit
+    // 'pass' value means the sending domain's own DMARC policy authorized
+    // this message. Anything else (fail, softfail, none, missing) keeps the
+    // signal in play because we can't rule out a spoof.
+    if (selfAddresses.has(fromLower) && dmarcResult !== 'pass') {
       signals.push({
         signal: 'sender_spoofing_self',
-        detail: `Email appears to come from your own address (${email.fromEmail}), but it isn't actually in your Sent folder — someone is impersonating you. Real self-sent emails don't ask you to sign documents, click links, or enter codes.`,
+        detail: `Email appears to come from your own address (${email.fromEmail}), but DMARC didn't confirm it was actually sent by your domain — someone may be impersonating you. Real self-sent emails pass DMARC.`,
         weight: 'critical',
       })
     }

@@ -81,6 +81,45 @@ describe('tier1Analysis — self-spoofing detection', () => {
     const result = tier1Analysis(email)
     expect(result.signals.map(s => s.signal)).not.toContain('sender_spoofing_self')
   })
+
+  // Regression: Matt Curtis's own reply in a conversation thread was
+  // showing as critical spoofing because From==accountEmail and the signal
+  // didn't consider DMARC. If DMARC passed on his own domain, the email
+  // really came from him and is legitimate.
+  it('does NOT flag self-spoof when DMARC passes (email really is from the user)', () => {
+    const email = makeEmail({
+      fromEmail: 'matt.curtis@routeware.com',
+      accountEmail: 'matt.curtis@routeware.com',
+      toRecipients: 'Matt Curtis',
+      subject: 'Re: Routeware UC details',
+      bodyPreview: 'Hey John, I just spoke with Shawn...',
+      headers: [{ name: 'Authentication-Results', value: 'spf=pass dkim=pass dmarc=pass' }],
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('sender_spoofing_self')
+    expect(result.autoAlert).toBeNull()
+  })
+
+  it('still flags self-spoof when DMARC fails — that\'s a real spoof', () => {
+    const email = makeEmail({
+      fromEmail: 'jeremy.collins@routeware.com',
+      accountEmail: 'jeremy.collins@routeware.com',
+      headers: [{ name: 'Authentication-Results', value: 'spf=fail dkim=none dmarc=fail' }],
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('sender_spoofing_self')
+  })
+
+  it('still flags self-spoof when DMARC is missing — can\'t rule out a spoof', () => {
+    // No Authentication-Results header at all (the Tier 1 call couldn't
+    // load headers, or the mail server didn't emit them). Stay conservative.
+    const email = makeEmail({
+      fromEmail: 'jeremy.collins@routeware.com',
+      accountEmail: 'jeremy.collins@routeware.com',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('sender_spoofing_self')
+  })
 })
 
 describe('tier1Analysis — e-signature / document-share phishing', () => {
