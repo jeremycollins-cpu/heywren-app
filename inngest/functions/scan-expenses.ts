@@ -164,12 +164,11 @@ export const scanExpenses = inngest.createFunction(
   async ({ step, event }) => {
     const run = startJobRun('scan-expenses')
 
-    // Treat the event as authoritative for the on-demand path: the API caller
-    // has already resolved the requesting user's team_id, so we scope the
-    // scan to that pair directly instead of trying to match by integrations.
-    // user_id, which is unreliable on legacy rows (NULL or a stale id from
-    // before user_id was added to the table).
-    const eventTeam = event?.data?.teamId as string | undefined
+    // The event payload from /api/expenses POST is authoritative — the API
+    // resolved the requesting user from auth.getUser() before sending. We
+    // join to integrations on user_id only, since every user has at most
+    // one Outlook integration and team_id values on the integrations row
+    // can drift from profiles.current_team_id for legacy/multi-team users.
     const eventUser = event?.data?.userId as string | undefined
 
     const integrations = await step.run('fetch-integrations', async () => {
@@ -180,10 +179,7 @@ export const scanExpenses = inngest.createFunction(
         .select('team_id, user_id')
         .eq('provider', 'outlook')
 
-      // On-demand scans pin to the requesting user's team. Cron scans (no
-      // event payload) fan out to every Outlook integration, same as the
-      // scan-missed-emails pattern.
-      if (eventTeam) query = query.eq('team_id', eventTeam)
+      if (eventUser) query = query.eq('user_id', eventUser)
 
       const { data, error } = await query
       if (error || !data) {
@@ -202,13 +198,13 @@ export const scanExpenses = inngest.createFunction(
 
     const results = await Promise.all(
       integrations.map((integration) => {
-        // Use the requesting user from the event when present; fall back to
-        // the integration's own user_id for cron-driven scans.
+        // Always honor the integration's own team_id when scanning — that's
+        // the value used to stamp outlook_messages rows at sync time, so
+        // looking up unscanned emails has to use it. The user_id on the
+        // expense_emails rows we insert tracks the requesting user (or the
+        // integration's user_id for cron runs).
         const scanUserId = eventUser || integration.user_id
         if (!scanUserId) {
-          // Legacy integration row with NULL user_id and no event scope —
-          // skip rather than fail, the cron will keep retrying once user_id
-          // backfills land.
           return Promise.resolve({ success: false, skipped: true, teamId: integration.team_id })
         }
         return step.run(`scan-team-${integration.team_id}-${scanUserId}`, async () => {
