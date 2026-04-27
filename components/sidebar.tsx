@@ -81,181 +81,57 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     })
   }, [])
 
+  // Fetch sidebar badge counts. The source of truth for every count is
+  // /api/sidebar-counts, which mirrors each section page's filter/group logic
+  // so the sidebar matches what the user sees inside the section in real time.
+  const fetchBadges = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sidebar-counts', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.counts) {
+        setBadges(data.counts as BadgeCounts)
+      }
+    } catch (err) {
+      console.error('Error fetching sidebar counts:', err)
+    }
+  }, [])
+
   useEffect(() => {
-    const fetchUserData = async () => {
+    const init = async () => {
       try {
         const { data: user } = await supabase.auth.getUser()
         if (!user?.user) return
-
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, current_team_id')
+          .select('role')
           .eq('id', user.user.id)
           .single()
-
         setUserRole(profile?.role || 'user')
-
-        if (profile?.current_team_id) {
-          const teamId = profile.current_team_id
-
-          const [commitResult, pendingReviewResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
-            supabase
-              .from('commitments')
-              .select('status, created_at, assignee_id')
-              .eq('team_id', teamId)
-              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
-              .in('status', ['open', 'overdue'])
-              .limit(500),
-            supabase
-              .from('commitments')
-              .select('id', { count: 'exact', head: true })
-              .eq('team_id', teamId)
-              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
-              .eq('status', 'pending_review'),
-            supabase
-              .from('drafts')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('missed_emails')
-              .select('id, subject')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('missed_chats')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('awaiting_replies')
-              .select('id, conversation_id, source')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'waiting')
-              .then(res => res.error ? { data: [] } : res),
-            supabase
-              .from('email_threat_alerts')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'unreviewed')
-              .then(res => res.error ? { data: [] } : res),
-          ])
-
-          const commitments = commitResult.data || []
-          const now = Date.now()
-          const overdueCount = commitments.filter(c => c.status === 'overdue').length
-          const urgentCount = commitments.filter(c =>
-            c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000
-          ).length
-
-          // Count "For You" commitments — where user is assignee (not just creator).
-          // Matches the "For You" tab on the commitments page.
-          const forYouCount = commitments.filter(c =>
-            c.assignee_id === user.user.id || c.assignee_id === null
-          ).length
-
-          // Count waiting room threads (not individual messages).
-          // Group by conversation_id for emails, count ungrouped items individually.
-          const waitingItems = (waitingResult as any).data || []
-          const waitingThreads = new Set<string>()
-          let waitingUngrouped = 0
-          for (const item of waitingItems) {
-            if (item.conversation_id && item.source === 'outlook') {
-              waitingThreads.add(`outlook:${item.conversation_id}`)
-            } else {
-              waitingUngrouped++
-            }
-          }
-          const waitingThreadCount = waitingThreads.size + waitingUngrouped
-
-          setBadges({
-            overdue: overdueCount,
-            urgent: urgentCount,
-            pendingReview: pendingReviewResult.count || 0,
-            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
-            missedEmails: new Set((missedResult.data || []).map((e: any) => {
-              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
-              return s || e.id
-            })).size,
-            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
-            waitingRoom: waitingThreadCount,
-            openCommitments: forYouCount,
-            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
-          })
-        }
       } catch (err) {
-        console.error('Error fetching sidebar data:', err)
+        console.error('Error fetching user role:', err)
       }
+      fetchBadges()
     }
+    init()
+  }, [supabase, fetchBadges])
 
-    fetchUserData()
-  }, [supabase])
-
-  // Re-fetch badge counts when commitments or action items change in real-time
-  // Throttled: minimum 30s between refetches to reduce Disk IO pressure
-  const lastRefetchRef = useRef(0)
+  // Re-fetch badge counts when commitments or action items change in real-time.
+  // Debounced 1s so a burst of inserts/updates collapses into a single refetch.
+  const pendingRefetchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refetchBadges = useCallback(() => {
-    const now = Date.now()
-    if (now - lastRefetchRef.current < 30000) return // throttle: max once per 30s
-    lastRefetchRef.current = now
-
-    const timer = setTimeout(() => {
-      const fetchUserData = async () => {
-        try {
-          const { data: user } = await supabase.auth.getUser()
-          if (!user?.user) return
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_team_id')
-            .eq('id', user.user.id)
-            .single()
-          if (!profile?.current_team_id) return
-          const teamId = profile.current_team_id
-
-          const [commitResult, pendingReviewResult2, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
-            supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
-            supabase.from('commitments').select('id', { count: 'exact', head: true }).eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).eq('status', 'pending_review'),
-            supabase.from('drafts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('missed_chats').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('awaiting_replies').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { count: 0, data: [] } : res),
-            supabase.from('email_threat_alerts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'unreviewed').then(res => res.error ? { count: 0, data: [] } : res),
-          ])
-
-          const commitments = commitResult.data || []
-          const now = Date.now()
-          setBadges({
-            overdue: commitments.filter(c => c.status === 'overdue').length,
-            urgent: commitments.filter(c => c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000).length,
-            pendingReview: pendingReviewResult2.count || 0,
-            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
-            missedEmails: new Set((missedResult.data || []).map((e: any) => {
-              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
-              return s || e.id
-            })).size,
-            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
-            waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
-            openCommitments: commitments.filter(c => c.status === 'open').length,
-            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
-          })
-        } catch (err) {
-          console.error('Error refreshing sidebar badges:', err)
-        }
-      }
-      fetchUserData()
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [supabase])
+    if (pendingRefetchRef.current) clearTimeout(pendingRefetchRef.current)
+    pendingRefetchRef.current = setTimeout(() => {
+      pendingRefetchRef.current = null
+      fetchBadges()
+    }, 1000)
+  }, [fetchBadges])
 
   useRealtime({ table: 'commitments', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
   useRealtime({ table: 'drafts', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'awaiting_replies', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
   useRealtime({ table: 'email_threat_alerts', onInsert: refetchBadges, onUpdate: refetchBadges })
 
   const sections = useMemo(() => [
