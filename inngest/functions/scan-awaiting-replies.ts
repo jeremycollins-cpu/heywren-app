@@ -25,7 +25,7 @@ function getAdminClient() {
 }
 
 // Simple urgency classification based on message content
-function classifySentMessage(subject: string, body: string, daysSince: number): {
+export function classifySentMessage(subject: string, body: string, daysSince: number): {
   urgency: string
   category: string
   waitReason: string
@@ -75,6 +75,103 @@ function classifySentMessage(subject: string, body: string, daysSince: number): 
 
   return { urgency, category, waitReason }
 }
+
+// Markers that indicate the start of a quoted-original block in a reply.
+// Outlook's bodyPreview is plain text with newlines collapsed, so we match
+// without anchoring to line boundaries. The quoted block contains the prior
+// sender's full message, including their action verbs ("approve", "review")
+// — without this stripping, the keyword classifier above attributes those
+// to the user's reply and slaps "Waiting for response" on a thread closer.
+const REPLY_QUOTE_MARKERS: RegExp[] = [
+  /_{8,}/,                                     // Outlook divider line
+  /-{2,5}\s*original\s+message\s*-{2,5}/i,     // ----- Original Message -----
+  /-{2,5}\s*forwarded\s+message\s*-{2,5}/i,    // ----- Forwarded Message -----
+  /\bfrom:\s*\S+.{0,40}\bsent:\s/i,            // Outlook "From: X ... Sent: Y"
+  /\bon\s+.{1,120}\bwrote:/i,                  // Gmail "On <date>, X wrote:"
+  /\bsent\s+from\s+my\s+\w+/i,                 // "Sent from my iPhone"
+  /\bget\s+outlook\s+for\s+\w+/i,              // "Get Outlook for iOS"
+]
+
+/**
+ * Strip the quoted-original portion from a reply body and return just the
+ * new content the user actually typed. If no marker is found, returns the
+ * input unchanged.
+ */
+export function extractNewReplyContent(bodyPreview: string): string {
+  if (!bodyPreview) return ''
+  let earliest = bodyPreview.length
+  for (const pattern of REPLY_QUOTE_MARKERS) {
+    const match = bodyPreview.match(pattern)
+    if (match && match.index !== undefined && match.index < earliest) {
+      earliest = match.index
+    }
+  }
+  return bodyPreview.slice(0, earliest).trim()
+}
+
+// Pure-acknowledgment phrases that close out a thread. When the user's
+// reply content (after stripping the quoted original) reduces to one of
+// these, the message isn't waiting on anything — it's a thread closer.
+const CLOSER_PHRASES = new Set([
+  'thanks', 'thank you', 'thx', 'ty', 'tysm',
+  'thanks so much', 'thank you so much', 'thanks very much',
+  'thanks a lot', 'thanks a million', 'many thanks', 'much appreciated',
+  'thanks for the update', 'thanks for letting me know',
+  'thanks for confirming', 'thanks for the confirmation', 'thanks for the info',
+  'got it', 'gotcha', 'understood', 'roger', 'roger that', 'copy', 'copy that', '10-4',
+  'sounds good', 'looks good', 'lgtm', 'looks great',
+  'perfect', 'great', 'awesome', 'excellent', 'wonderful',
+  'ok', 'okay', 'k',
+  'will do',
+  'appreciate it', 'appreciate the update', 'appreciate the help',
+  'cheers',
+  'confirmed', 'noted', 'received',
+  'no problem', 'no worries', 'np',
+  'agreed', 'that works', 'works for me', 'works',
+  'all set', 'all good',
+  'you too', 'same to you',
+  // Two-word combos people commonly write without punctuation between them.
+  // The compound-closer split below catches "ok, thanks" and "got it - thanks";
+  // these handle the unpunctuated variants ("ok thanks", "great thank you").
+  'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you',
+  'ok great', 'okay great',
+  'great thanks', 'great thank you',
+  'perfect thanks', 'perfect thank you',
+  'awesome thanks', 'awesome thank you',
+  'got it thanks', 'got it thank you',
+  'sounds good thanks',
+  'will do thanks', 'will do thank you',
+  'thanks again', 'thank you again',
+  'noted thanks', 'noted with thanks',
+  'confirmed thanks',
+  'received thanks', 'received with thanks',
+])
+
+/**
+ * Detect whether the user's new reply content is purely an acknowledgment
+ * that closes the thread. We're conservative — only short replies (<= 80
+ * chars after normalization) that match a known closer pattern qualify.
+ */
+export function isThreadCloser(newContent: string): boolean {
+  if (!newContent) return true
+  let normalized = newContent.toLowerCase().replace(/\s+/g, ' ').trim()
+  // Strip surrounding quotes/parens that some mail clients add
+  normalized = normalized.replace(/^["'`(\[]+|["'`)\]]+$/g, '').trim()
+  // Strip trailing punctuation & emoji-like trailing chars repeatedly
+  normalized = normalized.replace(/[.!?,;:\-—–…)\s]+$/g, '').trim()
+  if (normalized.length === 0) return true
+  if (normalized.length > 80) return false
+  if (CLOSER_PHRASES.has(normalized)) return true
+  // Compound closers: "<closer>, <closer>" or "<closer> - <closer>"
+  // e.g. "ok thanks", "great, thanks", "got it, thanks"
+  const parts = normalized
+    .split(/\s*(?:,|;|—|–|-|\s+and\s+|\s+&\s+)\s*/)
+    .map((p) => p.replace(/[.!?]+$/g, '').trim())
+    .filter(Boolean)
+  if (parts.length >= 2 && parts.every((p) => CLOSER_PHRASES.has(p))) return true
+  return false
+}
+
 
 async function refreshMicrosoftToken(
   supabase: ReturnType<typeof getAdminClient>,
@@ -336,9 +433,22 @@ export async function scanTeamAwaitingReplies(
 
       if (toRecipients.length === 0) continue
 
+      // Strip any quoted-original block before classifying. Outlook's
+      // bodyPreview on a reply is "<new content> ________ From: ... Sent:
+      // ... Subject: ... Hi <name> ...", and without this the keyword
+      // classifier attributes the prior sender's "approve" / "review" /
+      // question marks to the user's actual reply.
+      const newContent = extractNewReplyContent(bodyPreview)
+
+      // Skip thread-closer replies ("Thanks", "Got it", "Sounds good", etc.).
+      // The classifier below has no way to recognize an acknowledgment, so
+      // without this guard every "Thank you." reply lands in the waiting
+      // room as "Waiting for response".
+      if (isThreadCloser(newContent)) continue
+
       // Classify
       const daysSince = Math.floor((Date.now() - new Date(sentAt).getTime()) / 86400000)
-      const { urgency, category, waitReason } = classifySentMessage(subject, bodyPreview, daysSince)
+      const { urgency, category, waitReason } = classifySentMessage(subject, newContent, daysSince)
 
       // Skip low-urgency items less than 2 days old
       if (urgency === 'low' && daysSince < 2) continue
