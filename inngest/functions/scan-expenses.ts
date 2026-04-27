@@ -1,8 +1,9 @@
 import { inngest } from '../client'
 import { createClient } from '@supabase/supabase-js'
-import { classifyExpenseEmailBatch, vendorDomainFromEmail } from '@/lib/ai/classify-expense-email'
+import { classifyExpenseEmailBatch, vendorDomainFromEmail, looksLikeReceipt } from '@/lib/ai/classify-expense-email'
 import { logAiUsage } from '@/lib/ai/persist-usage'
 import { startJobRun } from '@/lib/jobs/record-run'
+import { getOutlookIntegration, getMessageBody } from '@/lib/outlook/graph-client'
 
 const MAX_EMAILS_PER_RUN = 200
 const TIME_BUDGET_MS = 240000   // 4 minutes
@@ -57,6 +58,15 @@ async function scanTeamExpenses(
   const existingIds = new Set((existing || []).map(e => e.message_id))
   const candidates = emails.filter(e => !existingIds.has(e.message_id))
 
+  // Look up the user's Outlook integration once so we can hydrate full
+  // message bodies for receipt candidates. body_preview from Graph is only
+  // ~255 chars, which often misses the dollar amount (the field that
+  // matters most for an expense report). Without the integration we can
+  // still classify using the preview alone — extraction is just less
+  // reliable.
+  const integration = await getOutlookIntegration(teamId, userId)
+  let graphToken = integration?.access_token || null
+
   let totalFound = 0
 
   // Batch in chunks of 50 — the AI helper itself fans out to 15-email Claude
@@ -66,12 +76,48 @@ async function scanTeamExpenses(
     if (Date.now() - startTime > TIME_BUDGET_MS) break
     const chunk = candidates.slice(i, i + 50)
 
+    // Pre-filter with the same heuristic the classifier applies first, so we
+    // only spend Graph calls on emails likely to be receipts. The classifier
+    // re-runs the same filter (cheap), so this is a pure cost optimization.
+    const candidatesNeedingBody = chunk.filter(e =>
+      looksLikeReceipt({
+        id: e.message_id,
+        fromEmail: e.from_email || '',
+        fromName: e.from_name || '',
+        subject: e.subject || '',
+        bodyPreview: e.body_preview || '',
+        receivedAt: e.received_at,
+      })
+    )
+
+    const fullBodies = new Map<string, string>()
+    if (graphToken && integration && candidatesNeedingBody.length > 0) {
+      const adminClient = supabase
+      for (const email of candidatesNeedingBody) {
+        if (Date.now() - startTime > TIME_BUDGET_MS) break
+        try {
+          const { body, token: nextToken, error: bodyErr } = await getMessageBody(
+            email.message_id,
+            graphToken,
+            { supabase: adminClient, integrationId: integration.id, refreshToken: integration.refresh_token }
+          )
+          graphToken = nextToken
+          if (!bodyErr && body) fullBodies.set(email.message_id, body)
+        } catch (err) {
+          // Single-message failures are non-fatal — fall back to preview.
+          console.error(`[scan-expenses] body fetch failed for ${email.message_id}:`, (err as Error).message)
+        }
+      }
+    }
+
     const batchInput = chunk.map(email => ({
       id: email.message_id,
       fromEmail: email.from_email || '',
       fromName: email.from_name || '',
       subject: email.subject || '(no subject)',
-      bodyPreview: email.body_preview || '',
+      // Prefer the full body when we managed to fetch it; preview is the
+      // fallback for emails the pre-filter rejected or Graph errored on.
+      bodyPreview: fullBodies.get(email.message_id) || email.body_preview || '',
       receivedAt: email.received_at,
     }))
 

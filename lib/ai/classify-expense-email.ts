@@ -92,7 +92,7 @@ function emailDomain(email: string): string {
   return at >= 0 ? email.slice(at + 1).toLowerCase().trim() : ''
 }
 
-function looksLikeReceipt(input: ExpenseEmailInput): boolean {
+export function looksLikeReceipt(input: ExpenseEmailInput): boolean {
   const subject = input.subject || ''
   const body = input.bodyPreview || ''
   const from = input.fromEmail || ''
