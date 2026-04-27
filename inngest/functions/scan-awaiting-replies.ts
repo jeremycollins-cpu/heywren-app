@@ -154,13 +154,24 @@ const CLOSER_PHRASES = new Set([
  */
 export function isThreadCloser(newContent: string): boolean {
   if (!newContent) return true
-  let normalized = newContent.toLowerCase().replace(/\s+/g, ' ').trim()
+  // Strip Slack/Markdown decorations and conversational filler (mentions,
+  // emoji, "and team") so a praise-only message like "Great job, @Tony
+  // and team!" reduces to its core phrase.
+  const stripped = stripDecorations(newContent)
+  let normalized = stripped.toLowerCase().replace(/\s+/g, ' ').trim()
   // Strip surrounding quotes/parens that some mail clients add
   normalized = normalized.replace(/^["'`(\[]+|["'`)\]]+$/g, '').trim()
   // Strip trailing punctuation & emoji-like trailing chars repeatedly
   normalized = normalized.replace(/[.!?,;:\-—–…)\s]+$/g, '').trim()
+  // Reaction-only message — body was emoji / `:thumbsup:` / `<@U123>` only
+  // and stripping reduced it to nothing. Definitely not awaiting a reply.
   if (normalized.length === 0) return true
-  if (normalized.length > 80) return false
+  // Even a short closer-shaped message can carry a real ask hidden inside
+  // ("Great job, but can you also re-run the report?"). Bail out before
+  // any positive match if the original text contains an actual question
+  // or request — we'd rather over-keep than silence a real follow-up.
+  if (containsActionableAsk(newContent)) return false
+  if (normalized.length > 100) return false
   if (CLOSER_PHRASES.has(normalized)) return true
   // Compound closers: "<closer>, <closer>" or "<closer> - <closer>"
   // e.g. "ok thanks", "great, thanks", "got it, thanks"
@@ -169,7 +180,110 @@ export function isThreadCloser(newContent: string): boolean {
     .map((p) => p.replace(/[.!?]+$/g, '').trim())
     .filter(Boolean)
   if (parts.length >= 2 && parts.every((p) => CLOSER_PHRASES.has(p))) return true
+  // Praise / kudos / sign-off patterns at the start of the (decoration-
+  // stripped) message. These are common in Slack — channel praise
+  // ("Great job team!"), end-of-day wishes ("Have a great weekend!"),
+  // standalone reactions ("Looks awesome").
+  if (PRAISE_PATTERNS.some((re) => re.test(normalized))) return true
+  if (SIGNOFF_PATTERNS.some((re) => re.test(normalized))) return true
   return false
+}
+
+// ── Helpers backing isThreadCloser ───────────────────────────────────────
+
+/**
+ * Strip Slack/Markdown decorations, mentions, emoji, and conversational
+ * filler tokens from a message so the underlying phrase can be matched
+ * against the closer dictionary. "Great job, <@U123> and team! 🎉" → "Great
+ * job".
+ */
+function stripDecorations(text: string): string {
+  return text
+    // Slack raw user/channel mentions and broadcast tags
+    .replace(/<@[UW][A-Z0-9]+(?:\|[^>]+)?>/g, '')
+    .replace(/<#[CG][A-Z0-9]+(?:\|[^>]+)?>/g, '')
+    .replace(/<![a-z]+(?:\|[^>]+)?>/gi, '') // <!here>, <!channel>, <!everyone>
+    // Slack-formatted URLs <https://...|label> — drop the URL, keep the label
+    .replace(/<(https?:\/\/[^>|]+)\|([^>]+)>/g, '$2')
+    .replace(/<https?:\/\/[^>]+>/g, '')
+    // Resolved @Name (capture run of capitalized name parts)
+    .replace(/@[A-Za-z][\w'.-]*(?:\s+[A-Z][\w'.-]+){0,3}/g, '')
+    // Channel refs #name
+    .replace(/#[\w-]+/g, '')
+    // Slack-style :emoji_name:
+    .replace(/:[a-z0-9_+-]+:/gi, '')
+    // Common Unicode emoji ranges (covers the bulk of what people send)
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{2300}-\u{23FF}]/gu, '')
+    .replace(/[\u{1F000}-\u{1F2FF}]/gu, '')
+    // Conversational filler that hangs off a praise phrase
+    .replace(/\b(?:and\s+)?(?:team|everyone|all|y'?all|folks|guys|gals|peeps|crew|gang)\b/gi, '')
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Praise / kudos messages that close out a thread with no expectation of
+// reply. Matched against the decoration-stripped, lowercased text — anchored
+// at the start so substantive messages that merely *contain* praise (e.g.
+// "Great job, but please redo X") fall through to the actionable-ask guard.
+const PRAISE_PATTERNS: RegExp[] = [
+  /^(?:great|nice|good|excellent|amazing|awesome|fantastic|incredible|outstanding|stellar|terrific|brilliant|superb|solid)\s+(?:job|work|stuff|effort|one|call|find|catch|point|update|presentation|demo|deck|writeup|write[- ]up)\b/i,
+  /^well\s+done\b/i,
+  /^way\s+to\s+go\b/i,
+  /^kudos\b/i,
+  /^congrats\b/i,
+  /^congratulations\b/i,
+  /^huge\s+(?:props|kudos|win|congrats)\b/i,
+  /^big\s+(?:props|win|congrats|kudos)\b/i,
+  /^props\s+to\b/i,
+  /^shout\s*-?\s*out\b/i,
+  /^love\s+(?:it|this|the)\b/i,
+  /^this\s+is\s+(?:great|awesome|amazing|fantastic|incredible|wonderful|huge)\b/i,
+  /^that(?:'s| is)\s+(?:great|awesome|amazing|fantastic|incredible|wonderful)\b/i,
+  /^looks?\s+(?:great|awesome|good|fantastic|amazing)\b/i,
+  /^(?:so\s+)?proud\s+of\b/i,
+  /^nailed\s+it\b/i,
+  /^crushed\s+it\b/i,
+  /^bravo\b/i,
+  /^chef'?s?\s+kiss\b/i,
+  /^fire\s*🔥*$/i,
+]
+
+// End-of-conversation greetings and sign-offs. Same anchoring convention.
+const SIGNOFF_PATTERNS: RegExp[] = [
+  /^good\s+(?:morning|afternoon|evening|night)\b/i,
+  /^(?:have\s+a|enjoy\s+(?:your|the))\s+(?:good|great|nice|wonderful|lovely|relaxing|fun)?\s*(?:one|day|weekend|evening|night|holiday|break|trip|vacation|rest\s+of\s+your\s+\w+)\b/i,
+  /^see\s+(?:you|ya)\s+(?:tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+week|soon|later|then|around)\b/i,
+  /^(?:talk|chat)\s+(?:to\s+you\s+)?(?:later|soon)\b/i,
+  /^ttyl\b/i,
+  /^ttys\b/i,
+  /^(?:catch\s+(?:up|you)\s+later|cya)\b/i,
+  /^later(?:s)?$/i,
+  /^(?:bye|goodbye|farewell)\b/i,
+  /^safe\s+travels\b/i,
+  /^happy\s+(?:friday|monday|tuesday|wednesday|thursday|weekend|holidays?|new\s+year|birthday)\b/i,
+]
+
+// Phrases that signal a real ask hidden inside otherwise-closer-looking
+// text. We bail out of closer detection if any of these appear — better to
+// over-keep a "Great job — also can you do X?" than to silence it.
+function containsActionableAsk(text: string): boolean {
+  if (/\?/.test(text)) return true
+  return (
+    /\b(?:can|could|would|will)\s+(?:you|someone|anyone|we)\b/i.test(text) ||
+    /\bplease\s+[a-z]/i.test(text) ||
+    /\b(?:asap|urgent|by\s+(?:eod|cob|end\s+of\s+(?:day|week)|tomorrow|today|monday|tuesday|wednesday|thursday|friday))\b/i.test(text) ||
+    /\bblock(?:ing|er|ed)\b/i.test(text) ||
+    /\blet\s+me\s+know\b/i.test(text) ||
+    /\bany\s+(?:thoughts|chance|update|news)\b/i.test(text) ||
+    /\bneed\s+(?:to|your|some|an?|the)\b/i.test(text) ||
+    /\bwaiting\s+on\b/i.test(text) ||
+    /\bfollow\s+up\s+(?:on|with|about)\b/i.test(text) ||
+    /\bthoughts\?/i.test(text) ||
+    /\bwhen\s+(?:can|will|do|would|are)\b/i.test(text)
+  )
 }
 
 
@@ -688,8 +802,12 @@ export async function scanTeamAwaitingReplies(
               if (repliedThreads.has(msg.message_ts)) continue
             }
 
-            // No reply — this is awaiting
+            // No reply — but skip thread-closers (praise, acknowledgments,
+            // sign-offs, emoji-only reactions). Slack channel chatter like
+            // "Great job, @Tony and team!" or "Have a good weekend!" or
+            // "🎉🎉🎉" is conversation closure, not waiting on anyone.
             const text = msg.message_text || ''
+            if (isThreadCloser(text)) continue
             const hasQuestion = /\?|can you|could you|would you|please|need/i.test(text)
             let urgency = 'medium'
             if (daysSince > 7) urgency = 'critical'

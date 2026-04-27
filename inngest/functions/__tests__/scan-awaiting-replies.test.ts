@@ -124,6 +124,110 @@ describe('isThreadCloser', () => {
   })
 })
 
+describe('isThreadCloser — praise / kudos (Slack channel chatter)', () => {
+  // The "Great job, @Tony Maciej and team!" false positive class. Praise
+  // messages with @mentions, channel announcements, and shoutouts close
+  // out a thread; nothing's waiting on anyone.
+
+  it('flags praise with Slack raw mentions and "and team" filler', () => {
+    expect(isThreadCloser('Great job, <@U12345> and team!')).toBe(true)
+  })
+
+  it('flags praise with a resolved @Name mention', () => {
+    expect(isThreadCloser('Great job, @Tony Maciej and team!')).toBe(true)
+  })
+
+  it('flags common kudos phrases', () => {
+    expect(isThreadCloser('Nice work everyone!')).toBe(true)
+    expect(isThreadCloser('Well done, team.')).toBe(true)
+    expect(isThreadCloser('Kudos to <@U999>!')).toBe(true)
+    expect(isThreadCloser('Way to go!')).toBe(true)
+    expect(isThreadCloser('Crushed it 🔥')).toBe(true)
+    expect(isThreadCloser('Nailed it!')).toBe(true)
+    expect(isThreadCloser('Bravo!')).toBe(true)
+    expect(isThreadCloser('Huge props to the design team')).toBe(true)
+    expect(isThreadCloser('Looks awesome 🎉')).toBe(true)
+    expect(isThreadCloser('This is amazing work')).toBe(true)
+    expect(isThreadCloser("That's incredible")).toBe(true)
+    expect(isThreadCloser('Love it!')).toBe(true)
+    expect(isThreadCloser('Congrats @Sarah!')).toBe(true)
+    expect(isThreadCloser('Solid work team')).toBe(true)
+  })
+
+  it('does NOT flag praise with a real follow-up ask', () => {
+    expect(isThreadCloser('Great job team! Quick question — when does the rollout start?')).toBe(false)
+    expect(isThreadCloser('Nice work, but can you also redo the Q3 chart?')).toBe(false)
+    expect(isThreadCloser('Looks great — please add Sarah to the next review.')).toBe(false)
+  })
+})
+
+describe('isThreadCloser — reactions & emoji', () => {
+  it('flags emoji-only messages as reactions', () => {
+    expect(isThreadCloser('🎉🎉🎉')).toBe(true)
+    expect(isThreadCloser('🔥')).toBe(true)
+    expect(isThreadCloser('👍')).toBe(true)
+    expect(isThreadCloser(':+1:')).toBe(true)
+    expect(isThreadCloser(':thumbsup: :fire:')).toBe(true)
+  })
+
+  it('flags messages that reduce to nothing after stripping mentions + emoji', () => {
+    expect(isThreadCloser('<@U12345> 🎉')).toBe(true)
+    expect(isThreadCloser('@Tony :+1:')).toBe(true)
+  })
+})
+
+describe('isThreadCloser — sign-offs & greetings', () => {
+  it('flags end-of-day / weekend wishes', () => {
+    expect(isThreadCloser('Have a good weekend!')).toBe(true)
+    expect(isThreadCloser('Have a great weekend everyone')).toBe(true)
+    expect(isThreadCloser('Enjoy your weekend!')).toBe(true)
+    expect(isThreadCloser('Enjoy the rest of your day')).toBe(true)
+    expect(isThreadCloser('Have a good one')).toBe(true)
+    expect(isThreadCloser('Safe travels!')).toBe(true)
+    expect(isThreadCloser('Happy Friday!')).toBe(true)
+  })
+
+  it('flags greetings and farewells', () => {
+    expect(isThreadCloser('Good morning everyone')).toBe(true)
+    expect(isThreadCloser('Good night!')).toBe(true)
+    expect(isThreadCloser('See you Monday')).toBe(true)
+    expect(isThreadCloser('See you tomorrow!')).toBe(true)
+    expect(isThreadCloser('ttyl')).toBe(true)
+    expect(isThreadCloser('Talk to you soon')).toBe(true)
+    expect(isThreadCloser('Bye!')).toBe(true)
+  })
+
+  it('does NOT flag a greeting that carries a real ask', () => {
+    expect(isThreadCloser('Good morning! Can you send the deck before standup?')).toBe(false)
+    expect(isThreadCloser('Have a good weekend — please review the PR Monday.')).toBe(false)
+  })
+})
+
+describe('isThreadCloser — actionable-ask guardrail', () => {
+  // We always lean toward keeping the item visible if there's any sign of
+  // a real follow-up ask. Better one stale entry than one missed request.
+
+  it('returns false when text contains a question mark', () => {
+    expect(isThreadCloser('Thanks?')).toBe(false)
+    expect(isThreadCloser('Sounds good — thoughts?')).toBe(false)
+  })
+
+  it('returns false on imperative requests', () => {
+    expect(isThreadCloser('Thanks. Please send the report.')).toBe(false)
+    expect(isThreadCloser('Got it. Need this by EOD.')).toBe(false)
+    expect(isThreadCloser('Cool. Let me know when ready.')).toBe(false)
+  })
+
+  it('returns false when text mentions blocking work', () => {
+    expect(isThreadCloser('Thanks — this is blocking the launch.')).toBe(false)
+  })
+
+  it('returns false on "any thoughts/chance/update" hedges', () => {
+    expect(isThreadCloser('Hey — any thoughts on the doc?')).toBe(false)
+    expect(isThreadCloser('Quick one: any update?')).toBe(false)
+  })
+})
+
 describe('classifySentMessage on extracted new content', () => {
   // The end-to-end fix: when we strip the quoted original FIRST, "Thank
   // you" replies whose quoted body contains keywords like "approve" or
