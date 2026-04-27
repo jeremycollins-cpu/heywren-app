@@ -164,20 +164,26 @@ export const scanExpenses = inngest.createFunction(
   async ({ step, event }) => {
     const run = startJobRun('scan-expenses')
 
+    // Treat the event as authoritative for the on-demand path: the API caller
+    // has already resolved the requesting user's team_id, so we scope the
+    // scan to that pair directly instead of trying to match by integrations.
+    // user_id, which is unreliable on legacy rows (NULL or a stale id from
+    // before user_id was added to the table).
+    const eventTeam = event?.data?.teamId as string | undefined
+    const eventUser = event?.data?.userId as string | undefined
+
     const integrations = await step.run('fetch-integrations', async () => {
       const supabase = getAdminClient()
-      // If the event targets a single user, narrow to just that user so the
-      // on-demand path doesn't fan out across the whole org.
-      const targetTeam = event?.data?.teamId as string | undefined
-      const targetUser = event?.data?.userId as string | undefined
 
       let query = supabase
         .from('integrations')
         .select('team_id, user_id')
         .eq('provider', 'outlook')
 
-      if (targetTeam) query = query.eq('team_id', targetTeam)
-      if (targetUser) query = query.eq('user_id', targetUser)
+      // On-demand scans pin to the requesting user's team. Cron scans (no
+      // event payload) fan out to every Outlook integration, same as the
+      // scan-missed-emails pattern.
+      if (eventTeam) query = query.eq('team_id', eventTeam)
 
       const { data, error } = await query
       if (error || !data) {
@@ -195,11 +201,20 @@ export const scanExpenses = inngest.createFunction(
     }
 
     const results = await Promise.all(
-      integrations.map((integration) =>
-        step.run(`scan-team-${integration.team_id}-${integration.user_id}`, async () => {
+      integrations.map((integration) => {
+        // Use the requesting user from the event when present; fall back to
+        // the integration's own user_id for cron-driven scans.
+        const scanUserId = eventUser || integration.user_id
+        if (!scanUserId) {
+          // Legacy integration row with NULL user_id and no event scope —
+          // skip rather than fail, the cron will keep retrying once user_id
+          // backfills land.
+          return Promise.resolve({ success: false, skipped: true, teamId: integration.team_id })
+        }
+        return step.run(`scan-team-${integration.team_id}-${scanUserId}`, async () => {
           const supabase = getAdminClient()
           try {
-            const result = await scanTeamExpenses(supabase, integration.team_id, integration.user_id)
+            const result = await scanTeamExpenses(supabase, integration.team_id, scanUserId)
             if (result.success === false) {
               run.tally('failed')
             } else if ((result.found || 0) > 0) {
@@ -215,7 +230,7 @@ export const scanExpenses = inngest.createFunction(
             return { success: false, teamId: integration.team_id, error: (err as Error).message }
           }
         })
-      )
+      })
     )
 
     await run.finish()

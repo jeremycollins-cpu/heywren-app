@@ -48,21 +48,13 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('current_team_id')
-      .eq('id', user.id)
-      .single()
-
-    const teamId = profile?.current_team_id || await resolveTeamId(supabase, user.id)
-    if (!teamId) {
-      return NextResponse.json({ error: 'No team found' }, { status: 400 })
-    }
-
+    // Filter by user_id alone — expenses are personal, RLS already restricts
+    // visibility to the row owner, and adding team_id here would silently hide
+    // rows whose team_id was set from the integration row when that drifts
+    // from profiles.current_team_id (legacy accounts, post team-switch state).
     const { data: expenses, error } = await supabase
       .from('expense_emails')
       .select('*')
-      .eq('team_id', teamId)
       .eq('user_id', user.id)
       .neq('status', 'dismissed')
       .order('received_at', { ascending: false })
