@@ -78,6 +78,7 @@ export const FEATURES: Record<string, FeatureDefinition> = {
   coach:            def('coach',            'Coach',              'AI coaching and recommendations.',                               'pro', '/coach'),
   weekly:           def('weekly',           'Weekly Review',      'Weekly summary and reflection.',                                 'pro', '/weekly'),
   missed_emails:    def('missed_emails',    'Missed Emails',      'Surface emails that need follow-up.',                            'pro', '/missed-emails'),
+  expenses:         def('expenses',         'Expenses',           'Pull receipts and invoices from your inbox, grouped by vendor.', 'pro', '/expenses'),
   achievements:     def('achievements',     'Achievements',       'Track your milestones and streaks.',                             'pro', '/achievements'),
   integrations:     def('integrations',     'Integrations',       'Connect Slack, email, and other tools.',                         'pro', '/integrations'),
   ideas:            def('ideas',            'Ideas',              'Capture and organize ideas.',                                    'pro', '/ideas'),

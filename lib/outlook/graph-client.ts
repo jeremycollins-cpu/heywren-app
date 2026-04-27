@@ -297,6 +297,72 @@ export async function searchMessagesBySender(
   return { messageIds, token: newToken }
 }
 
+// ── Attachment operations ──────────────────────────────────────────────
+
+export interface GraphAttachment {
+  id: string
+  name: string
+  contentType: string
+  size: number
+  isInline: boolean
+  // base64-encoded for fileAttachment; absent for itemAttachment / referenceAttachment
+  contentBytes?: string
+  // Discriminator: '#microsoft.graph.fileAttachment' is the only one we can serve
+  '@odata.type': string
+}
+
+/**
+ * List attachments on a message, returning metadata WITHOUT contentBytes so the
+ * response stays small. Used to populate the per-receipt download list.
+ */
+export async function listMessageAttachments(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ attachments: Omit<GraphAttachment, 'contentBytes'>[]; token: string; error?: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`
+  const { data, token: newToken } = await graphFetch(url, { token }, ctx)
+
+  if (data.error) {
+    return { attachments: [], token: newToken, error: data.error.message || 'Failed to list attachments' }
+  }
+
+  const attachments = (data.value || []).filter(
+    (a: GraphAttachment) => !a.isInline && a['@odata.type'] === '#microsoft.graph.fileAttachment'
+  )
+  return { attachments, token: newToken }
+}
+
+/**
+ * Fetch a single attachment with its base64 contentBytes so the API can decode
+ * and stream it back to the user. Restricted to fileAttachment — itemAttachment
+ * (forwarded emails) and referenceAttachment (cloud links) cannot be downloaded
+ * through this path.
+ */
+export async function downloadMessageAttachment(
+  messageId: string,
+  attachmentId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ attachment: GraphAttachment | null; token: string; error?: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`
+  const { data, token: newToken } = await graphFetch(url, { token }, ctx)
+
+  if (data.error) {
+    return { attachment: null, token: newToken, error: data.error.message || 'Failed to fetch attachment' }
+  }
+
+  if (data['@odata.type'] !== '#microsoft.graph.fileAttachment' || !data.contentBytes) {
+    return {
+      attachment: null,
+      token: newToken,
+      error: 'Attachment is not a downloadable file (likely a linked-cloud or forwarded-email attachment)',
+    }
+  }
+
+  return { attachment: data as GraphAttachment, token: newToken }
+}
+
 /** Search inbox for messages matching a sender domain. */
 export async function searchMessagesByDomain(
   domain: string,

@@ -12,6 +12,7 @@ import { syncOutlook, adminFullResync } from '@/inngest/functions/sync-outlook'
 import { drainOutlookBacklog } from '@/inngest/functions/drain-outlook-backlog'
 // generateDrafts removed — drafts are now generated on-demand per commitment
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
+import { scanExpenses } from '@/inngest/functions/scan-expenses'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
 import { scanAwaitingReplies } from '@/inngest/functions/scan-awaiting-replies'
 import { processMeetingTranscript } from '@/inngest/functions/process-meeting-transcript'
@@ -65,6 +66,7 @@ const handlers = serve({
     syncOutlook,          // 6 AM PT daily — sync Outlook emails & calendar
     // generateDrafts removed — drafts are now on-demand per commitment (POST /api/drafts/generate)
     scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
+    scanExpenses,         // 6:45 AM / 10:45 AM / 2:45 PM / 6:45 PM PT — scan inbox for receipts/invoices
     detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
     scanAwaitingReplies,  // 7 AM PT daily — "The Waiting Room" scan for sent items with no reply
     processMeetingTranscript, // Meeting transcript → commitment extraction + "Hey Wren" detection

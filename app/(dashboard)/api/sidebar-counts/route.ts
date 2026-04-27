@@ -119,6 +119,7 @@ export async function GET() {
   const empty = {
     overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0,
     waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0,
+    expenses: 0,
   }
 
   try {
@@ -161,6 +162,7 @@ export async function GET() {
       missedChatsRes,
       awaitingRes,
       threatRes,
+      expensesRes,
     ] = await Promise.all([
       // Commitments: same scope/filter as the commitments page (creator OR assignee,
       // excluding pending_review which has its own badge).
@@ -216,6 +218,15 @@ export async function GET() {
         .eq('user_id', userId)
         .eq('status', 'unreviewed')
         .then(res => res.error ? { count: 0, error: res.error } : res),
+      // Expenses: pending receipts the user hasn't reviewed/exported yet — mirrors the
+      // /expenses page filter (status != dismissed, default view shows pending).
+      admin
+        .from('expense_emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId)
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .then(res => res.error ? { count: 0, error: res.error } : res),
     ])
 
     // Commitments — mirror commitments page splits.
@@ -266,6 +277,7 @@ export async function GET() {
         waitingRoom: waitingGroups.size + waitingUngrouped,
         openCommitments: forYouCount,
         securityAlerts: (threatRes as any).count || 0,
+        expenses: (expensesRes as any).count || 0,
       },
     })
   } catch (err) {

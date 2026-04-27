@@ -14,7 +14,7 @@ import {
   Lock, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
-  AtSign, Inbox, Bell, Sparkles, Activity,
+  AtSign, Inbox, Bell, Sparkles, Activity, Receipt,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -33,6 +33,7 @@ interface BadgeCounts {
   openCommitments: number
   pendingReview: number
   securityAlerts: number
+  expenses: number
 }
 
 const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation', 'Community']
@@ -40,7 +41,7 @@ const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation',
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0, expenses: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
 
@@ -133,6 +134,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'awaiting_replies', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
   useRealtime({ table: 'email_threat_alerts', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'expense_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
 
   const sections = useMemo(() => [
     {
@@ -169,6 +171,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/inbox-zero', label: 'Inbox Zero', icon: Inbox, tourId: 'nav-inbox-zero', badge: 0, badgeColor: 'bg-indigo-500' },
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
+        { href: '/expenses', label: 'Expenses', icon: Receipt, tourId: 'nav-expenses', badge: badges.expenses, badgeColor: 'bg-emerald-500' },
         { href: '/unsubscribe', label: 'Unsubscribe', icon: MailX, tourId: 'nav-unsubscribe', badge: 0, badgeColor: '' },
         { href: '/email-rules', label: 'Email Rules', icon: ListFilter, tourId: 'nav-email-rules', badge: 0, badgeColor: '' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },
