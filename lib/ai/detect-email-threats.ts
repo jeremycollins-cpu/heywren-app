@@ -397,6 +397,91 @@ function areSameCorporateFamily(a: string, b: string): boolean {
   return familyA === getCorporateFamily(b)
 }
 
+// ── Registrable-domain (eTLD+1) helpers ──────────────────────────────────
+//
+// Sized for the false-positive class where a marketing/notification email is
+// sent from one subdomain (e.g. team.wrike.com) but its click-tracking link
+// uses a sibling subdomain (e.g. engage.wrike.com). Both share the same
+// registrable domain (wrike.com), so the link should NOT count as a
+// cross-domain redirect. A literal suffix check on the from-address domain
+// can't see that, so we extract eTLD+1 on both sides and compare.
+//
+// We don't ship the full Public Suffix List — keep this small and obvious.
+// The set covers the multi-label public suffixes you actually see in
+// corporate mail (mostly 2-letter ccTLD pairings). When the second-to-last
+// label is in this set, the registrable domain is the last THREE labels;
+// otherwise it's the last TWO.
+const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk', 'ltd.uk', 'plc.uk',
+  'co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'go.jp',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+  'co.nz', 'net.nz', 'org.nz', 'ac.nz', 'govt.nz',
+  'com.br', 'net.br', 'org.br', 'gov.br',
+  'co.in', 'net.in', 'org.in', 'gov.in', 'ac.in',
+  'com.cn', 'net.cn', 'org.cn', 'gov.cn',
+  'co.kr', 'or.kr', 'ne.kr', 'go.kr',
+  'com.mx', 'gob.mx', 'org.mx',
+  'co.za', 'org.za', 'ac.za', 'gov.za',
+  'com.sg', 'edu.sg', 'gov.sg',
+  'com.hk', 'org.hk', 'gov.hk',
+])
+
+/** Return the registrable domain (eTLD+1) for a hostname. */
+function getRegistrableDomain(hostname: string): string {
+  const h = hostname.toLowerCase().replace(/^\.+|\.+$/g, '')
+  const parts = h.split('.').filter(Boolean)
+  if (parts.length <= 2) return parts.join('.')
+  const lastTwo = parts.slice(-2).join('.')
+  if (MULTI_LABEL_PUBLIC_SUFFIXES.has(lastTwo)) {
+    return parts.slice(-3).join('.')
+  }
+  return lastTwo
+}
+
+/** True when both hostnames share the same registrable domain. */
+function areSameRegistrableDomain(a: string, b: string): boolean {
+  if (!a || !b) return false
+  const ra = getRegistrableDomain(a)
+  const rb = getRegistrableDomain(b)
+  return !!ra && ra === rb
+}
+
+// Final-label allowlist for treating a substring inside link display text as
+// "really a domain". Without this gate, the display-vs-href heuristic
+// false-positives any time anchor text contains a dotted name like
+// "jeremy.collins" — the regex matches it because `.collins` is ≥ 2 letters,
+// but `.collins` isn't a public TLD. Username-style anchor text shouldn't
+// drive a phishing alert.
+//
+// Covers the gTLDs and ccTLDs that actually show up in legitimate corporate
+// mail. Anything not on this list is rejected before we compare domains.
+const KNOWN_TLDS = new Set([
+  // Generic / legacy gTLDs
+  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'arpa',
+  // Common new gTLDs
+  'io', 'ai', 'co', 'app', 'dev', 'tech', 'cloud', 'online', 'site', 'web',
+  'info', 'biz', 'name', 'pro', 'mobi', 'xyz', 'me', 'tv', 'cc', 'fm',
+  'email', 'shop', 'store', 'blog', 'news', 'media', 'design', 'agency',
+  'company', 'inc', 'llc', 'global', 'world', 'group', 'team', 'works',
+  'software', 'systems', 'network', 'digital', 'studio', 'today', 'live',
+  'link', 'page', 'click', 'one', 'zone',
+  // Common 2-letter ccTLDs (not exhaustive — covers what we see in inbound mail)
+  'us', 'uk', 'ca', 'au', 'nz', 'de', 'fr', 'es', 'it', 'nl', 'be', 'ch',
+  'at', 'se', 'no', 'dk', 'fi', 'is', 'ie', 'pt', 'gr', 'pl', 'cz', 'sk',
+  'hu', 'ro', 'bg', 'hr', 'si', 'lt', 'lv', 'ee', 'lu', 'mt', 'cy',
+  'jp', 'cn', 'kr', 'hk', 'tw', 'sg', 'in', 'id', 'my', 'th', 'vn', 'ph',
+  'ru', 'ua', 'tr', 'il', 'sa', 'ae', 'eg', 'za', 'ng', 'ke',
+  'br', 'mx', 'ar', 'cl', 'co', 'pe', 've',
+  'eu', 'asia', 'ly',
+])
+
+function hasKnownTld(domainLike: string): boolean {
+  const lastDot = domainLike.lastIndexOf('.')
+  if (lastDot < 0) return false
+  const tld = domainLike.slice(lastDot + 1).toLowerCase()
+  return KNOWN_TLDS.has(tld)
+}
+
 // ── Link analysis ────────────────────────────────────────────────────────
 
 const KNOWN_BRANDS: Record<string, string[]> = {
@@ -623,22 +708,37 @@ export function analyzeLinksInBody(
     for (const candidate of displayMatches) {
       const displayDomain = candidate.toLowerCase()
       if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif|html?)$/i.test(displayDomain)) continue
+      // Reject candidates whose final label isn't a recognized TLD. Anchor
+      // text routinely contains usernames like "jeremy.collins" or
+      // "first.last" which the regex above happily extracts because the
+      // trailing label has ≥ 2 letters. Without this gate, every email
+      // addressed to a user with a dotted username trips link_domain_mismatch.
+      if (!hasKnownTld(displayDomain)) continue
       const actual = link.hostname
       if (displayDomain === actual) continue
       if (actual.endsWith('.' + displayDomain)) continue
       if (displayDomain.endsWith('.' + actual)) continue
+      // Skip when the "display domain" sits on the same registrable domain
+      // as the actual href — e.g. anchor text "wrike.com" linking to
+      // "engage.wrike.com" is the same site, not a redirect.
+      if (areSameRegistrableDomain(displayDomain, actual)) continue
       // Also skip when the "display domain" is just the sender's own domain
       // appearing in their signature line at the bottom of every email.
+      // Use a literal suffix match here (not registrable-domain): a brand
+      // sub-domain showing up as anchor text while the href points
+      // elsewhere is exactly the impersonation pattern we want to catch.
       if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
-      // Skip when the actual href goes to the sender's OWN domain (or a
-      // subdomain). This is how marketing-email click tracking works —
-      // every legit Marketo / HubSpot / Mailchimp / SendGrid email routes
-      // clicks through a tracking subdomain (e.g. email.acme.com) before
-      // redirecting to the real destination. The display text shows the
-      // target ("linkedin.com"), the href points to the sender's own
-      // tracker subdomain. Without this exemption, every marketing email
-      // in every inbox trips link_domain_mismatch.
-      if (fromDomain && (actual === fromDomain || actual.endsWith('.' + fromDomain))) continue
+      // Skip when the actual href goes to the sender's OWN registrable
+      // domain. This is how marketing-email click tracking works — every
+      // legit Marketo / HubSpot / Mailchimp / SendGrid / Wrike notification
+      // routes clicks through a tracking subdomain (engage.wrike.com,
+      // email.acme.com, etc.) before redirecting to the real destination.
+      // The display text shows the target ("linkedin.com" or a username
+      // string), the href points to a tracker subdomain that shares the
+      // sender's registrable domain. A literal suffix check on fromDomain
+      // misses sibling subdomains (team.wrike.com vs. engage.wrike.com),
+      // which is why we compare eTLD+1 here.
+      if (fromDomain && areSameRegistrableDomain(actual, fromDomain)) continue
       // Skip when both domains belong to the same corporate family —
       // e.g. optumbank.com display text linking to data.information.optum.com
       // is legitimate since Optum Bank and Optum are the same parent (UHG).

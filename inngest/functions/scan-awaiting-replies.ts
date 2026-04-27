@@ -25,7 +25,7 @@ function getAdminClient() {
 }
 
 // Simple urgency classification based on message content
-function classifySentMessage(subject: string, body: string, daysSince: number): {
+export function classifySentMessage(subject: string, body: string, daysSince: number): {
   urgency: string
   category: string
   waitReason: string
@@ -75,6 +75,217 @@ function classifySentMessage(subject: string, body: string, daysSince: number): 
 
   return { urgency, category, waitReason }
 }
+
+// Markers that indicate the start of a quoted-original block in a reply.
+// Outlook's bodyPreview is plain text with newlines collapsed, so we match
+// without anchoring to line boundaries. The quoted block contains the prior
+// sender's full message, including their action verbs ("approve", "review")
+// — without this stripping, the keyword classifier above attributes those
+// to the user's reply and slaps "Waiting for response" on a thread closer.
+const REPLY_QUOTE_MARKERS: RegExp[] = [
+  /_{8,}/,                                     // Outlook divider line
+  /-{2,5}\s*original\s+message\s*-{2,5}/i,     // ----- Original Message -----
+  /-{2,5}\s*forwarded\s+message\s*-{2,5}/i,    // ----- Forwarded Message -----
+  /\bfrom:\s*\S+.{0,40}\bsent:\s/i,            // Outlook "From: X ... Sent: Y"
+  /\bon\s+.{1,120}\bwrote:/i,                  // Gmail "On <date>, X wrote:"
+  /\bsent\s+from\s+my\s+\w+/i,                 // "Sent from my iPhone"
+  /\bget\s+outlook\s+for\s+\w+/i,              // "Get Outlook for iOS"
+]
+
+/**
+ * Strip the quoted-original portion from a reply body and return just the
+ * new content the user actually typed. If no marker is found, returns the
+ * input unchanged.
+ */
+export function extractNewReplyContent(bodyPreview: string): string {
+  if (!bodyPreview) return ''
+  let earliest = bodyPreview.length
+  for (const pattern of REPLY_QUOTE_MARKERS) {
+    const match = bodyPreview.match(pattern)
+    if (match && match.index !== undefined && match.index < earliest) {
+      earliest = match.index
+    }
+  }
+  return bodyPreview.slice(0, earliest).trim()
+}
+
+// Pure-acknowledgment phrases that close out a thread. When the user's
+// reply content (after stripping the quoted original) reduces to one of
+// these, the message isn't waiting on anything — it's a thread closer.
+const CLOSER_PHRASES = new Set([
+  'thanks', 'thank you', 'thx', 'ty', 'tysm',
+  'thanks so much', 'thank you so much', 'thanks very much',
+  'thanks a lot', 'thanks a million', 'many thanks', 'much appreciated',
+  'thanks for the update', 'thanks for letting me know',
+  'thanks for confirming', 'thanks for the confirmation', 'thanks for the info',
+  'got it', 'gotcha', 'understood', 'roger', 'roger that', 'copy', 'copy that', '10-4',
+  'sounds good', 'looks good', 'lgtm', 'looks great',
+  'perfect', 'great', 'awesome', 'excellent', 'wonderful',
+  'ok', 'okay', 'k',
+  'will do',
+  'appreciate it', 'appreciate the update', 'appreciate the help',
+  'cheers',
+  'confirmed', 'noted', 'received',
+  'no problem', 'no worries', 'np',
+  'agreed', 'that works', 'works for me', 'works',
+  'all set', 'all good',
+  'you too', 'same to you',
+  // Two-word combos people commonly write without punctuation between them.
+  // The compound-closer split below catches "ok, thanks" and "got it - thanks";
+  // these handle the unpunctuated variants ("ok thanks", "great thank you").
+  'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you',
+  'ok great', 'okay great',
+  'great thanks', 'great thank you',
+  'perfect thanks', 'perfect thank you',
+  'awesome thanks', 'awesome thank you',
+  'got it thanks', 'got it thank you',
+  'sounds good thanks',
+  'will do thanks', 'will do thank you',
+  'thanks again', 'thank you again',
+  'noted thanks', 'noted with thanks',
+  'confirmed thanks',
+  'received thanks', 'received with thanks',
+])
+
+/**
+ * Detect whether the user's new reply content is purely an acknowledgment
+ * that closes the thread. We're conservative — only short replies (<= 80
+ * chars after normalization) that match a known closer pattern qualify.
+ */
+export function isThreadCloser(newContent: string): boolean {
+  if (!newContent) return true
+  // Strip Slack/Markdown decorations and conversational filler (mentions,
+  // emoji, "and team") so a praise-only message like "Great job, @Tony
+  // and team!" reduces to its core phrase.
+  const stripped = stripDecorations(newContent)
+  let normalized = stripped.toLowerCase().replace(/\s+/g, ' ').trim()
+  // Strip surrounding quotes/parens that some mail clients add
+  normalized = normalized.replace(/^["'`(\[]+|["'`)\]]+$/g, '').trim()
+  // Strip trailing punctuation & emoji-like trailing chars repeatedly
+  normalized = normalized.replace(/[.!?,;:\-—–…)\s]+$/g, '').trim()
+  // Reaction-only message — body was emoji / `:thumbsup:` / `<@U123>` only
+  // and stripping reduced it to nothing. Definitely not awaiting a reply.
+  if (normalized.length === 0) return true
+  // Even a short closer-shaped message can carry a real ask hidden inside
+  // ("Great job, but can you also re-run the report?"). Bail out before
+  // any positive match if the original text contains an actual question
+  // or request — we'd rather over-keep than silence a real follow-up.
+  if (containsActionableAsk(newContent)) return false
+  if (normalized.length > 100) return false
+  if (CLOSER_PHRASES.has(normalized)) return true
+  // Compound closers: "<closer>, <closer>" or "<closer> - <closer>"
+  // e.g. "ok thanks", "great, thanks", "got it, thanks"
+  const parts = normalized
+    .split(/\s*(?:,|;|—|–|-|\s+and\s+|\s+&\s+)\s*/)
+    .map((p) => p.replace(/[.!?]+$/g, '').trim())
+    .filter(Boolean)
+  if (parts.length >= 2 && parts.every((p) => CLOSER_PHRASES.has(p))) return true
+  // Praise / kudos / sign-off patterns at the start of the (decoration-
+  // stripped) message. These are common in Slack — channel praise
+  // ("Great job team!"), end-of-day wishes ("Have a great weekend!"),
+  // standalone reactions ("Looks awesome").
+  if (PRAISE_PATTERNS.some((re) => re.test(normalized))) return true
+  if (SIGNOFF_PATTERNS.some((re) => re.test(normalized))) return true
+  return false
+}
+
+// ── Helpers backing isThreadCloser ───────────────────────────────────────
+
+/**
+ * Strip Slack/Markdown decorations, mentions, emoji, and conversational
+ * filler tokens from a message so the underlying phrase can be matched
+ * against the closer dictionary. "Great job, <@U123> and team! 🎉" → "Great
+ * job".
+ */
+function stripDecorations(text: string): string {
+  return text
+    // Slack raw user/channel mentions and broadcast tags
+    .replace(/<@[UW][A-Z0-9]+(?:\|[^>]+)?>/g, '')
+    .replace(/<#[CG][A-Z0-9]+(?:\|[^>]+)?>/g, '')
+    .replace(/<![a-z]+(?:\|[^>]+)?>/gi, '') // <!here>, <!channel>, <!everyone>
+    // Slack-formatted URLs <https://...|label> — drop the URL, keep the label
+    .replace(/<(https?:\/\/[^>|]+)\|([^>]+)>/g, '$2')
+    .replace(/<https?:\/\/[^>]+>/g, '')
+    // Resolved @Name (capture run of capitalized name parts)
+    .replace(/@[A-Za-z][\w'.-]*(?:\s+[A-Z][\w'.-]+){0,3}/g, '')
+    // Channel refs #name
+    .replace(/#[\w-]+/g, '')
+    // Slack-style :emoji_name:
+    .replace(/:[a-z0-9_+-]+:/gi, '')
+    // Common Unicode emoji ranges (covers the bulk of what people send)
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{2300}-\u{23FF}]/gu, '')
+    .replace(/[\u{1F000}-\u{1F2FF}]/gu, '')
+    // Conversational filler that hangs off a praise phrase
+    .replace(/\b(?:and\s+)?(?:team|everyone|all|y'?all|folks|guys|gals|peeps|crew|gang)\b/gi, '')
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Praise / kudos messages that close out a thread with no expectation of
+// reply. Matched against the decoration-stripped, lowercased text — anchored
+// at the start so substantive messages that merely *contain* praise (e.g.
+// "Great job, but please redo X") fall through to the actionable-ask guard.
+const PRAISE_PATTERNS: RegExp[] = [
+  /^(?:great|nice|good|excellent|amazing|awesome|fantastic|incredible|outstanding|stellar|terrific|brilliant|superb|solid)\s+(?:job|work|stuff|effort|one|call|find|catch|point|update|presentation|demo|deck|writeup|write[- ]up)\b/i,
+  /^well\s+done\b/i,
+  /^way\s+to\s+go\b/i,
+  /^kudos\b/i,
+  /^congrats\b/i,
+  /^congratulations\b/i,
+  /^huge\s+(?:props|kudos|win|congrats)\b/i,
+  /^big\s+(?:props|win|congrats|kudos)\b/i,
+  /^props\s+to\b/i,
+  /^shout\s*-?\s*out\b/i,
+  /^love\s+(?:it|this|the)\b/i,
+  /^this\s+is\s+(?:great|awesome|amazing|fantastic|incredible|wonderful|huge)\b/i,
+  /^that(?:'s| is)\s+(?:great|awesome|amazing|fantastic|incredible|wonderful)\b/i,
+  /^looks?\s+(?:great|awesome|good|fantastic|amazing)\b/i,
+  /^(?:so\s+)?proud\s+of\b/i,
+  /^nailed\s+it\b/i,
+  /^crushed\s+it\b/i,
+  /^bravo\b/i,
+  /^chef'?s?\s+kiss\b/i,
+  /^fire\s*🔥*$/i,
+]
+
+// End-of-conversation greetings and sign-offs. Same anchoring convention.
+const SIGNOFF_PATTERNS: RegExp[] = [
+  /^good\s+(?:morning|afternoon|evening|night)\b/i,
+  /^(?:have\s+a|enjoy\s+(?:your|the))\s+(?:good|great|nice|wonderful|lovely|relaxing|fun)?\s*(?:one|day|weekend|evening|night|holiday|break|trip|vacation|rest\s+of\s+your\s+\w+)\b/i,
+  /^see\s+(?:you|ya)\s+(?:tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+week|soon|later|then|around)\b/i,
+  /^(?:talk|chat)\s+(?:to\s+you\s+)?(?:later|soon)\b/i,
+  /^ttyl\b/i,
+  /^ttys\b/i,
+  /^(?:catch\s+(?:up|you)\s+later|cya)\b/i,
+  /^later(?:s)?$/i,
+  /^(?:bye|goodbye|farewell)\b/i,
+  /^safe\s+travels\b/i,
+  /^happy\s+(?:friday|monday|tuesday|wednesday|thursday|weekend|holidays?|new\s+year|birthday)\b/i,
+]
+
+// Phrases that signal a real ask hidden inside otherwise-closer-looking
+// text. We bail out of closer detection if any of these appear — better to
+// over-keep a "Great job — also can you do X?" than to silence it.
+function containsActionableAsk(text: string): boolean {
+  if (/\?/.test(text)) return true
+  return (
+    /\b(?:can|could|would|will)\s+(?:you|someone|anyone|we)\b/i.test(text) ||
+    /\bplease\s+[a-z]/i.test(text) ||
+    /\b(?:asap|urgent|by\s+(?:eod|cob|end\s+of\s+(?:day|week)|tomorrow|today|monday|tuesday|wednesday|thursday|friday))\b/i.test(text) ||
+    /\bblock(?:ing|er|ed)\b/i.test(text) ||
+    /\blet\s+me\s+know\b/i.test(text) ||
+    /\bany\s+(?:thoughts|chance|update|news)\b/i.test(text) ||
+    /\bneed\s+(?:to|your|some|an?|the)\b/i.test(text) ||
+    /\bwaiting\s+on\b/i.test(text) ||
+    /\bfollow\s+up\s+(?:on|with|about)\b/i.test(text) ||
+    /\bthoughts\?/i.test(text) ||
+    /\bwhen\s+(?:can|will|do|would|are)\b/i.test(text)
+  )
+}
+
 
 async function refreshMicrosoftToken(
   supabase: ReturnType<typeof getAdminClient>,
@@ -336,9 +547,22 @@ export async function scanTeamAwaitingReplies(
 
       if (toRecipients.length === 0) continue
 
+      // Strip any quoted-original block before classifying. Outlook's
+      // bodyPreview on a reply is "<new content> ________ From: ... Sent:
+      // ... Subject: ... Hi <name> ...", and without this the keyword
+      // classifier attributes the prior sender's "approve" / "review" /
+      // question marks to the user's actual reply.
+      const newContent = extractNewReplyContent(bodyPreview)
+
+      // Skip thread-closer replies ("Thanks", "Got it", "Sounds good", etc.).
+      // The classifier below has no way to recognize an acknowledgment, so
+      // without this guard every "Thank you." reply lands in the waiting
+      // room as "Waiting for response".
+      if (isThreadCloser(newContent)) continue
+
       // Classify
       const daysSince = Math.floor((Date.now() - new Date(sentAt).getTime()) / 86400000)
-      const { urgency, category, waitReason } = classifySentMessage(subject, bodyPreview, daysSince)
+      const { urgency, category, waitReason } = classifySentMessage(subject, newContent, daysSince)
 
       // Skip low-urgency items less than 2 days old
       if (urgency === 'low' && daysSince < 2) continue
@@ -578,8 +802,12 @@ export async function scanTeamAwaitingReplies(
               if (repliedThreads.has(msg.message_ts)) continue
             }
 
-            // No reply — this is awaiting
+            // No reply — but skip thread-closers (praise, acknowledgments,
+            // sign-offs, emoji-only reactions). Slack channel chatter like
+            // "Great job, @Tony and team!" or "Have a good weekend!" or
+            // "🎉🎉🎉" is conversation closure, not waiting on anyone.
             const text = msg.message_text || ''
+            if (isThreadCloser(text)) continue
             const hasQuestion = /\?|can you|could you|would you|please|need/i.test(text)
             let urgency = 'medium'
             if (daysSince > 7) urgency = 'critical'
