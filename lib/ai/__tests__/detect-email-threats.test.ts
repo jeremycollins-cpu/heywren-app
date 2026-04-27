@@ -416,6 +416,46 @@ describe('tier1Analysis — link analysis', () => {
     const result = tier1Analysis(email)
     expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
   })
+
+  it('does NOT flag a sibling tracking subdomain that shares the sender\'s registrable domain', () => {
+    // Wrike notification false positive: sent from team.wrike.com, click-tracking
+    // link points to engage.wrike.com. Both are wrike.com subdomains, so the
+    // href is the sender's own domain even though it doesn't literally
+    // suffix-match `team.wrike.com`. Anchor text contains the user's
+    // dotted username ("jeremy.collins"), which previously also tripped
+    // the regex because `.collins` is ≥ 2 chars.
+    const email = makeEmail({
+      fromEmail: 'outcollaborate@team.wrike.com',
+      fromName: 'Lisa @Wrike Community',
+      subject: 'Never miss a Wrike update',
+      bodyHtml: '<a href="https://engage.wrike.com/click?id=abc">jeremy.collins, see your latest updates</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT treat a dotted username in anchor text as a domain', () => {
+    // Even when the href goes to a third-party tracker that shares no
+    // registrable domain with the sender, a username-style anchor text
+    // ("first.last") shouldn't drive the mismatch — it isn't a real domain.
+    const email = makeEmail({
+      fromEmail: 'newsletter@example.com',
+      bodyHtml: '<a href="https://t.example.com/click?id=xyz">Hello jeremy.collins, click here</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('still flags mismatch when display text is a real domain on a different registrable domain', () => {
+    // Control: anchor text shows a legitimate-looking brand domain, href
+    // goes to an unrelated registrable domain — that's still phishing.
+    const email = makeEmail({
+      fromEmail: 'noreply@team.wrike.com',
+      bodyHtml: '<a href="https://evil-attacker.xyz/steal">app.wrike.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+  })
 })
 
 describe('tier1Analysis — corporate-family suppression', () => {
