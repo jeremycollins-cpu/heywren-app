@@ -164,20 +164,22 @@ export const scanExpenses = inngest.createFunction(
   async ({ step, event }) => {
     const run = startJobRun('scan-expenses')
 
+    // The event payload from /api/expenses POST is authoritative — the API
+    // resolved the requesting user from auth.getUser() before sending. We
+    // join to integrations on user_id only, since every user has at most
+    // one Outlook integration and team_id values on the integrations row
+    // can drift from profiles.current_team_id for legacy/multi-team users.
+    const eventUser = event?.data?.userId as string | undefined
+
     const integrations = await step.run('fetch-integrations', async () => {
       const supabase = getAdminClient()
-      // If the event targets a single user, narrow to just that user so the
-      // on-demand path doesn't fan out across the whole org.
-      const targetTeam = event?.data?.teamId as string | undefined
-      const targetUser = event?.data?.userId as string | undefined
 
       let query = supabase
         .from('integrations')
         .select('team_id, user_id')
         .eq('provider', 'outlook')
 
-      if (targetTeam) query = query.eq('team_id', targetTeam)
-      if (targetUser) query = query.eq('user_id', targetUser)
+      if (eventUser) query = query.eq('user_id', eventUser)
 
       const { data, error } = await query
       if (error || !data) {
@@ -195,11 +197,20 @@ export const scanExpenses = inngest.createFunction(
     }
 
     const results = await Promise.all(
-      integrations.map((integration) =>
-        step.run(`scan-team-${integration.team_id}-${integration.user_id}`, async () => {
+      integrations.map((integration) => {
+        // Always honor the integration's own team_id when scanning — that's
+        // the value used to stamp outlook_messages rows at sync time, so
+        // looking up unscanned emails has to use it. The user_id on the
+        // expense_emails rows we insert tracks the requesting user (or the
+        // integration's user_id for cron runs).
+        const scanUserId = eventUser || integration.user_id
+        if (!scanUserId) {
+          return Promise.resolve({ success: false, skipped: true, teamId: integration.team_id })
+        }
+        return step.run(`scan-team-${integration.team_id}-${scanUserId}`, async () => {
           const supabase = getAdminClient()
           try {
-            const result = await scanTeamExpenses(supabase, integration.team_id, integration.user_id)
+            const result = await scanTeamExpenses(supabase, integration.team_id, scanUserId)
             if (result.success === false) {
               run.tally('failed')
             } else if ((result.found || 0) > 0) {
@@ -215,7 +226,7 @@ export const scanExpenses = inngest.createFunction(
             return { success: false, teamId: integration.team_id, error: (err as Error).message }
           }
         })
-      )
+      })
     )
 
     await run.finish()
