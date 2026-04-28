@@ -458,6 +458,157 @@ describe('tier1Analysis — link analysis', () => {
   })
 })
 
+describe('tier1Analysis — known marketing-tracker / ESP suppression', () => {
+  // Long-term solution to the cold-outreach false-positive class. Every
+  // marketing-automation, ESP, and sales-engagement platform shows the
+  // sender's brand as anchor text while routing the href through a
+  // click-attribution tracker. That shape is structurally identical to
+  // phishing — we suppress link_domain_mismatch on links going to a
+  // known tracker host because phishing detection has to lean on OTHER
+  // signals (DMARC fail, scam patterns, credential request, brand
+  // impersonation) for those emails.
+
+  it('does NOT flag the Smartlead cold-outreach pattern (sleadtrack.com)', () => {
+    // The user's reported false positive: sender is a real .com brand,
+    // anchor text shows that brand, href routes through Smartlead's
+    // click-tracker (click.sleadtrack.com).
+    const email = makeEmail({
+      fromEmail: 'garth.schultz@getthermalenergyhq.com',
+      fromName: 'Garth Schultz',
+      subject: 'Making savings more predictable in ESCO projects',
+      bodyHtml: '<a href="https://click.sleadtrack.com/abc?u=xyz">www.thermalenergyhq.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT flag SendGrid click-tracking redirects', () => {
+    // Realistic shape: company uses one sending domain and a separate
+    // marketing brand domain. Display shows the brand, sender is on
+    // the sending-only domain, href routes through SendGrid.
+    const email = makeEmail({
+      fromEmail: 'newsletter@send.brandco.io',
+      bodyHtml: '<a href="https://u1234.ct.sendgrid.net/ls/click?upn=abc">brandco-marketing.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT flag Mailchimp list-manage tracking', () => {
+    const email = makeEmail({
+      fromEmail: 'updates@send.brand.co',
+      bodyHtml: '<a href="https://brand.us12.list-manage.com/track/click?u=abc&id=xyz">brand-marketing.co</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT flag HubSpot click tracking', () => {
+    const email = makeEmail({
+      fromEmail: 'sales@send.vendor.com',
+      bodyHtml: '<a href="https://hubspotlinks.com/abc/click?token=xyz">vendor-products.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT flag Outreach / Apollo / SalesLoft sales-engagement trackers', () => {
+    for (const href of [
+      'https://send.outreach.io/click/abc',
+      'https://link.apollo.io/c/xyz',
+      'https://track.salesloft.com/click?id=abc',
+    ]) {
+      const email = makeEmail({
+        fromEmail: 'rep@send.vendor.com',
+        bodyHtml: `<a href="${href}">vendor-marketing.com</a>`,
+      })
+      const result = tier1Analysis(email)
+      expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+    }
+  })
+
+  it('still flags mismatch when href goes to a non-tracker third-party domain', () => {
+    // Control: Smartlead-shape attack but using an unknown tracker host.
+    // We can't allowlist everything — a domain we've never seen still
+    // trips the signal so Tier 2 has the chance to evaluate.
+    const email = makeEmail({
+      fromEmail: 'sales@send.vendor.com',
+      bodyHtml: '<a href="https://random-tracker-not-in-allowlist.xyz/click">vendor-marketing.com</a>',
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+  })
+
+  it('still escalates when a known tracker is paired with brand impersonation', () => {
+    // Defense in depth: even when the href is a "legit" tracker, an
+    // attacker who claims to be Microsoft is still caught by
+    // brand_impersonation_link, which fires independently.
+    const email = makeEmail({
+      fromEmail: 'security@ms-verify-account.co',
+      fromName: 'Microsoft Security',
+      bodyPreview: 'Microsoft account: unusual sign-in activity',
+      bodyHtml: '<a href="https://send.outreach.io/click?id=abc">verify.microsoft.com</a>',
+    })
+    const result = tier1Analysis(email)
+    // brand_impersonation_link still fires (tracker suppression doesn't
+    // affect that signal — it has its own logic)
+    expect(result.signals.map(s => s.signal)).toContain('brand_impersonation_link')
+  })
+})
+
+describe('tier1Analysis — List-Unsubscribe + DMARC pass suppression', () => {
+  // RFC 2369 / 8058 mass-marketing senders attach List-Unsubscribe;
+  // phishers don't pass DMARC on brands they don't own. The
+  // combination is strong evidence of legit bulk mail.
+
+  it('suppresses link_domain_mismatch when List-Unsubscribe is present and DMARC passes', () => {
+    const email = makeEmail({
+      fromEmail: 'newsletter@send.brandco.io',
+      bodyHtml: '<a href="https://random-tracking-host.example/click">brand-marketing.com</a>',
+      headers: [
+        { name: 'Authentication-Results', value: 'mx.google.com; spf=pass; dkim=pass; dmarc=pass' },
+        { name: 'List-Unsubscribe', value: '<mailto:unsub@brand.com>, <https://brand.com/unsub>' },
+      ],
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).not.toContain('link_domain_mismatch')
+  })
+
+  it('does NOT suppress when List-Unsubscribe is present but DMARC did not pass', () => {
+    // The combination is the protection — List-Unsubscribe alone is
+    // trivial to forge. Without DMARC we still want the signal so
+    // Tier 2 evaluates the email.
+    const email = makeEmail({
+      fromEmail: 'newsletter@send.brandco.io',
+      bodyHtml: '<a href="https://random-tracking-host.example/click">brand-marketing.com</a>',
+      headers: [
+        { name: 'Authentication-Results', value: 'mx.google.com; spf=fail; dkim=none; dmarc=fail' },
+        { name: 'List-Unsubscribe', value: '<mailto:unsub@brand.com>' },
+      ],
+    })
+    const result = tier1Analysis(email)
+    expect(result.signals.map(s => s.signal)).toContain('link_domain_mismatch')
+  })
+
+  it('still allows OTHER phishing signals to fire under the marketing exemption', () => {
+    // Even authenticated mass mail can be a compromised-ESP attack —
+    // make sure unrelated phishing signals still fire.
+    const email = makeEmail({
+      fromEmail: 'newsletter@send.brandco.io',
+      subject: 'Verify your account password to continue receiving updates',
+      bodyHtml: '<a href="https://random-tracking-host.example/click">brand-marketing.com</a>',
+      headers: [
+        { name: 'Authentication-Results', value: 'mx.google.com; spf=pass; dkim=pass; dmarc=pass' },
+        { name: 'List-Unsubscribe', value: '<mailto:unsub@brand.com>' },
+      ],
+    })
+    const result = tier1Analysis(email)
+    const names = result.signals.map(s => s.signal)
+    expect(names).not.toContain('link_domain_mismatch')      // suppressed
+    expect(names).toContain('scam_pattern')                  // still fires
+  })
+})
+
 describe('tier1Analysis — corporate-family suppression', () => {
   // Regression: Optum HSA statement emails were tripping both
   // reply_to_mismatch and link_domain_mismatch because replies go to

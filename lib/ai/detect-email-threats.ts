@@ -280,6 +280,23 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
     }
   }
 
+  // ── List-Unsubscribe / mass-marketing detection ──
+  // RFC 2369 / RFC 8058 require any compliant bulk-mail platform to set
+  // List-Unsubscribe (and increasingly List-Unsubscribe-Post for one-click
+  // unsubscribe). Phishers can technically include it, but they almost
+  // never get DMARC pass on a brand they're impersonating. The
+  // combination "List-Unsubscribe present AND DMARC pass" is therefore a
+  // strong signal that this is real mass mail, not targeted phishing —
+  // we use it (alongside the explicit tracker allowlist) to suppress the
+  // display-vs-href mismatch heuristic, which is structurally identical
+  // for marketing trackers and phishing redirects.
+  let hasListUnsubscribe = false
+  if (email.headers && email.headers.length > 0) {
+    hasListUnsubscribe =
+      !!extractHeaderValue(email.headers, 'List-Unsubscribe') ||
+      !!extractHeaderValue(email.headers, 'List-Unsubscribe-Post')
+  }
+
   // ── Link analysis (when full HTML body is available) ──
   // Catches the "click this clearly-phishing link" tell the user called out:
   // raw-IP URLs, display-text-vs-href mismatches, and brand impersonation
@@ -290,6 +307,8 @@ export function tier1Analysis(email: EmailForThreatAnalysis): {
       bodyContext: fullText,
       fromEmail: email.fromEmail,
       fromName: email.fromName,
+      dmarcResult,
+      hasListUnsubscribe,
     }))
   }
 
@@ -505,6 +524,75 @@ const URL_SHORTENERS = new Set([
   'tiny.cc', 't.ly', 'shorturl.at',
 ])
 
+// Known marketing-automation, ESP, and sales-engagement click-tracker
+// domains. The defining behavior of every one of these platforms is to
+// rewrite outbound links so the anchor text shows the sender's brand
+// domain ("yourcompany.com") while the href routes through a tracker host
+// for click attribution. That is identical on the wire to a phishing
+// redirect — we can't distinguish them by display-vs-href mismatch
+// alone, so we suppress link_domain_mismatch on links going to one of
+// these hosts. Other phishing signals (DMARC fail, scam patterns,
+// credential-request, brand-impersonation) remain active, so a phisher
+// who abuses a legitimate ESP account is still caught by the other
+// layers — we only lose the "annoying-spam-as-phishing" false positives.
+//
+// Maintenance: add hostnames the user reports as false positives; add
+// new platforms when they appear. Match suffixes (so subdomains count).
+const KNOWN_TRACKING_DOMAINS: string[] = [
+  // Cold outreach / sales engagement
+  'sleadtrack.com',           // Smartlead.ai
+  'send.outreach.io', 'outreach-mail.com',
+  'track.salesloft.com', 'salesloft.com',
+  'link.apollo.io', 'apollo.io',
+  'lemlist-track.com',
+  'link.instantly.ai', 'instantly.ai',
+  'mixmax.com', 'cmail19.com', 'cmail20.com',
+  'reply.io',
+  'woodpecker.co',
+  // Email service providers
+  'sendgrid.net', 'sendgrid.com',
+  'list-manage.com', 'mailchimp.com',
+  'mktoresp.com', 'mktoweb.com', 'marketo.net',
+  'hubspotlinks.com', 'hs-sites.com', 'hs-analytics.net', 'hubspot.com', 'hubspotemail.net',
+  'pardot.com', 'pi.pardot.com',
+  'constantcontact.com', 'constantcontactsites.com', 'rs6.net',
+  'activehosted.com', 'activecampaign.com',
+  'klclick.com', 'klclick1.com', 'klaviyomail.com', 'klaviyo.com',
+  'intercom-mail.com', 'intercom-sheets.com', 'intercom.help',
+  'iterable.com', 'links.iterable.com',
+  'customeriomail.com',
+  'e-braze.com', 'sparkpostmail.com',
+  'dripemail2.com',
+  'convertkit-mail.com', 'convertkit-mail2.com', 'convertkit-mail3.com', 'convertkit-mail4.com',
+  'pstmrk.it',                // Postmark
+  'sib-utils.com', 'sendinblue.com', 'brevo.com',
+  'beehiiv-mail.com', 'beehiiv.com',
+  'substack.com',
+  // Salesforce Marketing Cloud / ExactTarget / Pardot
+  'exct.net', 'exacttarget.com', 'mktdns.com', 'et-cdn.com',
+  'cl.s11.exct.net',
+  // Microsoft Dynamics 365 Marketing
+  'dynamicsmail.com', 'dynamics365.com',
+  // Mandrill / Mailgun / Amazon SES tracking
+  'mandrillapp.com',
+  'mailgun.org', 'mailgun.net', 'email.mailgun.com',
+  'amazonses.com',
+  // Engagement / lifecycle
+  'litmus.com',
+  'mixpanel-track.com',
+  'segment.com',
+  'cdn.heyflow.com',
+  // Generic transactional providers
+  'helpscoutemail.com', 'helpscout.net',
+  'zendesk.com',                // some tickets route through tracker subdomains
+  'frontapp.com',
+]
+
+function isKnownTrackingDomain(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  return KNOWN_TRACKING_DOMAINS.some((d) => h === d || h.endsWith('.' + d))
+}
+
 function isOfficialDomain(hostname: string, legitDomains: string[]): boolean {
   const lower = hostname.toLowerCase()
   return legitDomains.some(d => lower === d || lower.endsWith('.' + d))
@@ -605,6 +693,10 @@ interface LinkAnalysisContext {
   bodyContext: string
   fromEmail: string
   fromName: string
+  /** SPF/DKIM/DMARC verdicts from the message headers, when available. */
+  dmarcResult?: string
+  /** True when the email carries a RFC 2369 / 8058 List-Unsubscribe header. */
+  hasListUnsubscribe?: boolean
 }
 
 export function analyzeLinksInBody(
@@ -699,56 +791,79 @@ export function analyzeLinksInBody(
   // false-positives on newsletters whose unsubscribe link display happens to
   // contain a domain from the sender's email signature. Requires the AI
   // Tier 2 pass or a companion signal to escalate.
-  for (const link of links) {
-    if (link.wrapperUnextractable) continue
-    const displayMatches = link.displayText.match(
-      /\b([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi
-    )
-    if (!displayMatches) continue
-    for (const candidate of displayMatches) {
-      const displayDomain = candidate.toLowerCase()
-      if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif|html?)$/i.test(displayDomain)) continue
-      // Reject candidates whose final label isn't a recognized TLD. Anchor
-      // text routinely contains usernames like "jeremy.collins" or
-      // "first.last" which the regex above happily extracts because the
-      // trailing label has ≥ 2 letters. Without this gate, every email
-      // addressed to a user with a dotted username trips link_domain_mismatch.
-      if (!hasKnownTld(displayDomain)) continue
-      const actual = link.hostname
-      if (displayDomain === actual) continue
-      if (actual.endsWith('.' + displayDomain)) continue
-      if (displayDomain.endsWith('.' + actual)) continue
-      // Skip when the "display domain" sits on the same registrable domain
-      // as the actual href — e.g. anchor text "wrike.com" linking to
-      // "engage.wrike.com" is the same site, not a redirect.
-      if (areSameRegistrableDomain(displayDomain, actual)) continue
-      // Also skip when the "display domain" is just the sender's own domain
-      // appearing in their signature line at the bottom of every email.
-      // Use a literal suffix match here (not registrable-domain): a brand
-      // sub-domain showing up as anchor text while the href points
-      // elsewhere is exactly the impersonation pattern we want to catch.
-      if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
-      // Skip when the actual href goes to the sender's OWN registrable
-      // domain. This is how marketing-email click tracking works — every
-      // legit Marketo / HubSpot / Mailchimp / SendGrid / Wrike notification
-      // routes clicks through a tracking subdomain (engage.wrike.com,
-      // email.acme.com, etc.) before redirecting to the real destination.
-      // The display text shows the target ("linkedin.com" or a username
-      // string), the href points to a tracker subdomain that shares the
-      // sender's registrable domain. A literal suffix check on fromDomain
-      // misses sibling subdomains (team.wrike.com vs. engage.wrike.com),
-      // which is why we compare eTLD+1 here.
-      if (fromDomain && areSameRegistrableDomain(actual, fromDomain)) continue
-      // Skip when both domains belong to the same corporate family —
-      // e.g. optumbank.com display text linking to data.information.optum.com
-      // is legitimate since Optum Bank and Optum are the same parent (UHG).
-      if (areSameCorporateFamily(displayDomain, actual)) continue
-      signals.push({
-        signal: 'link_domain_mismatch',
-        detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
-        weight: 'high',
-      })
-      return signals
+  //
+  // Two structural exemptions apply BEFORE the per-link loop because they
+  // characterize the whole message, not any specific link:
+  //
+  //   1. The email carries a List-Unsubscribe header AND DMARC passed.
+  //      RFC 2369/8058 compliance + cryptographic sender authorization is
+  //      effectively a guarantee of legitimate mass mail (phishers don't
+  //      pass DMARC on brands they don't own). All links in such a
+  //      message route through tracking infrastructure by design.
+  //
+  // The per-link loop below also exempts links going to a known
+  // marketing-tracker / ESP host (Smartlead, SendGrid, HubSpot, etc.) —
+  // every cold-outreach and bulk-mail platform produces this exact shape.
+  const isAuthenticatedMassMail = !!ctx.hasListUnsubscribe && ctx.dmarcResult === 'pass'
+  if (!isAuthenticatedMassMail) {
+    for (const link of links) {
+      if (link.wrapperUnextractable) continue
+      // Suppress when the href goes to a known marketing/sales-engagement
+      // tracker. The shape "anchor text shows brand domain, href routes
+      // through tracker" defines marketing-email click attribution and is
+      // not by itself phishing. Other phishing signals (DMARC fail, scam
+      // patterns, credential request, brand impersonation) remain active
+      // and will still escalate a compromised-ESP attack.
+      if (isKnownTrackingDomain(link.hostname)) continue
+      const displayMatches = link.displayText.match(
+        /\b([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi
+      )
+      if (!displayMatches) continue
+      for (const candidate of displayMatches) {
+        const displayDomain = candidate.toLowerCase()
+        if (/\.(md|txt|pdf|docx?|xlsx?|png|jpe?g|gif|html?)$/i.test(displayDomain)) continue
+        // Reject candidates whose final label isn't a recognized TLD. Anchor
+        // text routinely contains usernames like "jeremy.collins" or
+        // "first.last" which the regex above happily extracts because the
+        // trailing label has ≥ 2 letters. Without this gate, every email
+        // addressed to a user with a dotted username trips link_domain_mismatch.
+        if (!hasKnownTld(displayDomain)) continue
+        const actual = link.hostname
+        if (displayDomain === actual) continue
+        if (actual.endsWith('.' + displayDomain)) continue
+        if (displayDomain.endsWith('.' + actual)) continue
+        // Skip when the "display domain" sits on the same registrable domain
+        // as the actual href — e.g. anchor text "wrike.com" linking to
+        // "engage.wrike.com" is the same site, not a redirect.
+        if (areSameRegistrableDomain(displayDomain, actual)) continue
+        // Also skip when the "display domain" is just the sender's own domain
+        // appearing in their signature line at the bottom of every email.
+        // Use a literal suffix match here (not registrable-domain): a brand
+        // sub-domain showing up as anchor text while the href points
+        // elsewhere is exactly the impersonation pattern we want to catch.
+        if (fromDomain && (displayDomain === fromDomain || displayDomain.endsWith('.' + fromDomain))) continue
+        // Skip when the actual href goes to the sender's OWN registrable
+        // domain. This is how marketing-email click tracking works — every
+        // legit Marketo / HubSpot / Mailchimp / SendGrid / Wrike notification
+        // routes clicks through a tracking subdomain (engage.wrike.com,
+        // email.acme.com, etc.) before redirecting to the real destination.
+        // The display text shows the target ("linkedin.com" or a username
+        // string), the href points to a tracker subdomain that shares the
+        // sender's registrable domain. A literal suffix check on fromDomain
+        // misses sibling subdomains (team.wrike.com vs. engage.wrike.com),
+        // which is why we compare eTLD+1 here.
+        if (fromDomain && areSameRegistrableDomain(actual, fromDomain)) continue
+        // Skip when both domains belong to the same corporate family —
+        // e.g. optumbank.com display text linking to data.information.optum.com
+        // is legitimate since Optum Bank and Optum are the same parent (UHG).
+        if (areSameCorporateFamily(displayDomain, actual)) continue
+        signals.push({
+          signal: 'link_domain_mismatch',
+          detail: `Link shows "${displayDomain}" in its text but actually goes to "${actual}"`,
+          weight: 'high',
+        })
+        return signals
+      }
     }
   }
 
@@ -970,7 +1085,7 @@ Content signals:
 - credential_request (critical): Email appears to request sensitive info (password, SSN, bank details, gift cards).
 
 Link signals (extracted from full HTML body):
-- link_domain_mismatch (critical): A link's display text shows one domain but the href goes somewhere else. Textbook phishing.
+- link_domain_mismatch (high, contextual): A link's display text shows one domain but the href goes somewhere else. This shape IS textbook phishing — but it's also the defining shape of any marketing email, cold-outreach platform, or transactional notification that uses click tracking (Smartlead, SendGrid, Mailchimp, HubSpot, Marketo, Klaviyo, Outreach, Apollo, etc.). Tier 1 already suppresses this signal when the href hits a known tracker host or when the email is RFC-compliant authenticated mass mail (List-Unsubscribe + DMARC pass), so by the time you see this signal the host is unfamiliar — but treat it as suspicion, not certainty. Require a corroborating signal (DMARC fail, scam pattern, credential request, brand impersonation, pressure language, etc.) before flagging.
 - brand_impersonation_link (critical): Body mentions a known brand (DocuSign, Microsoft, PayPal, etc.) but the link goes to an off-brand domain.
 - ip_based_url (critical): A link goes to a raw IP address instead of a domain name. Essentially always malicious.
 - url_shortener (medium): Link uses bit.ly / tinyurl / etc. to hide the real destination.
@@ -979,12 +1094,23 @@ Link signals (extracted from full HTML body):
 
 If ANY of these are present in Tier 1 signals, return is_threat=true with confidence >= 0.90 and threat_level=critical:
 - sender_spoofing_self (any other signal present, or alone)
-- link_domain_mismatch
 - brand_impersonation_link
 - ip_based_url
 - dmarc_fail combined with ANY of {scam_pattern, credential_request, suspicious_ref_id, pressure_language}
 
 These are deterministic markers — legitimate email simply does not produce them.
+
+NOTE: link_domain_mismatch is intentionally NOT in this list anymore. It used to be, but it produced too many false positives on cold-outreach and marketing emails. Treat it as one piece of evidence among many — never alone-sufficient.
+
+# MARKETING EMAIL CONTEXT
+
+A large share of the emails you'll see are unsolicited cold-outreach or marketing — annoying but not phishing. These are typically NOT threats even when they match scam-pattern regex or trip link_domain_mismatch:
+- Cold-outreach sales pitches sent through Smartlead/Outreach/SalesLoft/Apollo with a tracking-domain href
+- Newsletters and product updates with click-tracked CTAs
+- Sales prospecting that mentions urgency ("Q3 close is next week")
+- Conference / webinar invites with branded CTAs
+
+The user's right response to these is "report as spam" — NOT "report as phishing". Recommended actions for a non-phishing-but-spammy email should reflect that distinction. If you decide it's not a threat, return is_threat=false, threat_level=low, confidence <= 0.30.
 
 # WHAT IS A THREAT
 
@@ -1123,7 +1249,27 @@ CORRECT ASSESSMENT:
 - explanation: "This appears to be a legitimate Stripe compliance notification. The sender domain is stripe.com (verified), there are no authentication failures, and the request to update tax forms is a standard annual Stripe workflow. The urgent tone tripped the pre-filter but is appropriate for a regulatory deadline."
 - recommended_actions: [If you have a Stripe account and want to verify, go to dashboard.stripe.com directly (don't use the email link) to check for the tax form request]
 
-## Example 5 — HIGH: CEO wire-fraud BEC
+## Example 5 — NOT A THREAT: cold-outreach via marketing tracker
+
+INPUT:
+From: Garth Schultz <garth.schultz@getthermalenergyhq.com>
+To: jeremy.collins@routeware.com
+Subject: Making savings more predictable in ESCO projects
+Body: Hi Jeremy — wanted to introduce ThermalEnergyHQ. We help ESCOs make savings more predictable. Would 15 mins next week work? www.thermalenergyhq.com (link href: click.sleadtrack.com/abc — Smartlead click-tracker)
+
+HEADER SIGNALS ALREADY DETECTED:
+- (Tier 1 may have suppressed link_domain_mismatch when the href hit a known tracker; if you see it here, the host wasn't on the allowlist but is still tracker-shaped)
+
+CORRECT ASSESSMENT:
+- is_threat: false
+- threat_level: low
+- threat_type: phishing
+- confidence: 0.10
+- explanation: "This is unsolicited cold-outreach sent through a marketing-automation platform. The link's anchor text shows the sender's brand domain while the href routes through a click-tracker (sleadtrack.com / Smartlead) — that's the standard shape of every cold-outreach email and is not a phishing redirect on its own. There are no other phishing tells: no DMARC failure, no credential request, no brand impersonation, no urgency manipulation. The email is annoying spam but not a threat."
+- recommended_actions: [Report as spam (NOT phishing) in your inbox provider so the sender is filtered going forward, Unsubscribe via the email's unsubscribe link if present, Move to junk]
+- do_not_actions: [] (empty — this is not a threat)
+
+## Example 6 — HIGH: CEO wire-fraud BEC
 
 INPUT:
 From: "Sarah Chen, CEO" <sarah.chen.ceo@gmail.com>
