@@ -14,7 +14,7 @@ import {
   Lock, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
-  AtSign, Inbox, Bell, Sparkles, Activity, Receipt,
+  AtSign, Inbox, Bell, Sparkles, Activity, Receipt, StickyNote,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -152,6 +152,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     {
       label: 'Intelligence',
       links: [
+        { href: '/notes', label: 'Notes', icon: StickyNote, tourId: 'nav-notes', badge: 0, badgeColor: '' },
         { href: '/coach', label: 'Coach', icon: Brain, tourId: 'nav-coach', badge: 0, badgeColor: '' },
         { href: '/relationships', label: 'Relationships', icon: Users, tourId: 'nav-relationships', badge: 0, badgeColor: '' },
         { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings', badge: 0, badgeColor: '' },

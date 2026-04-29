@@ -52,6 +52,7 @@ import { syncAsanaTasks, syncAsanaDaily } from '@/inngest/functions/sync-asana'
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 import { generateMonthlyBriefingJob } from '@/inngest/functions/generate-monthly-briefing'
+import { processNote } from '@/inngest/functions/process-note'
 
 // Security: at request time, refuse to serve if INNGEST_SIGNING_KEY is missing.
 // The check must NOT run at module load — Next.js evaluates API routes at build
@@ -115,6 +116,8 @@ const handlers = serve({
     aggregateFeedbackPatterns,   // Monday 5 AM PT — turn cross-user rejection feedback into community patterns
     // Monthly briefing
     generateMonthlyBriefingJob,  // On-demand — orchestrates monthly briefing generation (aggregate → extract → synthesize)
+    // Notes
+    processNote,                 // On-demand — OCR + summarize uploaded note photos via Claude vision
   ],
 })
 
