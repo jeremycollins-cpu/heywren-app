@@ -14,7 +14,7 @@ import {
   Lock, MessageSquareDashed, Hourglass, Mic, GraduationCap, Cpu, GitBranch,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Shield, ListChecks,
   SlidersHorizontal, Star, TrendingUp, Network, ListFilter, CalendarDays, ShieldCheck, ShieldAlert,
-  AtSign, Inbox, Bell, Sparkles, Activity,
+  AtSign, Inbox, Bell, Sparkles, Activity, Receipt, StickyNote,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -33,6 +33,7 @@ interface BadgeCounts {
   openCommitments: number
   pendingReview: number
   securityAlerts: number
+  expenses: number
 }
 
 const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation', 'Community']
@@ -40,7 +41,7 @@ const SECTION_NAMES = ['Overview', 'Intelligence', 'Action Queue', 'Automation',
 export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
   const pathname = usePathname()
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ overdue: 0, urgent: 0, draftQueue: 0, missedEmails: 0, missedChats: 0, waitingRoom: 0, openCommitments: 0, pendingReview: 0, securityAlerts: 0, expenses: 0 })
   const { plan } = usePlan()
   const supabase = createClient()
 
@@ -81,182 +82,59 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     })
   }, [])
 
+  // Fetch sidebar badge counts. The source of truth for every count is
+  // /api/sidebar-counts, which mirrors each section page's filter/group logic
+  // so the sidebar matches what the user sees inside the section in real time.
+  const fetchBadges = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sidebar-counts', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.counts) {
+        setBadges(data.counts as BadgeCounts)
+      }
+    } catch (err) {
+      console.error('Error fetching sidebar counts:', err)
+    }
+  }, [])
+
   useEffect(() => {
-    const fetchUserData = async () => {
+    const init = async () => {
       try {
         const { data: user } = await supabase.auth.getUser()
         if (!user?.user) return
-
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, current_team_id')
+          .select('role')
           .eq('id', user.user.id)
           .single()
-
         setUserRole(profile?.role || 'user')
-
-        if (profile?.current_team_id) {
-          const teamId = profile.current_team_id
-
-          const [commitResult, pendingReviewResult, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
-            supabase
-              .from('commitments')
-              .select('status, created_at, assignee_id')
-              .eq('team_id', teamId)
-              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
-              .in('status', ['open', 'overdue'])
-              .limit(500),
-            supabase
-              .from('commitments')
-              .select('id', { count: 'exact', head: true })
-              .eq('team_id', teamId)
-              .or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`)
-              .eq('status', 'pending_review'),
-            supabase
-              .from('drafts')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('missed_emails')
-              .select('id, subject')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('missed_chats')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'pending'),
-            supabase
-              .from('awaiting_replies')
-              .select('id, conversation_id, source')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'waiting')
-              .then(res => res.error ? { data: [] } : res),
-            supabase
-              .from('email_threat_alerts')
-              .select('id')
-              .eq('team_id', teamId)
-              .eq('user_id', user.user.id)
-              .eq('status', 'unreviewed')
-              .then(res => res.error ? { data: [] } : res),
-          ])
-
-          const commitments = commitResult.data || []
-          const now = Date.now()
-          const overdueCount = commitments.filter(c => c.status === 'overdue').length
-          const urgentCount = commitments.filter(c =>
-            c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000
-          ).length
-
-          // Count "For You" commitments — where user is assignee (not just creator).
-          // Matches the "For You" tab on the commitments page.
-          const forYouCount = commitments.filter(c =>
-            c.assignee_id === user.user.id || c.assignee_id === null
-          ).length
-
-          // Count waiting room threads (not individual messages).
-          // Group by conversation_id for emails, count ungrouped items individually.
-          const waitingItems = (waitingResult as any).data || []
-          const waitingThreads = new Set<string>()
-          let waitingUngrouped = 0
-          for (const item of waitingItems) {
-            if (item.conversation_id && item.source === 'outlook') {
-              waitingThreads.add(`outlook:${item.conversation_id}`)
-            } else {
-              waitingUngrouped++
-            }
-          }
-          const waitingThreadCount = waitingThreads.size + waitingUngrouped
-
-          setBadges({
-            overdue: overdueCount,
-            urgent: urgentCount,
-            pendingReview: pendingReviewResult.count || 0,
-            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
-            missedEmails: new Set((missedResult.data || []).map((e: any) => {
-              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
-              return s || e.id
-            })).size,
-            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
-            waitingRoom: waitingThreadCount,
-            openCommitments: forYouCount,
-            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
-          })
-        }
       } catch (err) {
-        console.error('Error fetching sidebar data:', err)
+        console.error('Error fetching user role:', err)
       }
+      fetchBadges()
     }
+    init()
+  }, [supabase, fetchBadges])
 
-    fetchUserData()
-  }, [supabase])
-
-  // Re-fetch badge counts when commitments or action items change in real-time
-  // Throttled: minimum 30s between refetches to reduce Disk IO pressure
-  const lastRefetchRef = useRef(0)
+  // Re-fetch badge counts when commitments or action items change in real-time.
+  // Debounced 1s so a burst of inserts/updates collapses into a single refetch.
+  const pendingRefetchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refetchBadges = useCallback(() => {
-    const now = Date.now()
-    if (now - lastRefetchRef.current < 30000) return // throttle: max once per 30s
-    lastRefetchRef.current = now
-
-    const timer = setTimeout(() => {
-      const fetchUserData = async () => {
-        try {
-          const { data: user } = await supabase.auth.getUser()
-          if (!user?.user) return
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('current_team_id')
-            .eq('id', user.user.id)
-            .single()
-          if (!profile?.current_team_id) return
-          const teamId = profile.current_team_id
-
-          const [commitResult, pendingReviewResult2, draftResult, missedResult, missedChatsResult, waitingResult, threatResult] = await Promise.all([
-            supabase.from('commitments').select('status, created_at').eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).in('status', ['open', 'overdue']).limit(500),
-            supabase.from('commitments').select('id', { count: 'exact', head: true }).eq('team_id', teamId).or(`creator_id.eq.${user.user.id},assignee_id.eq.${user.user.id}`).eq('status', 'pending_review'),
-            supabase.from('drafts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('missed_emails').select('id, subject').eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('missed_chats').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'pending'),
-            supabase.from('awaiting_replies').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'waiting').then(res => res.error ? { count: 0, data: [] } : res),
-            supabase.from('email_threat_alerts').select('*', { count: 'exact', head: true }).eq('team_id', teamId).eq('user_id', user.user.id).eq('status', 'unreviewed').then(res => res.error ? { count: 0, data: [] } : res),
-          ])
-
-          const commitments = commitResult.data || []
-          const now = Date.now()
-          setBadges({
-            overdue: commitments.filter(c => c.status === 'overdue').length,
-            urgent: commitments.filter(c => c.status === 'open' && (now - new Date(c.created_at).getTime()) > 5 * 86400000).length,
-            pendingReview: pendingReviewResult2.count || 0,
-            draftQueue: (draftResult as any).count ?? draftResult.data?.length ?? 0,
-            missedEmails: new Set((missedResult.data || []).map((e: any) => {
-              const s = (e.subject || '').replace(/^(re:\s*|fwd?:\s*|fw:\s*)+/i, '').trim().toLowerCase()
-              return s || e.id
-            })).size,
-            missedChats: (missedChatsResult as any).count ?? missedChatsResult.data?.length ?? 0,
-            waitingRoom: (waitingResult as any).count ?? waitingResult.data?.length ?? 0,
-            openCommitments: commitments.filter(c => c.status === 'open').length,
-            securityAlerts: (threatResult as any).count ?? threatResult.data?.length ?? 0,
-          })
-        } catch (err) {
-          console.error('Error refreshing sidebar badges:', err)
-        }
-      }
-      fetchUserData()
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [supabase])
+    if (pendingRefetchRef.current) clearTimeout(pendingRefetchRef.current)
+    pendingRefetchRef.current = setTimeout(() => {
+      pendingRefetchRef.current = null
+      fetchBadges()
+    }, 1000)
+  }, [fetchBadges])
 
   useRealtime({ table: 'commitments', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
   useRealtime({ table: 'drafts', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
   useRealtime({ table: 'missed_chats', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'awaiting_replies', onInsert: refetchBadges, onUpdate: refetchBadges, onDelete: refetchBadges })
   useRealtime({ table: 'email_threat_alerts', onInsert: refetchBadges, onUpdate: refetchBadges })
+  useRealtime({ table: 'expense_emails', onInsert: refetchBadges, onUpdate: refetchBadges })
 
   const sections = useMemo(() => [
     {
@@ -274,6 +152,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
     {
       label: 'Intelligence',
       links: [
+        { href: '/notes', label: 'Notes', icon: StickyNote, tourId: 'nav-notes', badge: 0, badgeColor: '' },
         { href: '/coach', label: 'Coach', icon: Brain, tourId: 'nav-coach', badge: 0, badgeColor: '' },
         { href: '/relationships', label: 'Relationships', icon: Users, tourId: 'nav-relationships', badge: 0, badgeColor: '' },
         { href: '/briefings', label: 'Briefings', icon: Briefcase, tourId: 'nav-briefings', badge: 0, badgeColor: '' },
@@ -293,6 +172,7 @@ export default function Sidebar({ open, onToggle, onHelpClick }: SidebarProps) {
         { href: '/inbox-zero', label: 'Inbox Zero', icon: Inbox, tourId: 'nav-inbox-zero', badge: 0, badgeColor: 'bg-indigo-500' },
         { href: '/draft-queue', label: 'Draft Queue', icon: Edit, tourId: 'nav-draft-queue', badge: badges.draftQueue, badgeColor: 'bg-violet-500' },
         { href: '/missed-emails', label: 'Missed Emails', icon: MailWarning, tourId: 'nav-missed-emails', badge: badges.missedEmails, badgeColor: 'bg-amber-500' },
+        { href: '/expenses', label: 'Expenses', icon: Receipt, tourId: 'nav-expenses', badge: badges.expenses, badgeColor: 'bg-emerald-500' },
         { href: '/unsubscribe', label: 'Unsubscribe', icon: MailX, tourId: 'nav-unsubscribe', badge: 0, badgeColor: '' },
         { href: '/email-rules', label: 'Email Rules', icon: ListFilter, tourId: 'nav-email-rules', badge: 0, badgeColor: '' },
         { href: '/missed-chats', label: 'Missed Chats', icon: MessageSquareDashed, tourId: 'nav-missed-chats', badge: badges.missedChats, badgeColor: 'bg-purple-500' },

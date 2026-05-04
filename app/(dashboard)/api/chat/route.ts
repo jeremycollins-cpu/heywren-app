@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString()
 
-    const [commitmentsRes, missedEmailsRes, awaitingRes, missedChatsRes] = await Promise.all([
+    const [commitmentsRes, missedEmailsRes, awaitingRes, missedChatsRes, notesRes] = await Promise.all([
       admin.from('commitments')
         .select('id, title, description, status, source, metadata, created_at')
         .eq('team_id', teamId)
@@ -93,12 +93,58 @@ export async function POST(request: NextRequest) {
         .eq('user_id', userData.user.id)
         .in('status', ['pending', 'snoozed'])
         .limit(15),
+      admin.from('notes')
+        .select('id, title, summary, note_date, topic_id')
+        .eq('user_id', userData.user.id)
+        .eq('status', 'ready')
+        .order('note_date', { ascending: false })
+        .limit(15),
     ])
 
     const commitments = commitmentsRes.data || []
     const missedEmails = missedEmailsRes.data || []
     const awaitingReplies = awaitingRes.data || []
     const missedChats = missedChatsRes.data || []
+    const notes = notesRes.data || []
+
+    // Resolve topic names for the notes context block.
+    const noteTopicIds = Array.from(new Set(notes.map(n => n.topic_id).filter(Boolean) as string[]))
+    let noteTopicNames: Record<string, string> = {}
+    if (noteTopicIds.length > 0) {
+      const { data: topicRows } = await admin
+        .from('note_topics')
+        .select('id, name')
+        .in('id', noteTopicIds)
+      for (const t of topicRows || []) noteTopicNames[t.id] = t.name
+    }
+
+    // Lightweight keyword retrieval — if the latest user message looks like a
+    // question about notes, fetch a few that match keywords from the message.
+    // This complements the recent-notes context with relevant older notes.
+    let relevantNotes: Array<{ id: string; title: string | null; summary: string | null; note_date: string }> = []
+    const lastUserMessage = messages.filter(m => m.role === 'user').slice(-1)[0]?.content || ''
+    if (lastUserMessage && /\bnote(s)?\b|\bwrote\b|\bjotted\b|\bwhiteboard\b|\bslide(s)?\b/i.test(lastUserMessage)) {
+      const keywords = lastUserMessage
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 4 && !['notes', 'about', 'whiteboard', 'slide', 'slides', 'write', 'wrote'].includes(w))
+        .slice(0, 4)
+      if (keywords.length > 0) {
+        const orFilter = keywords
+          .map(k => `title.ilike.%${k}%,summary.ilike.%${k}%,transcription.ilike.%${k}%,body.ilike.%${k}%`)
+          .join(',')
+        const { data: matches } = await admin
+          .from('notes')
+          .select('id, title, summary, note_date')
+          .eq('user_id', userData.user.id)
+          .eq('status', 'ready')
+          .or(orFilter)
+          .order('note_date', { ascending: false })
+          .limit(5)
+        relevantNotes = matches || []
+      }
+    }
 
     // Build context summary
     const activeCommitments = commitments.filter(c => isActive(c.status))
@@ -118,6 +164,9 @@ export async function POST(request: NextRequest) {
       missedEmails,
       awaitingReplies,
       missedChats,
+      notes,
+      noteTopicNames,
+      relevantNotes,
     })
 
     const systemPrompt = `You are Wren, ${firstName}'s AI follow-through assistant inside the HeyWren platform. You are warm, concise, and action-oriented. You speak like a trusted chief of staff — aware of everything going on, ready with answers, never wasting time.
@@ -318,6 +367,9 @@ function buildContextBlock(data: {
   missedEmails: any[]
   awaitingReplies: any[]
   missedChats: any[]
+  notes: any[]
+  noteTopicNames: Record<string, string>
+  relevantNotes: Array<{ id: string; title: string | null; summary: string | null; note_date: string }>
 }): string {
   const lines: string[] = ['CURRENT DATA CONTEXT:']
 
@@ -370,11 +422,35 @@ function buildContextBlock(data: {
     }
   }
 
-  if (data.activeCommitments.length === 0 && data.missedEmails.length === 0 && data.awaitingReplies.length === 0) {
+  // Notes — show the user's most recent captured notes so Wren can reference
+  // them ("the whiteboard from Tuesday's offsite", "your notes on the Acme call").
+  if (data.notes.length > 0) {
+    lines.push(`\nRECENT NOTES (${data.notes.length} most recent):`)
+    for (const n of data.notes.slice(0, 10)) {
+      const topic = n.topic_id ? data.noteTopicNames[n.topic_id] : null
+      const summary = n.summary ? ` — ${truncate(n.summary, 160)}` : ''
+      lines.push(`- [${n.note_date}]${topic ? ` (${topic})` : ''} ${n.title || 'Untitled'}${summary}`)
+    }
+  }
+
+  if (data.relevantNotes.length > 0) {
+    lines.push('\nNOTES RELEVANT TO THIS QUESTION:')
+    for (const n of data.relevantNotes) {
+      const summary = n.summary ? ` — ${truncate(n.summary, 240)}` : ''
+      lines.push(`- [${n.note_date}] ${n.title || 'Untitled'}${summary}`)
+    }
+  }
+
+  if (data.activeCommitments.length === 0 && data.missedEmails.length === 0 && data.awaitingReplies.length === 0 && data.notes.length === 0) {
     lines.push('\nNo tracked items found yet. The user may need to connect integrations or run a sync first.')
   }
 
   return lines.join('\n')
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  return text.slice(0, max).trim() + '…'
 }
 
 export const dynamic = 'force-dynamic'

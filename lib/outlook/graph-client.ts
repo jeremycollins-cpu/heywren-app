@@ -297,6 +297,72 @@ export async function searchMessagesBySender(
   return { messageIds, token: newToken }
 }
 
+// ── Attachment operations ──────────────────────────────────────────────
+
+export interface GraphAttachment {
+  id: string
+  name: string
+  contentType: string
+  size: number
+  isInline: boolean
+  // base64-encoded for fileAttachment; absent for itemAttachment / referenceAttachment
+  contentBytes?: string
+  // Discriminator: '#microsoft.graph.fileAttachment' is the only one we can serve
+  '@odata.type': string
+}
+
+/**
+ * List attachments on a message, returning metadata WITHOUT contentBytes so the
+ * response stays small. Used to populate the per-receipt download list.
+ */
+export async function listMessageAttachments(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ attachments: Omit<GraphAttachment, 'contentBytes'>[]; token: string; error?: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`
+  const { data, token: newToken } = await graphFetch(url, { token }, ctx)
+
+  if (data.error) {
+    return { attachments: [], token: newToken, error: data.error.message || 'Failed to list attachments' }
+  }
+
+  const attachments = (data.value || []).filter(
+    (a: GraphAttachment) => !a.isInline && a['@odata.type'] === '#microsoft.graph.fileAttachment'
+  )
+  return { attachments, token: newToken }
+}
+
+/**
+ * Fetch a single attachment with its base64 contentBytes so the API can decode
+ * and stream it back to the user. Restricted to fileAttachment — itemAttachment
+ * (forwarded emails) and referenceAttachment (cloud links) cannot be downloaded
+ * through this path.
+ */
+export async function downloadMessageAttachment(
+  messageId: string,
+  attachmentId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ attachment: GraphAttachment | null; token: string; error?: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`
+  const { data, token: newToken } = await graphFetch(url, { token }, ctx)
+
+  if (data.error) {
+    return { attachment: null, token: newToken, error: data.error.message || 'Failed to fetch attachment' }
+  }
+
+  if (data['@odata.type'] !== '#microsoft.graph.fileAttachment' || !data.contentBytes) {
+    return {
+      attachment: null,
+      token: newToken,
+      error: 'Attachment is not a downloadable file (likely a linked-cloud or forwarded-email attachment)',
+    }
+  }
+
+  return { attachment: data as GraphAttachment, token: newToken }
+}
+
 /** Search inbox for messages matching a sender domain. */
 export async function searchMessagesByDomain(
   domain: string,
@@ -441,4 +507,46 @@ export async function updateInboxRule(
   }
 
   return { success: true, token: newToken }
+}
+
+// ── Message body ────────────────────────────────────────────────────────
+
+/**
+ * Fetch the plain-text body of a single message. Used by classifiers that
+ * need more context than `bodyPreview` (~255 chars) — e.g. expense extraction
+ * where the dollar amount typically appears further down the email.
+ *
+ * Returns the text/plain version when available; falls back to stripping the
+ * HTML body if the message is HTML-only. Capped at 8 KB so a single oversize
+ * email can't blow up an LLM prompt.
+ */
+export async function getMessageBody(
+  messageId: string,
+  token: string,
+  ctx: { supabase: ReturnType<typeof getAdminClient>; integrationId: string; refreshToken: string }
+): Promise<{ body: string; token: string; error?: string }> {
+  const url = `${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}?$select=body`
+  const { data, token: newToken } = await graphFetch(url, { token }, ctx)
+
+  if (data.error) {
+    return { body: '', token: newToken, error: data.error.message || 'Failed to fetch body' }
+  }
+
+  const contentType = data.body?.contentType
+  const content = data.body?.content || ''
+  // Strip HTML tags + collapse whitespace when the message is HTML — keeps
+  // the prompt focused on visible text and trims signature noise.
+  const text = contentType === 'html'
+    ? content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+             .replace(/<[^>]+>/g, ' ')
+             .replace(/&nbsp;/g, ' ')
+             .replace(/&amp;/g, '&')
+             .replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>')
+             .replace(/\s+/g, ' ')
+             .trim()
+    : content
+
+  return { body: text.slice(0, 8000), token: newToken }
 }

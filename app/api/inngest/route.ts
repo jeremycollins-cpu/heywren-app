@@ -12,6 +12,7 @@ import { syncOutlook, adminFullResync } from '@/inngest/functions/sync-outlook'
 import { drainOutlookBacklog } from '@/inngest/functions/drain-outlook-backlog'
 // generateDrafts removed — drafts are now generated on-demand per commitment
 import { scanMissedEmails } from '@/inngest/functions/scan-missed-emails'
+import { scanExpenses } from '@/inngest/functions/scan-expenses'
 import { detectCommitmentCompletion } from '@/inngest/functions/detect-commitment-completion'
 import { scanAwaitingReplies } from '@/inngest/functions/scan-awaiting-replies'
 import { processMeetingTranscript } from '@/inngest/functions/process-meeting-transcript'
@@ -51,6 +52,7 @@ import { syncAsanaTasks, syncAsanaDaily } from '@/inngest/functions/sync-asana'
 import { aiCostAlert } from '@/inngest/functions/ai-cost-alert'
 import { aggregateFeedbackPatterns } from '@/inngest/functions/aggregate-feedback-patterns'
 import { generateMonthlyBriefingJob } from '@/inngest/functions/generate-monthly-briefing'
+import { processNote } from '@/inngest/functions/process-note'
 
 // Security: at request time, refuse to serve if INNGEST_SIGNING_KEY is missing.
 // The check must NOT run at module load — Next.js evaluates API routes at build
@@ -65,6 +67,7 @@ const handlers = serve({
     syncOutlook,          // 6 AM PT daily — sync Outlook emails & calendar
     // generateDrafts removed — drafts are now on-demand per commitment (POST /api/drafts/generate)
     scanMissedEmails,     // 6:30 AM PT daily — scan for emails needing a response
+    scanExpenses,         // 6:45 AM / 10:45 AM / 2:45 PM / 6:45 PM PT — scan inbox for receipts/invoices
     detectCommitmentCompletion, // Auto-resolves commitments when follow-up messages indicate completion
     scanAwaitingReplies,  // 7 AM PT daily — "The Waiting Room" scan for sent items with no reply
     processMeetingTranscript, // Meeting transcript → commitment extraction + "Hey Wren" detection
@@ -113,6 +116,8 @@ const handlers = serve({
     aggregateFeedbackPatterns,   // Monday 5 AM PT — turn cross-user rejection feedback into community patterns
     // Monthly briefing
     generateMonthlyBriefingJob,  // On-demand — orchestrates monthly briefing generation (aggregate → extract → synthesize)
+    // Notes
+    processNote,                 // On-demand — OCR + summarize uploaded note photos via Claude vision
   ],
 })
 
